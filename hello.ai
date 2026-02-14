@@ -1,0 +1,5 @@
+::intent "A simple Aion program to test the CLI"
+let score = 42
+let bonus = 10
+let total = score + bonus
+return total

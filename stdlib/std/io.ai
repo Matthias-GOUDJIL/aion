@@ -1,0 +1,7 @@
+module std.io
+
+::intent "Print a string message to the standard output"
+pub fn println(msg: String) {
+    ::intent "Implementation will link to libc printf or system write syscall"
+    // Internal implementation placeholder
+}

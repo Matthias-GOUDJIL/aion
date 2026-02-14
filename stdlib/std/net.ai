@@ -1,0 +1,27 @@
+module std.net
+
+pub struct Socket {
+    fd: i32
+    port: u16
+}
+
+pub struct Request {
+    method: String
+    url: String
+    headers_ptr: *u8
+}
+
+::intent "Create a new TCP listener bound to a specific port"
+pub fn bind(port: u16) -> Socket {
+    ::intent "Syscall to bind socket"
+    // Internal implementation...
+    let fd = 0 
+    return Socket // Simplified return for prototype
+}
+
+::intent "Accept incoming connections asynchronously"
+pub async fn accept(socket: Socket) -> Request {
+    ::intent "Wait for client handshake"
+    // Placeholder
+    return Request
+}

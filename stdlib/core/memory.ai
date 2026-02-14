@@ -1,0 +1,5 @@
+module core.memory
+
+::intent "Direct LLVM intrinsic for memory copy"
+@intrinsic("llvm.memcpy")
+pub unsafe fn copy(dest: *u8, src: *u8, len: usize)

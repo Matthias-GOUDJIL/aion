@@ -1,0 +1,31 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Aion",
+    "scopeName": "source.ai",
+    "patterns": [
+        { "include": "#keywords" },
+        { "include": "#strings" },
+        { "include": "#comments" },
+        { "include": "#intents" }
+    ],
+    "repository": {
+        "keywords": {
+            "patterns": [{
+                "name": "keyword.control.aion",
+                "match": "\b(fn|let|mut|struct|enum|return|if|else|match|use|pub|async|unsafe|require|inside)\b"
+            }]
+        },
+        "intents": {
+            "patterns": [{
+                "name": "entity.name.section.aion",
+                "match": "::intent"
+            }]
+        },
+        "strings": {
+            "name": "string.quoted.double.aion",
+            "begin": """,
+            "end": """,
+            "patterns": [{ "name": "constant.character.escape.aion", "match": "\." }]
+        }
+    }
+}

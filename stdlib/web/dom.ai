@@ -1,0 +1,19 @@
+module web.dom
+
+pub struct Element {
+    id: String
+    inner_ptr: *u8
+}
+
+::intent "Find an HTML element by its ID"
+@intrinsic("js.document.getElementById")
+pub fn get_element_by_id(id: String) -> Element
+
+::intent "Update the inner text of an HTML element"
+@intrinsic("js.element.setInnerText")
+pub fn set_text(el: Element, text: String)
+
+::intent "Add a click event listener"
+pub fn on_click(el: Element, callback: fn() -> void) {
+    // Registers the callback in the WASM table
+}
