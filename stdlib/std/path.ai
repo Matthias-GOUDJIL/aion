@@ -1,0 +1,28 @@
+module std.path
+
+use std.string
+
+pub struct Path {
+    inner: String,
+}
+
+impl Path {
+    pub fn new(s: String) -> Path {
+        Path { inner: s }
+    }
+
+    pub fn to_string(self) -> String {
+        self.inner
+    }
+
+    pub fn join(self, other: String) -> Path {
+        let sep = "/"; // Platform specific ideally
+        // Placeholder logic
+        let new_str = std.string.concat(std.string.concat(self.inner, sep), other);
+        Path { inner: new_str }
+    }
+
+    pub fn exists(self) -> bool {
+        @intrinsic("fs_exists", self.inner)
+    }
+}

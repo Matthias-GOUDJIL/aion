@@ -1,0 +1,11 @@
+module std.encoding.base64
+
+use std.string
+
+pub fn encode(data: String) -> String {
+    @intrinsic("base64_encode", data)
+}
+
+pub fn decode(b64: String) -> String {
+    @intrinsic("base64_decode", b64)
+}

@@ -1,0 +1,29 @@
+module std.crypto.aes
+
+use std.collections.vector
+use std.result
+use std.string
+
+pub enum Mode {
+    CBC,
+    GCM,
+}
+
+pub struct Cipher {
+    key: Vector<u8>,
+    mode: Mode,
+}
+
+impl Cipher {
+    pub fn new(key: Vector<u8>, mode: Mode) -> Cipher {
+        Cipher { key: key, mode: mode }
+    }
+
+    pub fn encrypt(self, plaintext: Vector<u8>, iv: Vector<u8>) -> Result<Vector<u8>, String> {
+        @intrinsic("crypto_aes_encrypt", self.key, self.mode, plaintext, iv)
+    }
+
+    pub fn decrypt(self, ciphertext: Vector<u8>, iv: Vector<u8>) -> Result<Vector<u8>, String> {
+        @intrinsic("crypto_aes_decrypt", self.key, self.mode, ciphertext, iv)
+    }
+}

@@ -3,29 +3,136 @@
     "name": "Aion",
     "scopeName": "source.ai",
     "patterns": [
-        { "include": "#keywords" },
-        { "include": "#strings" },
         { "include": "#comments" },
-        { "include": "#intents" }
+        { "include": "#strings" },
+        { "include": "#keywords" },
+        { "include": "#intents" },
+        { "include": "#invariants" },
+        { "include": "#constants" },
+        { "include": "#operators" },
+        { "include": "#types" },
+        { "include": "#functions" }
     ],
     "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.aion",
+                    "match": "//.*$"
+                },
+                {
+                    "name": "comment.block.aion",
+                    "begin": "/\\*",
+                    "end": "\\*/"
+                }
+            ]
+        },
         "keywords": {
-            "patterns": [{
-                "name": "keyword.control.aion",
-                "match": "\b(fn|let|mut|struct|enum|return|if|else|match|use|pub|async|unsafe|require|inside)\b"
-            }]
+            "patterns": [
+                {
+                    "name": "keyword.control.aion",
+                    "match": "\\b(if|else|match|return|for|in|use|pub|async|unsafe|require|inside|spawn)\\b"
+                },
+                {
+                    "name": "keyword.declaration.aion",
+                    "match": "\\b(fn|let|mut|struct|enum|interface|impl|channel|type|self)\\b"
+                }
+            ]
         },
         "intents": {
             "patterns": [{
-                "name": "entity.name.section.aion",
+                "name": "keyword.other.intent.aion",
                 "match": "::intent"
+            }]
+        },
+        "invariants": {
+            "patterns": [{
+                "name": "keyword.other.invariant.aion",
+                "match": "::invariant"
             }]
         },
         "strings": {
             "name": "string.quoted.double.aion",
-            "begin": """,
-            "end": """,
-            "patterns": [{ "name": "constant.character.escape.aion", "match": "\." }]
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.aion",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "constants": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.float.aion",
+                    "match": "\\b[0-9]+\\.[0-9]+\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.aion",
+                    "match": "\\b[0-9]+\\b"
+                },
+                {
+                    "name": "constant.language.boolean.aion",
+                    "match": "\\b(true|false)\\b"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.assignment.aion",
+                    "match": "="
+                },
+                {
+                    "name": "keyword.operator.comparison.aion",
+                    "match": "==|!=|<=|>=|<|>"
+                },
+                {
+                    "name": "keyword.operator.arithmetic.aion",
+                    "match": "\\+|\\-|\\*|/|%"
+                },
+                {
+                    "name": "keyword.operator.arrow.aion",
+                    "match": "->|<-"
+                },
+                {
+                    "name": "keyword.operator.namespace.aion",
+                    "match": "::|\\."
+                },
+                {
+                    "name": "keyword.operator.range.aion",
+                    "match": "\\.\\."
+                },
+                {
+                    "name": "keyword.operator.attribute.aion",
+                    "match": "@"
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "storage.type.primitive.aion",
+                    "match": "\\b(i64|f64|u8|u16|u32|u64|bool|char|String|void)\\b"
+                },
+                {
+                    "name": "storage.type.generic.aion",
+                    "match": "\\b[A-Z][a-zA-Z0-9]*\\b"
+                },
+                {
+                    "name": "keyword.operator.optional.aion",
+                    "match": "\\?"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "name": "entity.name.function.aion",
+                    "match": "\\b[a-z_][a-zA-Z0-9_]*(?=\\s*\\()"
+                }
+            ]
         }
     }
 }

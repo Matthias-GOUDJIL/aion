@@ -1,0 +1,28 @@
+module std.string
+
+pub fn len(s: String) -> i64 {
+    @intrinsic("str_len", s)
+}
+
+pub fn concat(s1: String, s2: String) -> String {
+    @intrinsic("str_concat", s1, s2)
+}
+
+pub fn equals(s1: String, s2: String) -> bool {
+    let len1 = len(s1);
+    let len2 = len(s2);
+    if len1 != len2 { return false; }
+    @intrinsic("str_eq", s1, s2)
+}
+
+pub fn contains(haystack: String, needle: String) -> bool {
+    false 
+}
+
+pub fn from_int(n: i64) -> String {
+    @intrinsic("int_to_str", n)
+}
+
+pub fn from_float(f: f64) -> String {
+    @intrinsic("float_to_str", f)
+}

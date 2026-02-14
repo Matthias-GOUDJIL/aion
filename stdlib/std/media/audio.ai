@@ -1,0 +1,22 @@
+module std.media.audio
+
+use std.string
+use std.collections.vector
+use std.ai.tensor
+
+pub struct Audio {
+    samples: Vector<f32>,
+    sample_rate: i64,
+    channels: i64,
+}
+
+impl Audio {
+    pub fn load(path: String) -> Audio {
+        @intrinsic("media_audio_load", path)
+    }
+
+    pub fn spectrogram(self) -> std.ai.tensor::Tensor {
+        // FFT processing to create spectrogram for AI models
+        @intrinsic("media_audio_spectrogram", self)
+    }
+}

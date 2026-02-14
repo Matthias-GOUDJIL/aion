@@ -1,0 +1,21 @@
+module std.task
+
+pub enum Poll<T> {
+    Ready(T),
+    Pending,
+}
+
+pub struct Context {
+    waker: Waker,
+}
+
+pub struct Waker {
+    // Internal handle to wake up the task
+    handle: *u8, 
+}
+
+impl Waker {
+    pub fn wake(self) {
+        @intrinsic("task_wake", self.handle)
+    }
+}

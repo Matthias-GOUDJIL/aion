@@ -1,0 +1,50 @@
+module std.process
+
+use std.collections.vector
+use std.string
+use std.result
+use std.option
+
+pub struct Command {
+    program: String,
+    args: Vector<String>,
+}
+
+impl Command {
+    pub fn new(program: String) -> Command {
+        Command {
+            program: program,
+            args: Vector::new(),
+        }
+    }
+
+    pub fn arg(mut self, arg: String) -> Command {
+        self.args.push(arg);
+        self
+    }
+
+    pub fn spawn(self) -> Result<Child, String> {
+        // Intrinsic to fork/exec
+        @intrinsic("process_spawn", self)
+    }
+}
+
+pub struct Child {
+    pid: i64,
+}
+
+impl Child {
+    pub fn wait(self) -> Result<ExitStatus, String> {
+        @intrinsic("process_wait", self.pid)
+    }
+}
+
+pub struct ExitStatus {
+    code: i64,
+}
+
+impl ExitStatus {
+    pub fn success(self) -> bool {
+        self.code == 0
+    }
+}

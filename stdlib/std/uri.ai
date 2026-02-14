@@ -1,0 +1,28 @@
+module std.uri
+
+use std.option
+use std.string
+
+pub struct Uri {
+    scheme: String,
+    host: String,
+    port: Option<u16>,
+    path: String,
+    query: Option<String>,
+}
+
+impl Uri {
+    pub fn parse(s: String) -> Option<Uri> {
+        // Very simplified parser placeholder
+        // In reality, needs regex or state machine
+        Option::None
+    }
+
+    pub fn to_string(self) -> String {
+        // Reconstruct URI string
+        let base = std.string::concat(self.scheme, "://");
+        let with_host = std.string::concat(base, self.host);
+        // ... (simplified)
+        with_host
+    }
+}

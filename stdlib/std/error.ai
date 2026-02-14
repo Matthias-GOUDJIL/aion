@@ -1,0 +1,6 @@
+module std.error
+
+pub interface Error {
+    fn description(self) -> String;
+    fn cause(self) -> Option<Error>;
+}

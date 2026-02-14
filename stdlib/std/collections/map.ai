@@ -1,0 +1,94 @@
+module std.collections.map
+
+use core.memory
+use core.heap
+use std.collections.vector
+use std.hash
+use std.option
+use std.string
+
+struct Entry<V> {
+    key: String,
+    value: V,
+    next: *Entry<V>,
+}
+
+pub struct HashMap<V> {
+    buckets: * *Entry<V>,
+    len: i64,
+    cap: i64,
+}
+
+impl HashMap<V> {
+    pub fn new() -> HashMap<V> {
+        let cap = 16;
+        let buckets = unsafe { core.heap.alloc(cap * 8) as * *Entry<V> };
+        // Initialize buckets to null
+        let mut i = 0;
+        while i < cap {
+            unsafe {
+                let p = buckets.offset(i);
+                *p = core.heap.null() as *Entry<V>;
+            }
+            i = i + 1;
+        }
+        
+        HashMap {
+            buckets: buckets,
+            len: 0,
+            cap: cap,
+        }
+    }
+
+    pub fn insert(mut self, key: String, value: V) {
+        if self.len > self.cap { // Load factor > 1.0 (simplified)
+            self.resize();
+        }
+        
+        let h = std.hash.hash_string(key);
+        let idx = (h % (self.cap as u64)) as i64;
+        
+        unsafe {
+            let bucket_ptr = self.buckets.offset(idx);
+            let mut current = *bucket_ptr;
+            
+            // Update existing
+            while current != (core.heap.null() as *Entry<V>) {
+                if std.string.equals((*current).key, key) {
+                    (*current).value = value;
+                    return;
+                }
+                current = (*current).next;
+            }
+            
+            // Insert new
+            let new_entry = core.heap.alloc(@sizeof(Entry<V>)) as *Entry<V>;
+            (*new_entry).key = key;
+            (*new_entry).value = value;
+            (*new_entry).next = *bucket_ptr;
+            *bucket_ptr = new_entry;
+        }
+        self.len = self.len + 1;
+    }
+
+    pub fn get(self, key: String) -> Option<V> {
+        let h = std.hash.hash_string(key);
+        let idx = (h % (self.cap as u64)) as i64;
+        
+        unsafe {
+            let mut current = *self.buckets.offset(idx);
+            while current != (core.heap.null() as *Entry<V>) {
+                if std.string.equals((*current).key, key) {
+                    return Option::Some((*current).value);
+                }
+                current = (*current).next;
+            }
+        }
+        Option::None
+    }
+    
+    fn resize(mut self) {
+        // Placeholder: simplistic resize implementation would go here
+        // Create new buckets, rehash all entries...
+    }
+}

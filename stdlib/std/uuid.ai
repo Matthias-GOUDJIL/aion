@@ -1,0 +1,29 @@
+module std.uuid
+
+use std.string
+use std.random
+
+pub struct Uuid {
+    bytes: String, // 16 bytes ideally
+}
+
+impl Uuid {
+    pub fn new_v4() -> Uuid {
+        ::intent "Generates a random UUID v4"
+        @intrinsic("uuid_v4")
+    }
+
+    pub fn new_v7() -> Uuid {
+        ::intent "Generates a time-ordered UUID v7"
+        @intrinsic("uuid_v7")
+    }
+
+    pub fn to_string(self) -> String {
+        // Format as 8-4-4-4-12 hex string
+        @intrinsic("uuid_to_str", self.bytes)
+    }
+
+    pub fn parse(s: String) -> Uuid {
+        @intrinsic("uuid_parse", s)
+    }
+}

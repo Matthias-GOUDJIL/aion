@@ -3,7 +3,8 @@ pub enum Token {
     // Mots-clés du système
     Fn, Let, Mut, Struct, Enum, Return, If, Else, Match,
     Use, Pub, Async, Unsafe, Require,
-    Interface, Impl, Channel, // Nouveau : Canaux
+    Interface, Impl, Channel,
+    For, In, Type, SelfToken, Spawn, // Nouveaux
     
     // SPÉCIAL AION : L'IA et la Logique
     Intent, 

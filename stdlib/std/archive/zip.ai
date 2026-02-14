@@ -1,0 +1,40 @@
+module std.archive.zip
+
+use std.io
+use std.string
+use std.collections.vector
+use std.result
+use std.path
+
+pub struct ZipArchive {
+    path: std.path::Path,
+}
+
+impl ZipArchive {
+    pub fn open(path: std.path::Path) -> Result<ZipArchive, String> {
+        // Check signature etc
+        Result::Ok(ZipArchive { path: path })
+    }
+
+    pub fn list_files(self) -> Vector<String> {
+        @intrinsic("archive_zip_list", self.path)
+    }
+
+    pub fn extract(self, dest: std.path::Path) -> Result<(), String> {
+        @intrinsic("archive_zip_extract", self.path, dest)
+    }
+}
+
+pub struct ZipWriter {
+    path: std.path::Path,
+}
+
+impl ZipWriter {
+    pub fn create(path: std.path::Path) -> Result<ZipWriter, String> {
+        Result::Ok(ZipWriter { path: path })
+    }
+
+    pub fn add_file(self, path: std.path::Path, content: Vector<u8>) {
+        @intrinsic("archive_zip_add", self.path, path, content)
+    }
+}

@@ -1,0 +1,40 @@
+module std.data.dataframe
+
+use std.string
+use std.collections.vector
+use std.collections.map
+use std.option
+
+pub struct Series {
+    name: String,
+    data: Vector<f64>, // Simplified, should be generic or Enum
+}
+
+pub struct DataFrame {
+    columns: HashMap<Series>,
+    index: Vector<String>,
+}
+
+impl DataFrame {
+    pub fn new() -> DataFrame {
+        DataFrame {
+            columns: HashMap::new(),
+            index: Vector::new(),
+        }
+    }
+
+    pub fn read_csv(path: String) -> DataFrame {
+        // High performance CSV reader intrinsic
+        @intrinsic("data_read_csv", path)
+    }
+
+    pub fn select(self, columns: Vector<String>) -> DataFrame {
+        // Projection logic
+        DataFrame::new()
+    }
+
+    pub fn filter(self, predicate: fn(row: HashMap<f64>) -> bool) -> DataFrame {
+        // Selection logic
+        DataFrame::new()
+    }
+}

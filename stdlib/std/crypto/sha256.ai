@@ -1,0 +1,19 @@
+module std.crypto.sha256
+
+use std.string
+
+pub struct Digest {
+    bytes: String, // Should be [u8; 32] ideally
+}
+
+impl Digest {
+    pub fn to_hex(self) -> String {
+        // convert bytes to hex string
+        @intrinsic("hex_encode", self.bytes)
+    }
+}
+
+pub fn hash(data: String) -> Digest {
+    let res = @intrinsic("crypto_sha256", data);
+    Digest { bytes: res }
+}

@@ -1,0 +1,30 @@
+module std.sync.mutex
+
+use core.memory
+
+pub struct Mutex<T> {
+    inner: T,
+    locked: bool,
+}
+
+impl Mutex<T> {
+    pub fn new(value: T) -> Mutex<T> {
+        Mutex {
+            inner: value,
+            locked: false,
+        }
+    }
+
+    pub fn lock(mut self) -> T {
+        // Spinlock simplified
+        while self.locked {
+            std.thread::yield_now();
+        }
+        self.locked = true;
+        self.inner
+    }
+
+    pub fn unlock(mut self) {
+        self.locked = false;
+    }
+}

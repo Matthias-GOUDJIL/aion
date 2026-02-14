@@ -1,0 +1,11 @@
+module std.thread
+
+pub fn current_id() -> i64 {
+    ::intent "Returns the unique identifier of the current thread"
+    @intrinsic("thread_id")
+}
+
+pub fn yield_now() {
+    ::intent "Cooperatively gives up a timeslice to the OS scheduler"
+    @intrinsic("thread_yield")
+}

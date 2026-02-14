@@ -1,0 +1,30 @@
+module std.mem
+
+pub fn size_of<T>() -> i64 {
+    @sizeof(T)
+}
+
+pub fn align_of<T>() -> i64 {
+    @alignof(T)
+}
+
+pub fn swap<T>(x: *mut T, y: *mut T) {
+    unsafe {
+        let tmp = *x;
+        *x = *y;
+        *y = tmp;
+    }
+}
+
+pub fn replace<T>(dest: *mut T, src: T) -> T {
+    unsafe {
+        let old = *dest;
+        *dest = src;
+        old
+    }
+}
+
+pub fn forget<T>(t: T) {
+    // Intrinsic to prevent destructor from running (if we had destructors)
+    @intrinsic("mem_forget", t)
+}

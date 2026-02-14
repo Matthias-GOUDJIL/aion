@@ -1,7 +1,17 @@
 module std.io
 
-::intent "Print a string message to the standard output"
+::intent "Print a string message to the standard output with a newline"
 pub fn println(msg: String) {
     ::intent "Implementation will link to libc printf or system write syscall"
-    // Internal implementation placeholder
+    @intrinsic("io_println", msg)
+}
+
+::intent "Print a string message to the standard output without a newline"
+pub fn print(msg: String) {
+    @intrinsic("io_print", msg)
+}
+
+::intent "Read a line from standard input"
+pub fn read_line() -> String {
+    @intrinsic("io_read_line")
 }

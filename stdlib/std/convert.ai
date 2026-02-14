@@ -1,0 +1,9 @@
+module std.convert
+
+pub interface From<T> {
+    fn from(value: T) -> Self;
+}
+
+pub interface Into<T> {
+    fn into(self) -> T;
+}

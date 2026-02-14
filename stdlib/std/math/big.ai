@@ -1,0 +1,39 @@
+module std.math.big
+
+use std.string
+use std.collections.vector
+
+pub struct BigInt {
+    // Internal representation usually involves a vector of u64 digits
+    digits: Vector<u64>,
+    sign: bool, // true for positive
+}
+
+impl BigInt {
+    pub fn from_i64(n: i64) -> BigInt {
+        // Placeholder conversion
+        BigInt { digits: Vector::new(), sign: n >= 0 }
+    }
+
+    pub fn from_string(s: String) -> BigInt {
+        // Placeholder parsing
+        BigInt { digits: Vector::new(), sign: true }
+    }
+
+    pub fn add(self, other: BigInt) -> BigInt {
+        // Arbitrary precision addition logic
+        @intrinsic("bigint_add", self, other)
+    }
+
+    pub fn sub(self, other: BigInt) -> BigInt {
+        @intrinsic("bigint_sub", self, other)
+    }
+
+    pub fn mul(self, other: BigInt) -> BigInt {
+        @intrinsic("bigint_mul", self, other)
+    }
+
+    pub fn to_string(self) -> String {
+        @intrinsic("bigint_to_str", self)
+    }
+}

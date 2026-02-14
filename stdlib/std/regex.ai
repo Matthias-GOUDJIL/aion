@@ -1,0 +1,23 @@
+module std.regex
+
+use std.option
+
+pub struct Regex {
+    pattern: String,
+    // compiled state would go here
+}
+
+impl Regex {
+    pub fn new(pattern: String) -> Regex {
+        Regex { pattern: pattern }
+    }
+
+    pub fn is_match(self, text: String) -> bool {
+        @intrinsic("regex_match", self.pattern, text)
+    }
+
+    pub fn find(self, text: String) -> Option<String> {
+        // Return first match
+        Option::None
+    }
+}

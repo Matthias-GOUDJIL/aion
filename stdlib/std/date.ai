@@ -1,0 +1,47 @@
+module std.date
+
+use std.time
+use std.string
+use std.fmt
+
+pub struct Date {
+    year: i32,
+    month: u8,
+    day: u8,
+}
+
+pub struct DateTime {
+    date: Date,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    nanosecond: u32,
+}
+
+impl DateTime {
+    pub fn now() -> DateTime {
+        let ts = std.time::now();
+        // Placeholder conversion logic (requires complex leap year math)
+        // Mapping to intrinsic for simplicity
+        let year = @intrinsic("date_year", ts) as i32;
+        let month = @intrinsic("date_month", ts) as u8;
+        let day = @intrinsic("date_day", ts) as u8;
+        let hour = @intrinsic("date_hour", ts) as u8;
+        let min = @intrinsic("date_min", ts) as u8;
+        let sec = @intrinsic("date_sec", ts) as u8;
+        
+        DateTime {
+            date: Date { year: year, month: month, day: day },
+            hour: hour,
+            minute: min,
+            second: sec,
+            nanosecond: 0,
+        }
+    }
+
+    pub fn to_string(self) -> String {
+        // ISO 8601 format YYYY-MM-DDTHH:MM:SS
+        // Simplified formatting
+        std.fmt::format("{}-{}-{}T{}:{}:{}", std.collections.vector::Vector::new()) 
+    }
+}

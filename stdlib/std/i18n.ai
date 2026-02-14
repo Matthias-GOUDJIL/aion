@@ -1,0 +1,26 @@
+module std.i18n
+
+use std.string
+use std.collections.map
+
+pub struct Locale {
+    code: String, // "en-US", "fr-FR"
+}
+
+pub struct Catalog {
+    messages: HashMap<String>, // key -> translated_string
+}
+
+impl Catalog {
+    pub fn load(locale: Locale) -> Catalog {
+        // Load .po or .json file
+        Catalog { messages: HashMap::new() }
+    }
+
+    pub fn translate(self, key: String) -> String {
+        match self.messages.get(key) {
+            std.option::Option::Some(s) => s,
+            std.option::Option::None => key,
+        }
+    }
+}

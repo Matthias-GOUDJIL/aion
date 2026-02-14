@@ -1,0 +1,39 @@
+module std.telemetry
+
+use std.string
+use std.time
+use std.collections.map
+
+pub struct Span {
+    trace_id: String,
+    span_id: String,
+    name: String,
+    start_time: i64,
+    tags: HashMap<String>,
+}
+
+impl Span {
+    pub fn start(name: String) -> Span {
+        @intrinsic("telemetry_span_start", name)
+    }
+
+    pub fn end(self) {
+        @intrinsic("telemetry_span_end", self)
+    }
+
+    pub fn tag(mut self, key: String, value: String) {
+        self.tags.insert(key, value);
+    }
+}
+
+pub struct Metric {}
+
+impl Metric {
+    pub fn counter_inc(name: String, value: i64) {
+        @intrinsic("telemetry_metric_counter_inc", name, value)
+    }
+
+    pub fn gauge_set(name: String, value: f64) {
+        @intrinsic("telemetry_metric_gauge_set", name, value)
+    }
+}

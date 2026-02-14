@@ -1,0 +1,32 @@
+module std.json
+
+use std.string
+use std.collections.map
+use std.collections.vector
+use std.option
+
+pub enum Value {
+    Null,
+    Bool(bool),
+    Number(f64),
+    String(String),
+    Array(Vector<Value>),
+    Object(HashMap<Value>),
+}
+
+pub fn parse(json: String) -> Option<Value> {
+    // Placeholder for a parser implementation
+    // In reality, this would be a state machine or recursive descent parser
+    Option::None
+}
+
+pub fn stringify(value: Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => if b { "true".to_string() } else { "false".to_string() },
+        Value::Number(n) => std.string::from_float(n), // Need from_float in std.string
+        Value::String(s) => std.string::concat(""", std.string::concat(s, """)),
+        Value::Array(_) => "[...]".to_string(), // Simplified
+        Value::Object(_) => "{...}".to_string(), // Simplified
+    }
+}

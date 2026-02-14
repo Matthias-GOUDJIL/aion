@@ -1,0 +1,19 @@
+module std.result
+
+pub enum Result<T, E> {
+    Ok(T),
+    Err(E)
+}
+
+impl Result<T, E> {
+    pub fn is_ok(self) -> bool {
+        match self {
+            Result::Ok(_) => true,
+            Result::Err(_) => false,
+        }
+    }
+
+    pub fn is_err(self) -> bool {
+        !self.is_ok()
+    }
+}

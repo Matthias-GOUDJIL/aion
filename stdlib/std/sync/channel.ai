@@ -1,0 +1,39 @@
+module std.sync.channel
+
+use std.option
+use std.sync.mutex
+use std.collections.list
+
+// MPSC Channel
+pub struct Sender<T> {
+    queue: *std.collections.list::LinkedList<T>,
+    lock: *std.sync.mutex::Mutex<bool>,
+}
+
+pub struct Receiver<T> {
+    queue: *std.collections.list::LinkedList<T>,
+    lock: *std.sync.mutex::Mutex<bool>,
+}
+
+pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
+    // Placeholder implementation relying on shared memory managed manually
+    // In reality, this needs Arc<Mutex<Queue>>. 
+    // Creating a leaked/static structure for now to simulate persistence
+    let queue = std.collections.list::LinkedList::new();
+    // ... complex generic setup skipped for prototype simplicity
+    // returning dummy structs
+    (Sender { queue: 0 as *std.collections.list::LinkedList<T>, lock: 0 as *std.sync.mutex::Mutex<bool> }, 
+     Receiver { queue: 0 as *std.collections.list::LinkedList<T>, lock: 0 as *std.sync.mutex::Mutex<bool> })
+}
+
+impl Sender<T> {
+    pub fn send(self, val: T) {
+        @intrinsic("channel_send", self, val)
+    }
+}
+
+impl Receiver<T> {
+    pub fn recv(self) -> Option<T> {
+        @intrinsic("channel_recv", self)
+    }
+}

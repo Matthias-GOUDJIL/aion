@@ -1,0 +1,33 @@
+module std.hash
+
+pub interface Hashable {
+    fn hash(self) -> u64;
+}
+
+pub fn hash_string(s: String) -> u64 {
+    // FNV-1a 64-bit hash
+    let mut hash: u64 = 14695981039346656037;
+    let prime: u64 = 1099511628211;
+    
+    let len = @intrinsic("str_len", s);
+    let ptr = @intrinsic("str_ptr", s) as *u8;
+    
+    let mut i = 0;
+    while i < len {
+        unsafe {
+            let byte = *ptr.offset(i);
+            hash = hash ^ (byte as u64);
+            hash = hash * prime;
+        }
+        i = i + 1;
+    }
+    hash
+}
+
+pub fn hash_int(i: i64) -> u64 {
+    // Simple integer mixer
+    let mut x = i as u64;
+    x = (x ^ (x >> 30)) * 13787848793156543929; // bf58476d1ce4e5b9
+    x = (x ^ (x >> 27)) * 10723151780598845931; // 94d049bb133111eb
+    x ^ (x >> 31)
+}

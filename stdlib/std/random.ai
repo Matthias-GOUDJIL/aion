@@ -1,0 +1,31 @@
+module std.random
+
+pub struct Rng {
+    state: i64,
+}
+
+impl Rng {
+    pub fn new(seed: i64) -> Rng {
+        Rng { state: seed }
+    }
+
+    pub fn next_u64(mut self) -> i64 {
+        // Linear Congruential Generator (LCG) constants (Mixer/Murmur3-like)
+        self.state = self.state * 6364136223846793005 + 1;
+        self.state
+    }
+
+    pub fn range(mut self, min: i64, max: i64) -> i64 {
+        let r = self.next_u64();
+        let span = max - min;
+        if span == 0 { return min; }
+        // Absolute value for modulo
+        let val = if r < 0 { 0 - r } else { r };
+        min + (val % span)
+    }
+}
+
+pub fn random() -> i64 {
+    ::intent "Returns a random number using a global thread-local RNG"
+    @intrinsic("random_get")
+}

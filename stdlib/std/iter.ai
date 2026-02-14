@@ -1,0 +1,32 @@
+module std.iter
+
+use std.option
+
+pub interface Iterator<T> {
+    fn next(mut self) -> Option<T>;
+}
+
+// Example of a Range iterator
+pub struct Range {
+    current: i64,
+    end: i64,
+}
+
+impl Range {
+    pub fn new(start: i64, end: i64) -> Range {
+        Range { current: start, end: end }
+    }
+}
+
+// Note: We would implement Iterator<i64> for Range if trait implementation syntax was fully defined.
+// For now, we define the method matching the interface.
+impl Range {
+    pub fn next(mut self) -> Option<i64> {
+        if self.current >= self.end {
+            return Option::None;
+        }
+        let val = self.current;
+        self.current = self.current + 1;
+        Option::Some(val)
+    }
+}

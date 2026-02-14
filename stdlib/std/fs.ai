@@ -1,0 +1,15 @@
+module std.fs
+
+use std.result
+
+pub fn read_to_string(path: String) -> Result<String, String> {
+    ::intent "Reads the entire contents of a file into a string"
+    // Placeholder for intrinsic call
+    Result::Err("Not implemented".to_string())
+}
+
+pub fn write(path: String, content: String) -> Result<(), String> {
+    ::intent "Writes a string slice into a file"
+    // Placeholder for intrinsic call
+    Result::Err("Not implemented".to_string())
+}

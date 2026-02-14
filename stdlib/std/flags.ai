@@ -1,0 +1,39 @@
+module std.flags
+
+use std.string
+use std.collections.map
+use std.collections.vector
+use std.env
+
+pub struct FlagParser {
+    flags: HashMap<String>, // name -> description
+    values: HashMap<String>, // name -> value
+}
+
+impl FlagParser {
+    pub fn new() -> FlagParser {
+        FlagParser {
+            flags: HashMap::new(),
+            values: HashMap::new(),
+        }
+    }
+
+    pub fn string(mut self, name: String, default: String, usage: String) {
+        // Register flag
+        self.flags.insert(name, usage);
+        self.values.insert(name, default);
+    }
+
+    pub fn parse(mut self) {
+        let args = std.env::args();
+        // Placeholder parsing logic:
+        // Iterate args, look for --name, update values
+    }
+
+    pub fn get_string(self, name: String) -> String {
+        match self.values.get(name) {
+            std.option::Option::Some(v) => v,
+            std.option::Option::None => "",
+        }
+    }
+}

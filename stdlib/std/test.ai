@@ -1,0 +1,29 @@
+module std.test
+
+use std.string
+use std.io
+use std.fmt
+use std.os
+
+pub fn assert(condition: bool, message: String) {
+    if !condition {
+        std.io::println(std.string::concat("ASSERTION FAILED: ", message));
+        std.os::exit(1);
+    }
+}
+
+pub fn assert_eq(left: i64, right: i64, message: String) {
+    if left != right {
+        std.io::print("ASSERTION FAILED: ");
+        std.io::print(message);
+        std.io::print(" (Left: ");
+        std.io::print(std.string::from_int(left));
+        std.io::print(", Right: ");
+        std.io::print(std.string::from_int(right));
+        std.io::println(")");
+        std.os::exit(1);
+    }
+}
+
+// Note: In the future, this would use generics with PartialEq and Debug traits
+// pub fn assert_eq<T>(left: T, right: T) ...

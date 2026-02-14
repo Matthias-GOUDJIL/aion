@@ -18,7 +18,6 @@ use inkwell::{AddressSpace, IntPredicate};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::ast::*;
-use crate::token::Token;
 
 pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), String> {
     let source = fs::read_to_string(input_path).map_err(|e| e.to_string())?;
@@ -113,7 +112,7 @@ fn compile_block<'ctx>(
                 builder.position_at_end(merge_bb);
             },
             Statement::Match { condition, arms } => {
-                let cond_val = compile_expr_internal(condition, context, builder, module, variables, struct_types)?.into_int_value();
+                let _cond_val = compile_expr_internal(condition, context, builder, module, variables, struct_types)?.into_int_value();
                 let exit_bb = context.append_basic_block(function, "matchexit");
                 
                 let mut cases = Vec::new();

@@ -1,0 +1,38 @@
+module std.reflect
+
+use std.string
+use std.collections.vector
+use std.option
+
+pub enum TypeKind {
+    Integer,
+    Float,
+    Bool,
+    String,
+    Struct,
+    Enum,
+    Function,
+}
+
+pub struct FieldInfo {
+    name: String,
+    type_name: String,
+}
+
+pub struct TypeInfo {
+    name: String,
+    kind: TypeKind,
+    fields: Vector<FieldInfo>,
+}
+
+pub fn type_of<T>() -> TypeInfo {
+    @intrinsic("reflect_type_of", T)
+}
+
+pub fn type_name<T>() -> String {
+    @intrinsic("reflect_type_name", T)
+}
+
+pub fn has_field<T>(field_name: String) -> bool {
+    @intrinsic("reflect_has_field", T, field_name)
+}

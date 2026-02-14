@@ -1,0 +1,17 @@
+module std.fmt
+
+pub interface Display {
+    fn to_string(self) -> String;
+}
+
+pub interface Debug {
+    fn debug_fmt(self) -> String;
+}
+
+// Helper to format a string using placeholders (Simplified)
+pub fn format(template: String, args: Vector<String>) -> String {
+    // In a real implementation, this would scan 'template' for '{}'
+    // and replace them with values from 'args'.
+    // For now, it just returns the template.
+    template
+}

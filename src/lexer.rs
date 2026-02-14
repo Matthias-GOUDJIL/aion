@@ -26,6 +26,19 @@ impl<'a> Lexer<'a> {
                 ';' => Token::Semicolon,
                 '*' => Token::Star,
                 '+' => Token::Plus,
+                '/' => {
+                    if self.peek_char() == '/' {
+                        self.input.next();
+                        self.read_line_comment();
+                        self.next_token()
+                    } else if self.peek_char() == '*' {
+                        self.input.next();
+                        self.read_block_comment();
+                        self.next_token()
+                    } else {
+                        Token::Slash
+                    }
+                },
                 '?' => Token::Question,
                 '.' => {
                     if self.peek_char() == '.' { self.input.next(); Token::Range } 
@@ -81,7 +94,11 @@ impl<'a> Lexer<'a> {
                         "interface" => Token::Interface,
                         "impl" => Token::Impl,
                         "channel" => Token::Channel, // Nouveau
-                        "spawn" => Token::Identifier("spawn".to_string()),
+                        "for" => Token::For,
+                        "in" => Token::In,
+                        "type" => Token::Type,
+                        "self" => Token::SelfToken,
+                        "spawn" => Token::Spawn,
                         _ => Token::Identifier(ident),
                     }
                 }
@@ -89,6 +106,26 @@ impl<'a> Lexer<'a> {
                 _ => Token::Illegal(ch),
             },
             None => Token::EOF,
+        }
+    }
+
+    fn read_line_comment(&mut self) {
+        while let Some(&ch) = self.input.peek() {
+            if ch == '\n' { break; }
+            self.input.next();
+        }
+    }
+
+    fn read_block_comment(&mut self) {
+        while let Some(ch) = self.input.next() {
+            if ch == '*' {
+                if let Some(&next) = self.input.peek() {
+                    if next == '/' {
+                        self.input.next();
+                        break;
+                    }
+                }
+            }
         }
     }
 

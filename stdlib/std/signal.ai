@@ -1,0 +1,30 @@
+module std.signal
+
+pub enum Signal {
+    Hup,
+    Int,
+    Quit,
+    Ill,
+    Trap,
+    Abrt,
+    Bus,
+    Fpe,
+    Kill,
+    Usr1,
+    Segv,
+    Usr2,
+    Pipe,
+    Alrm,
+    Term,
+}
+
+// Callback type definition would go here (fn() -> void)
+
+pub fn handle(sig: Signal, handler: fn()) {
+    // Intrinsic to register signal handler
+    @intrinsic("signal_handle", sig, handler)
+}
+
+pub fn ignore(sig: Signal) {
+    @intrinsic("signal_ignore", sig)
+}

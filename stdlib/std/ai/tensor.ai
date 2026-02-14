@@ -1,0 +1,46 @@
+module std.ai.tensor
+
+use std.collections.vector
+use std.string
+
+pub struct Tensor {
+    data: Vector<f64>,
+    shape: Vector<i64>,
+    device: String, // "cpu", "gpu:0", "tpu"
+    requires_grad: bool,
+}
+
+impl Tensor {
+    pub fn zeros(shape: Vector<i64>) -> Tensor {
+        @intrinsic("ai_tensor_zeros", shape)
+    }
+
+    pub fn ones(shape: Vector<i64>) -> Tensor {
+        @intrinsic("ai_tensor_ones", shape)
+    }
+
+    pub fn rand(shape: Vector<i64>) -> Tensor {
+        @intrinsic("ai_tensor_rand", shape)
+    }
+
+    pub fn matmul(self, other: Tensor) -> Tensor {
+        // Le "dot product" natif, optimisé SIMD/CUDA via l'intrinsèque
+        @intrinsic("ai_tensor_matmul", self, other)
+    }
+
+    pub fn add(self, other: Tensor) -> Tensor {
+        @intrinsic("ai_tensor_add", self, other)
+    }
+
+    pub fn backward(self) {
+        ::intent "Computes the gradient of current tensor w.r.t. graph leaves"
+        if self.requires_grad {
+            @intrinsic("ai_tensor_backward", self)
+        }
+    }
+    
+    pub fn to(mut self, device: String) {
+        ::intent "Moves the tensor to the specified device (GPU/TPU)"
+        @intrinsic("ai_tensor_move", self, device)
+    }
+}

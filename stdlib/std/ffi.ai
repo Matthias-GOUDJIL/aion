@@ -1,0 +1,29 @@
+module std.ffi
+
+use std.string
+
+pub struct CString {
+    bytes: *u8,
+}
+
+impl CString {
+    pub fn new(s: String) -> CString {
+        @intrinsic("ffi_cstring_new", s)
+    }
+
+    pub fn as_ptr(self) -> *u8 {
+        self.bytes
+    }
+}
+
+pub struct CVoid {
+    // Opaque type
+}
+
+pub unsafe fn c_malloc(size: i64) -> *CVoid {
+    @intrinsic("libc.malloc", size)
+}
+
+pub unsafe fn c_free(ptr: *CVoid) {
+    @intrinsic("libc.free", ptr)
+}

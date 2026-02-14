@@ -1,0 +1,15 @@
+module std.compress.gzip
+
+use std.collections.vector
+use std.result
+use std.string
+
+pub fn compress(data: String) -> Vector<u8> {
+    // Intrinsic call to zlib/deflate
+    // Returning dummy vector
+    std.collections.vector::Vector::new()
+}
+
+pub fn decompress(data: Vector<u8>) -> Result<String, String> {
+    Result::Ok("".to_string())
+}

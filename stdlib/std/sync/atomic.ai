@@ -1,0 +1,49 @@
+module std.sync.atomic
+
+pub struct AtomicI64 {
+    value: i64, // Unsafe internal access
+}
+
+impl AtomicI64 {
+    pub fn new(val: i64) -> AtomicI64 {
+        AtomicI64 { value: val }
+    }
+
+    pub fn load(self) -> i64 {
+        @intrinsic("atomic_load", self.value)
+    }
+
+    pub fn store(mut self, val: i64) {
+        @intrinsic("atomic_store", self.value, val)
+    }
+
+    pub fn add(mut self, val: i64) -> i64 {
+        @intrinsic("atomic_add", self.value, val)
+    }
+
+    pub fn sub(mut self, val: i64) -> i64 {
+        @intrinsic("atomic_sub", self.value, val)
+    }
+
+    pub fn compare_exchange(mut self, current: i64, new_val: i64) -> bool {
+        @intrinsic("atomic_cmpxchg", self.value, current, new_val)
+    }
+}
+
+pub struct AtomicBool {
+    value: bool,
+}
+
+impl AtomicBool {
+    pub fn new(val: bool) -> AtomicBool {
+        AtomicBool { value: val }
+    }
+
+    pub fn load(self) -> bool {
+        @intrinsic("atomic_load_bool", self.value)
+    }
+
+    pub fn store(mut self, val: bool) {
+        @intrinsic("atomic_store_bool", self.value, val)
+    }
+}

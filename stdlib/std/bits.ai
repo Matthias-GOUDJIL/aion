@@ -1,0 +1,21 @@
+module std.bits
+
+pub fn popcount(x: i64) -> i64 {
+    @intrinsic("bits_popcount", x)
+}
+
+pub fn leading_zeros(x: i64) -> i64 {
+    @intrinsic("bits_clz", x)
+}
+
+pub fn trailing_zeros(x: i64) -> i64 {
+    @intrinsic("bits_ctz", x)
+}
+
+pub fn rotate_left(x: i64, n: i64) -> i64 {
+    (x << n) | (x >> (64 - n))
+}
+
+pub fn rotate_right(x: i64, n: i64) -> i64 {
+    (x >> n) | (x << (64 - n))
+}

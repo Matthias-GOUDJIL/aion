@@ -1,0 +1,28 @@
+module std.media.image
+
+use std.string
+use std.collections.vector
+use std.ai.tensor
+
+pub struct Image {
+    width: i64,
+    height: i64,
+    channels: i64, // 3 for RGB, 4 for RGBA
+    pixels: Vector<u8>,
+}
+
+impl Image {
+    pub fn load(path: String) -> Image {
+        // Intrinsic using stbi_load or similar lib
+        @intrinsic("media_image_load", path)
+    }
+
+    pub fn to_tensor(self) -> std.ai.tensor::Tensor {
+        // Converts raw bytes to normalized float tensor [C, H, W]
+        @intrinsic("media_image_to_tensor", self)
+    }
+
+    pub fn save(self, path: String) {
+        @intrinsic("media_image_save", self, path)
+    }
+}

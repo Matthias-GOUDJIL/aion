@@ -1,0 +1,40 @@
+module std.log
+
+use std.io
+use std.string
+
+pub enum Level {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+pub fn log(level: Level, msg: String) {
+    let prefix = match level {
+        Level::Debug => "[DEBUG] ",
+        Level::Info => "[INFO] ",
+        Level::Warn => "[WARN] ",
+        Level::Error => "[ERROR] ",
+    };
+    
+    // In a real implementation, we might write to stderr for Error/Warn
+    std.io::println(std.string::concat(prefix, msg));
+}
+
+pub fn info(msg: String) {
+    log(Level::Info, msg);
+}
+
+pub fn warn(msg: String) {
+    log(Level::Warn, msg);
+}
+
+pub fn error(msg: String) {
+    log(Level::Error, msg);
+}
+
+pub fn debug(msg: String) {
+    // In production, we might check a global log level config here
+    log(Level::Debug, msg);
+}

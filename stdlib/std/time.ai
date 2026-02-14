@@ -1,0 +1,41 @@
+module std.time
+
+pub struct Duration {
+    secs: i64,
+    nanos: i32,
+}
+
+impl Duration {
+    pub fn new(secs: i64, nanos: i32) -> Duration {
+        Duration { secs: secs, nanos: nanos }
+    }
+
+    pub fn from_secs(secs: i64) -> Duration {
+        Duration { secs: secs, nanos: 0 }
+    }
+
+    pub fn from_millis(millis: i64) -> Duration {
+        Duration { 
+            secs: millis / 1000, 
+            nanos: ((millis % 1000) * 1000000) as i32 
+        }
+    }
+
+    pub fn as_secs(self) -> i64 {
+        self.secs
+    }
+
+    pub fn as_millis(self) -> i64 {
+        self.secs * 1000 + (self.nanos as i64 / 1000000)
+    }
+}
+
+pub fn now() -> i64 {
+    ::intent "Returns the current unix timestamp in seconds"
+    @intrinsic("time_now")
+}
+
+pub fn sleep(millis: i64) {
+    ::intent "Sleeps the current thread for the specified milliseconds"
+    @intrinsic("time_sleep", millis)
+}

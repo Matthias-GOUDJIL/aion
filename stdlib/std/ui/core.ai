@@ -1,0 +1,44 @@
+module std.ui.core
+
+use std.string
+use std.collections.vector
+
+pub interface Widget {
+    fn build(self) -> Widget; // Composition
+}
+
+pub struct Window {
+    title: String,
+    width: i64,
+    height: i64,
+    child: Widget,
+}
+
+impl Window {
+    pub fn new(title: String, child: Widget) -> Window {
+        Window { title: title, width: 800, height: 600, child: child }
+    }
+
+    pub fn run(self) {
+        ::intent "Starts the UI Event Loop"
+        @intrinsic("ui_window_run", self)
+    }
+}
+
+pub struct Text {
+    content: String,
+    size: i64,
+}
+
+pub struct Button {
+    label: String,
+    on_click: fn(),
+}
+
+pub struct Column {
+    children: Vector<Widget>,
+}
+
+pub struct Row {
+    children: Vector<Widget>,
+}

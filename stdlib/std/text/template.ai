@@ -1,0 +1,21 @@
+module std.text.template
+
+use std.string
+use std.collections.map
+use std.json
+
+pub struct Template {
+    source: String,
+    // compiled AST
+}
+
+impl Template {
+    pub fn parse(source: String) -> Template {
+        Template { source: source }
+    }
+
+    pub fn execute(self, data: std.json::Value) -> String {
+        // Replace {{ variable }} with data
+        @intrinsic("text_template_exec", self.source, data)
+    }
+}

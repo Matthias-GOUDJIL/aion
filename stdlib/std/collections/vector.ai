@@ -1,0 +1,69 @@
+module std.collections.vector
+
+use core.memory
+use core.heap
+
+pub struct Vector<T> {
+    ptr: *T,
+    len: i64,
+    cap: i64,
+}
+
+impl Vector<T> {
+    pub fn new() -> Vector<T> {
+        Vector {
+            ptr: core.heap.null() as *T,
+            len: 0,
+            cap: 0,
+        }
+    }
+
+    pub fn push(mut self, value: T) {
+        if self.len == self.cap {
+            self.grow();
+        }
+        unsafe {
+            let offset_ptr = self.ptr.offset(self.len);
+            *offset_ptr = value;
+        }
+        self.len = self.len + 1;
+    }
+
+    pub fn pop(mut self) -> Option<T> {
+        if self.len == 0 {
+            return Option::None;
+        }
+        self.len = self.len - 1;
+        unsafe {
+            let offset_ptr = self.ptr.offset(self.len);
+            return Option::Some(*offset_ptr);
+        }
+    }
+
+    pub fn get(self, index: i64) -> Option<T> {
+        if index >= self.len {
+            return Option::None;
+        }
+        unsafe {
+            let offset_ptr = self.ptr.offset(index);
+            return Option::Some(*offset_ptr);
+        }
+    }
+
+    pub fn len(self) -> i64 {
+        return self.len;
+    }
+
+    fn grow(mut self) {
+        let new_cap = if self.cap == 0 { 4 } else { self.cap * 2 };
+        let byte_size = new_cap * @sizeof(T);
+        let new_ptr_u8 = if self.cap == 0 {
+            core.heap.alloc(byte_size)
+        } else {
+            core.heap.realloc(self.ptr as *u8, byte_size)
+        };
+        
+        self.ptr = new_ptr_u8 as *T;
+        self.cap = new_cap;
+    }
+}

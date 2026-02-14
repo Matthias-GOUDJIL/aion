@@ -1,0 +1,35 @@
+module std.char
+
+pub fn is_digit(c: char) -> bool {
+    let code = c as i64;
+    code >= 48 && code <= 57 // '0'..'9'
+}
+
+pub fn is_alphabetic(c: char) -> bool {
+    let code = c as i64;
+    (code >= 65 && code <= 90) || (code >= 97 && code <= 122) // 'A'..'Z' || 'a'..'z'
+}
+
+pub fn is_whitespace(c: char) -> bool {
+    let code = c as i64;
+    code == 32 || code == 9 || code == 10 || code == 13 // space, tab, 
+, 
+}
+
+pub fn to_uppercase(c: char) -> char {
+    let code = c as i64;
+    if code >= 97 && code <= 122 {
+        (code - 32) as char
+    } else {
+        c
+    }
+}
+
+pub fn to_lowercase(c: char) -> char {
+    let code = c as i64;
+    if code >= 65 && code <= 90 {
+        (code + 32) as char
+    } else {
+        c
+    }
+}

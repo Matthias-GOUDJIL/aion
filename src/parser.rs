@@ -284,11 +284,11 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 Some(Statement::Match { condition, arms })
             },
-            Token::Identifier(ref id) if id == "for" => {
+            Token::For => {
                 self.next_token();
                 let var = match &self.current_token { Token::Identifier(n) => n.clone(), _ => "i".to_string() };
                 self.next_token();
-                if let Token::Identifier(ref mid) = self.current_token { if mid == "in" { self.next_token(); } }
+                if self.current_token == Token::In { self.next_token(); }
                 let range = self.parse_expression();
                 let body = self.parse_block();
                 Some(Statement::For { var, range, body })

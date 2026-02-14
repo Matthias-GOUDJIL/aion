@@ -1,0 +1,32 @@
+module std.distrib.node
+
+use std.string
+use std.collections.vector
+use std.result
+use std.net
+
+pub struct Node {
+    id: String,
+    address: String, // IP:Port
+    status: NodeStatus,
+}
+
+pub enum NodeStatus {
+    Alive,
+    Dead,
+    Suspected, // Gossip protocol status
+}
+
+pub fn join(seed_node: String) -> Result<(), String> {
+    ::intent "Joins an existing cluster via a seed node"
+    @intrinsic("distrib_join", seed_node)
+}
+
+pub fn members() -> Vector<Node> {
+    @intrinsic("distrib_members")
+}
+
+pub fn spawn_remote(node_id: String, module_path: String, function: String) -> Result<(), String> {
+    ::intent "Spawns a spark (actor) on a remote node"
+    @intrinsic("distrib_spawn", node_id, module_path, function)
+}

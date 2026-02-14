@@ -1,0 +1,60 @@
+module std.net.http
+
+use std.collections.map
+use std.string
+use std.option
+use std.io
+
+pub enum Method {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Head,
+    Options,
+    Patch,
+}
+
+pub struct Header {
+    name: String,
+    value: String,
+}
+
+pub struct Request {
+    method: Method,
+    url: String,
+    headers: HashMap<String>,
+    body: Option<String>,
+}
+
+pub struct Response {
+    status_code: i32,
+    status_text: String,
+    headers: HashMap<String>,
+    body: Option<String>,
+}
+
+impl Response {
+    pub fn new(status: i32) -> Response {
+        Response {
+            status_code: status,
+            status_text: "OK".to_string(), // Should match status
+            headers: HashMap::new(),
+            body: Option::None,
+        }
+    }
+}
+
+// Simple Client
+pub struct Client {}
+
+impl Client {
+    pub fn new() -> Client {
+        Client {}
+    }
+
+    pub fn get(self, url: String) -> Response {
+        // Placeholder for socket connection, request building, response parsing
+        Response::new(200)
+    }
+}

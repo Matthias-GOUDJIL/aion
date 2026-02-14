@@ -1,0 +1,16 @@
+module std.encoding.hex
+
+use std.string
+use std.collections.vector
+
+pub fn encode(data: String) -> String {
+    // Placeholder: In real implementation, converts bytes to hex string
+    // e.g. "abc" -> "616263"
+    // Using intrinsic for efficiency or manual loop
+    @intrinsic("hex_encode", data)
+}
+
+pub fn decode(hex: String) -> String {
+    // Placeholder: Converts hex string back to bytes
+    @intrinsic("hex_decode", hex)
+}

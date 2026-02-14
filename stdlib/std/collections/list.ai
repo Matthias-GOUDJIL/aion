@@ -1,0 +1,53 @@
+module std.collections.list
+
+use core.memory
+use core.heap
+use std.option
+
+struct Node<T> {
+    value: T,
+    next: *Node<T>,
+}
+
+pub struct LinkedList<T> {
+    head: *Node<T>,
+    len: i64,
+}
+
+impl LinkedList<T> {
+    pub fn new() -> LinkedList<T> {
+        LinkedList {
+            head: core.heap.null() as *Node<T>,
+            len: 0,
+        }
+    }
+
+    pub fn push(mut self, value: T) {
+        unsafe {
+            let node_ptr = core.heap.alloc(@sizeof(Node<T>)) as *Node<T>;
+            (*node_ptr).value = value;
+            (*node_ptr).next = self.head;
+            self.head = node_ptr;
+        }
+        self.len = self.len + 1;
+    }
+
+    pub fn pop(mut self) -> Option<T> {
+        if self.head == (core.heap.null() as *Node<T>) {
+            return Option::None;
+        }
+        unsafe {
+            let node = *self.head;
+            let val = node.value;
+            let next = node.next;
+            core.heap.dealloc(self.head as *u8);
+            self.head = next;
+            self.len = self.len - 1;
+            Option::Some(val)
+        }
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.len == 0
+    }
+}

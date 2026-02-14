@@ -1,0 +1,31 @@
+module std.io.buf
+
+use std.io
+use std.string
+use std.collections.vector
+use std.option
+use std.result
+
+pub struct BufReader {
+    buffer: Vector<u8>,
+    pos: i64,
+    cap: i64,
+    // inner: Reader // Need traits for Reader/Writer
+}
+
+impl BufReader {
+    pub fn new() -> BufReader {
+        BufReader {
+            buffer: Vector::new(), // capacity 8192 usually
+            pos: 0,
+            cap: 0,
+        }
+    }
+
+    pub fn read_line(mut self) -> Result<String, String> {
+        // Buffering logic would go here
+        // For now wraps intrinsic
+        let s = std.io::read_line();
+        Result::Ok(s)
+    }
+}
