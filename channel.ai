@@ -1,0 +1,14 @@
+fn main() {
+    io.println("Main: Start")
+    
+    // Simulation syntaxique d'un canal
+    // let tx = channel<String>
+    // tx <- "Ping"
+    
+    spawn {
+        io.println("Spark: Working in parallel")
+    }
+    
+    io.println("Main: End")
+    return 0
+}

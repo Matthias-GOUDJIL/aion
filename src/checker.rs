@@ -41,13 +41,19 @@ impl TypeChecker {
             },
             Statement::For { var, range, body } => {
                 self.check_expression(range)?;
-                // Créer un scope pour la boucle
                 self.env.set(var.clone(), Type::Integer);
                 for s in body { self.check_statement(s)?; }
                 Ok(Type::Unit)
             },
             Statement::Spawn(body) => {
                 for s in body { self.check_statement(s)?; }
+                Ok(Type::Unit)
+            },
+            Statement::Match { condition, arms } => {
+                self.check_expression(condition)?;
+                for arm in arms {
+                    for s in &arm.body { self.check_statement(s)?; }
+                }
                 Ok(Type::Unit)
             },
         }

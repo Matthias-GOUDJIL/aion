@@ -17,11 +17,28 @@ pub struct Import {
 pub enum Declaration {
     Function(Function),
     Struct(Struct),
+    Enum(Enum),
+    Interface(Interface), // Nouveau
+    Impl(ImplBlock),      // Nouveau
+}
+
+#[derive(Debug, Clone)]
+pub struct Interface {
+    pub name: String,
+    pub methods: Vec<Function>, // Signatures des méthodes
+}
+
+#[derive(Debug, Clone)]
+pub struct ImplBlock {
+    pub target_name: String,
+    pub interface_name: Option<String>, // Optionnel : impl Interface for Target
+    pub functions: Vec<Function>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
+    pub generic_params: Vec<String>,
     pub params: Vec<(String, String)>,
     pub return_type: String,
     pub body: Option<Vec<Statement>>, 
@@ -32,8 +49,22 @@ pub struct Function {
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: String,
+    pub generic_params: Vec<String>,
     pub fields: Vec<(String, String)>,
     pub attributes: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Enum {
+    pub name: String,
+    pub generic_params: Vec<String>,
+    pub variants: Vec<EnumVariant>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EnumVariant {
+    pub name: String,
+    pub data_types: Vec<String>, 
 }
 
 #[derive(Debug, Clone)]
@@ -42,8 +73,15 @@ pub enum Statement {
     Return { value: Expression, intent: Option<String> },
     ExpressionStmt(Expression),
     If { condition: Expression, then_branch: Vec<Statement>, else_branch: Option<Vec<Statement>> },
-    For { var: String, range: Expression, body: Vec<Statement> }, // Ajout de For
-    Spawn(Vec<Statement>), 
+    For { var: String, range: Expression, body: Vec<Statement> },
+    Spawn(Vec<Statement>),
+    Match { condition: Expression, arms: Vec<MatchArm> },
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchArm {
+    pub pattern: String,
+    pub body: Vec<Statement>,
 }
 
 #[derive(Debug, Clone)]
@@ -55,6 +93,10 @@ pub enum Expression {
     Boolean(bool),
     Infix { left: Box<Expression>, operator: Token, right: Box<Expression> },
     Call { function: String, arguments: Vec<Expression> },
-    StructInst { name: String, fields: Vec<(String, Expression)> },
+    StructInst { 
+        name: String, 
+        generic_args: Vec<String>,
+        fields: Vec<(String, Expression)> 
+    },
     Range { start: Box<Expression>, end: Box<Expression> },
 }

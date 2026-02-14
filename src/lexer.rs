@@ -26,64 +26,36 @@ impl<'a> Lexer<'a> {
                 ';' => Token::Semicolon,
                 '*' => Token::Star,
                 '+' => Token::Plus,
+                '?' => Token::Question,
                 '.' => {
-                    if self.peek_char() == '.' {
-                        self.input.next();
-                        Token::Range
-                    } else {
-                        Token::Dot
-                    }
+                    if self.peek_char() == '.' { self.input.next(); Token::Range } 
+                    else { Token::Dot }
                 }
                 '-' => {
-                    if self.peek_char() == '>' {
-                        self.input.next();
-                        Token::Arrow
-                    } else {
-                        Token::Minus
-                    }
+                    if self.peek_char() == '>' { self.input.next(); Token::Arrow } 
+                    else { Token::Minus }
                 }
                 '=' => {
-                    if self.peek_char() == '=' {
-                        self.input.next();
-                        Token::EqEq
-                    } else if self.peek_char() == '>' {
-                        self.input.next();
-                        Token::Arrow
-                    } else {
-                        Token::Eq
-                    }
+                    if self.peek_char() == '=' { self.input.next(); Token::EqEq } 
+                    else if self.peek_char() == '>' { self.input.next(); Token::Arrow }
+                    else { Token::Eq }
                 }
                 '!' => {
-                    if self.peek_char() == '=' {
-                        self.input.next();
-                        Token::NotEq
-                    } else {
-                        Token::Illegal('!')
-                    }
+                    if self.peek_char() == '=' { self.input.next(); Token::NotEq } 
+                    else { Token::Illegal('!') }
                 }
                 '>' => {
-                    if self.peek_char() == '=' {
-                        self.input.next();
-                        Token::GtEq
-                    } else {
-                        Token::Gt
-                    }
+                    if self.peek_char() == '=' { self.input.next(); Token::GtEq } 
+                    else { Token::Gt }
                 }
                 '<' => {
-                    if self.peek_char() == '=' {
-                        self.input.next();
-                        Token::LtEq
-                    } else {
-                        Token::Lt
-                    }
+                    if self.peek_char() == '=' { self.input.next(); Token::LtEq } 
+                    else if self.peek_char() == '-' { self.input.next(); Token::LArrow } // Nouveau : <-
+                    else { Token::Lt }
                 }
                 ':' => {
-                    if self.peek_char() == ':' {
-                        self.input.next();
-                        Token::DoubleColon
-                    } else {
-                        Token::Colon
-                    }
+                    if self.peek_char() == ':' { self.input.next(); Token::DoubleColon } 
+                    else { Token::Colon }
                 }
                 '"' => self.read_string(),
                 c if c.is_alphabetic() || c == '_' => {
@@ -104,8 +76,12 @@ impl<'a> Lexer<'a> {
                         "unsafe" => Token::Unsafe,
                         "require" => Token::Require,
                         "intent" => Token::Intent,
+                        "invariant" => Token::Invariant, // Nouveau
                         "inside" => Token::Inside,
-                        "spawn" => Token::Identifier("spawn".to_string()), // Force spawn as identifier for parser
+                        "interface" => Token::Interface,
+                        "impl" => Token::Impl,
+                        "channel" => Token::Channel, // Nouveau
+                        "spawn" => Token::Identifier("spawn".to_string()),
                         _ => Token::Identifier(ident),
                     }
                 }
@@ -139,10 +115,7 @@ impl<'a> Lexer<'a> {
     fn read_string(&mut self) -> Token {
         let mut s = String::new();
         while let Some(&ch) = self.input.peek() {
-            if ch == '"' {
-                self.input.next();
-                break;
-            }
+            if ch == '"' { self.input.next(); break; }
             s.push(self.input.next().unwrap());
         }
         Token::StringLiteral(s)
@@ -155,9 +128,7 @@ impl<'a> Lexer<'a> {
             if ch == '.' {
                 let mut iter = self.input.clone();
                 iter.next();
-                if let Some(&next) = iter.peek() {
-                    if next == '.' { break; }
-                }
+                if let Some(&next) = iter.peek() { if next == '.' { break; } }
                 is_float = true;
                 num.push(self.input.next().unwrap());
             } else if ch.is_numeric() {
@@ -166,10 +137,7 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
-        if is_float {
-            Token::FloatLiteral(num.parse().unwrap_or(0.0))
-        } else {
-            Token::IntLiteral(num.parse().unwrap_or(0))
-        }
+        if is_float { Token::FloatLiteral(num.parse().unwrap_or(0.0)) } 
+        else { Token::IntLiteral(num.parse().unwrap_or(0)) }
     }
 }
