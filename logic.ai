@@ -1,0 +1,12 @@
+fn main() {
+    let age = 25
+    
+    ::intent "Check if age is within adult range"
+    if age inside 18..100 {
+        io.println("Access Granted: Adult")
+    } else {
+        io.println("Access Denied: Minor")
+    }
+    
+    return 0
+}

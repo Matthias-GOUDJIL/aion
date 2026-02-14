@@ -17,11 +17,12 @@ pub enum Token {
     // Symboles et Opérateurs
     Plus, Minus, Star, Slash, 
     Eq, EqEq, NotEq, Arrow, 
+    Gt, Lt, GtEq, LtEq, // >, <, >=, <=
     LParen, RParen, LBrace, RBrace, LBracket, RBracket, 
     Colon, Semicolon, Comma, Dot, 
     DoubleColon, 
     Range,       
-    At, // Pour les attributs @intrinsic, @packed, etc.
+    At,
 
     // Fin de fichier
     EOF,

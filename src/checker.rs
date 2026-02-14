@@ -31,7 +31,19 @@ impl TypeChecker {
             },
             Statement::Return { value, .. } => self.check_expression(value),
             Statement::ExpressionStmt(expr) => self.check_expression(expr),
-            _ => Ok(Type::Unit),
+            Statement::If { condition, then_branch, else_branch } => {
+                self.check_expression(condition)?;
+                for s in then_branch { self.check_statement(s)?; }
+                if let Some(eb) = else_branch {
+                    for s in eb { self.check_statement(s)?; }
+                }
+                Ok(Type::Unit)
+            },
+            Statement::Spawn(body) => {
+                // Spawn crée un nouveau scope, mais pour l'instant on partage l'env
+                for s in body { self.check_statement(s)?; }
+                Ok(Type::Unit)
+            },
         }
     }
 
@@ -39,6 +51,7 @@ impl TypeChecker {
         match expr {
             Expression::Integer(_) => Ok(Type::Integer),
             Expression::Float(_) => Ok(Type::Float),
+            Expression::Boolean(_) => Ok(Type::Boolean),
             Expression::String(_) => Ok(Type::String),
             Expression::Identifier(name) => {
                 self.env.get(name).ok_or(format!("Error: Variable '{}' not defined.", name))
@@ -46,15 +59,30 @@ impl TypeChecker {
             Expression::Infix { left, operator, right } => {
                 let t1 = self.check_expression(left)?;
                 let t2 = self.check_expression(right)?;
+                // Support pour 'inside' qui prend (Int, Range)
+                if *operator == Token::Inside {
+                    return Ok(Type::Boolean);
+                }
                 self.check_compatibility(t1, t2, operator)
-            }
-            _ => Ok(Type::Unknown),
+            },
+            Expression::Range { start, end } => {
+                let t1 = self.check_expression(start)?;
+                let t2 = self.check_expression(end)?;
+                if t1 == t2 { Ok(t1) } else { Err("Range types mismatch".to_string()) }
+            },
+            Expression::Call { .. } => Ok(Type::Unknown), // Simplifié pour le proto
+            Expression::StructInst { .. } => Ok(Type::Unknown),
         }
     }
 
     fn check_compatibility(&self, t1: Type, t2: Type, op: &Token) -> Result<Type, String> {
         match (t1, t2) {
-            (Type::Integer, Type::Integer) => Ok(Type::Integer),
+            (Type::Integer, Type::Integer) => {
+                match op {
+                    Token::EqEq | Token::NotEq | Token::Gt | Token::Lt => Ok(Type::Boolean),
+                    _ => Ok(Type::Integer)
+                }
+            },
             (Type::Float, Type::Float) => Ok(Type::Float),
             (Type::String, Type::String) if *op == Token::Plus => Ok(Type::String),
             (t1, t2) => Err(format!("Type Mismatch: Cannot use {:?} with {:?} and {:?}", t1, op, t2)),

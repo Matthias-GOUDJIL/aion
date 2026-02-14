@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use aionc::{compile_file, generate_docs};
 use std::fs;
 use std::process::Command;
+use std::path::Path;
 
 #[derive(Parser)]
 #[command(name = "aion")]
@@ -22,10 +23,28 @@ enum Commands {
         #[arg(short, default_value = "API.md")]
         output: String,
     },
-    /// Compile et exécute immédiatement (Interprétation JIT)
     Run {
         input: String,
     }
+}
+
+fn compile_runtime() -> String {
+    let runtime_src = "src/runtime.c";
+    let runtime_lib = "libruntime.so";
+    
+    if Path::new(runtime_src).exists() {
+        let status = Command::new("gcc")
+            .args(&["-shared", "-fPIC", "-o", runtime_lib, runtime_src, "-lpthread"])
+            .status();
+            
+        if let Ok(s) = status {
+            if s.success() {
+                return runtime_lib.to_string();
+            }
+        }
+        println!("⚠️ Warning: Failed to compile runtime. Concurrency might fail.");
+    }
+    String::new()
 }
 
 fn main() {
@@ -52,20 +71,31 @@ fn main() {
         }
         Commands::Run { input } => {
             println!("🚀 Running {}...", input);
+            
+            // 1. Compiler le runtime C (si nécessaire)
+            let runtime_lib = compile_runtime();
+            
+            // 2. Compiler le code Aion en IR
             let temp_ll = "temp.ll";
             if let Err(e) = compile_file(&input, temp_ll) {
                 println!("❌ Compilation Error: {}", e);
                 return;
             }
 
-            // Exécution via l'interpréteur LLVM (lli)
-            let status = Command::new("lli-15")
-                .arg(temp_ll)
-                .status();
+            // 3. Exécuter avec lli en chargeant le runtime
+            let mut cmd = Command::new("lli-15");
+            cmd.arg(temp_ll);
+            
+            if !runtime_lib.is_empty() {
+                // Charger la librairie dynamique contenant aion_spawn
+                cmd.arg("-load").arg(format!("./{}", runtime_lib));
+            }
+
+            let status = cmd.status();
             
             match status {
                 Ok(s) if s.success() => println!("\n✅ Execution finished."),
-                _ => println!("\n⚠️ Execution failed or lli-15 not found."),
+                _ => println!("\n⚠️ Execution failed."),
             }
             let _ = fs::remove_file(temp_ll);
         }

@@ -42,6 +42,7 @@ pub enum Statement {
     Return { value: Expression, intent: Option<String> },
     ExpressionStmt(Expression),
     If { condition: Expression, then_branch: Vec<Statement>, else_branch: Option<Vec<Statement>> },
+    Spawn(Vec<Statement>), // Le mot-clé pour la concurrence
 }
 
 #[derive(Debug, Clone)]
@@ -50,7 +51,9 @@ pub enum Expression {
     Float(f64),
     String(String),
     Identifier(String),
+    Boolean(bool),
     Infix { left: Box<Expression>, operator: Token, right: Box<Expression> },
     Call { function: String, arguments: Vec<Expression> },
     StructInst { name: String, fields: Vec<(String, Expression)> },
+    Range { start: Box<Expression>, end: Box<Expression> },
 }

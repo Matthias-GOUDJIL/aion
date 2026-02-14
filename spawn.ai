@@ -1,0 +1,10 @@
+fn main() {
+    io.println("Main Thread Start")
+    
+    spawn {
+        io.println("Spark Thread: I am alive!")
+    }
+    
+    io.println("Main Thread End")
+    return 0
+}

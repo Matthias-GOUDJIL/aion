@@ -48,7 +48,7 @@ impl<'a> Lexer<'a> {
                         Token::EqEq
                     } else if self.peek_char() == '>' {
                         self.input.next();
-                        Token::Arrow // On utilise Arrow pour => aussi pour simplifier
+                        Token::Arrow
                     } else {
                         Token::Eq
                     }
@@ -59,6 +59,22 @@ impl<'a> Lexer<'a> {
                         Token::NotEq
                     } else {
                         Token::Illegal('!')
+                    }
+                }
+                '>' => {
+                    if self.peek_char() == '=' {
+                        self.input.next();
+                        Token::GtEq
+                    } else {
+                        Token::Gt
+                    }
+                }
+                '<' => {
+                    if self.peek_char() == '=' {
+                        self.input.next();
+                        Token::LtEq
+                    } else {
+                        Token::Lt
                     }
                 }
                 ':' => {
@@ -89,6 +105,7 @@ impl<'a> Lexer<'a> {
                         "require" => Token::Require,
                         "intent" => Token::Intent,
                         "inside" => Token::Inside,
+                        "spawn" => Token::Identifier("spawn".to_string()), // Force spawn as identifier for parser
                         _ => Token::Identifier(ident),
                     }
                 }
@@ -136,7 +153,6 @@ impl<'a> Lexer<'a> {
         let mut is_float = false;
         while let Some(&ch) = self.input.peek() {
             if ch == '.' {
-                // Check for range ..
                 let mut iter = self.input.clone();
                 iter.next();
                 if let Some(&next) = iter.peek() {
