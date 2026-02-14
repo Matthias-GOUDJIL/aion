@@ -2,7 +2,6 @@ use clap::{Parser, Subcommand};
 use aionc::{compile_file, generate_docs};
 use std::fs;
 use std::process::Command;
-use std::path::Path;
 
 #[derive(Parser)]
 #[command(name = "aion")]
@@ -28,25 +27,6 @@ enum Commands {
     }
 }
 
-fn compile_runtime() -> String {
-    let runtime_src = "src/runtime.c";
-    let runtime_lib = "libruntime.so";
-    
-    if Path::new(runtime_src).exists() {
-        let status = Command::new("gcc")
-            .args(&["-shared", "-fPIC", "-o", runtime_lib, runtime_src, "-lpthread"])
-            .status();
-            
-        if let Ok(s) = status {
-            if s.success() {
-                return runtime_lib.to_string();
-            }
-        }
-        println!("⚠️ Warning: Failed to compile runtime. Concurrency might fail.");
-    }
-    String::new()
-}
-
 fn main() {
     let cli = Cli::parse();
 
@@ -70,34 +50,54 @@ fn main() {
             }
         }
         Commands::Run { input } => {
-            println!("🚀 Running {}...", input);
+            println!("🚀 Compiling and Running {}...", input);
             
-            // 1. Compiler le runtime C (si nécessaire)
-            let runtime_lib = compile_runtime();
-            
-            // 2. Compiler le code Aion en IR
-            let temp_ll = "temp.ll";
-            if let Err(e) = compile_file(&input, temp_ll) {
-                println!("❌ Compilation Error: {}", e);
+            let ir_file = "temp.ll";
+            let obj_file = "temp.o";
+            let bin_file = "./aion_app";
+
+            if let Err(e) = compile_file(&input, ir_file) {
+                println!("❌ Aion Compilation Error: {}", e);
                 return;
             }
 
-            // 3. Exécuter avec lli en chargeant le runtime
-            let mut cmd = Command::new("lli-15");
-            cmd.arg(temp_ll);
-            
-            if !runtime_lib.is_empty() {
-                // Charger la librairie dynamique contenant aion_spawn
-                cmd.arg("-load").arg(format!("./{}", runtime_lib));
+            // Correction: Ajout du modèle de relocation PIC pour compatibilité Linux moderne
+            let llc_status = Command::new("llc-15")
+                .args(&["-filetype=obj", "-relocation-model=pic", ir_file, "-o", obj_file])
+                .status();
+
+            if llc_status.is_err() || !llc_status.unwrap().success() {
+                println!("❌ LLVM Backend Error (llc failed)");
+                return;
             }
 
-            let status = cmd.status();
-            
-            match status {
-                Ok(s) if s.success() => println!("\n✅ Execution finished."),
-                _ => println!("\n⚠️ Execution failed."),
+            let gcc_status = Command::new("gcc")
+                .args(&[obj_file, "src/runtime.c", "-o", bin_file, "-lpthread"])
+                .status();
+
+            if gcc_status.is_err() || !gcc_status.unwrap().success() {
+                println!("❌ Linking Error (gcc failed)");
+                return;
             }
-            let _ = fs::remove_file(temp_ll);
+
+            println!("✨ Execution Output:");
+            println!("-------------------------------");
+            let output = Command::new(bin_file).output();
+            
+            match output {
+                Ok(out) => {
+                    print!("{}", String::from_utf8_lossy(&out.stdout));
+                    if !out.status.success() {
+                        println!("⚠️ Process exited with code: {}", out.status.code().unwrap_or(-1));
+                    }
+                },
+                Err(e) => println!("❌ Execution Error: {}", e),
+            }
+            println!("-------------------------------");
+
+            let _ = fs::remove_file(ir_file);
+            let _ = fs::remove_file(obj_file);
+            let _ = fs::remove_file(bin_file);
         }
     }
 }

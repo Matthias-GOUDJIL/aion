@@ -39,8 +39,14 @@ impl TypeChecker {
                 }
                 Ok(Type::Unit)
             },
+            Statement::For { var, range, body } => {
+                self.check_expression(range)?;
+                // Créer un scope pour la boucle
+                self.env.set(var.clone(), Type::Integer);
+                for s in body { self.check_statement(s)?; }
+                Ok(Type::Unit)
+            },
             Statement::Spawn(body) => {
-                // Spawn crée un nouveau scope, mais pour l'instant on partage l'env
                 for s in body { self.check_statement(s)?; }
                 Ok(Type::Unit)
             },
@@ -59,7 +65,6 @@ impl TypeChecker {
             Expression::Infix { left, operator, right } => {
                 let t1 = self.check_expression(left)?;
                 let t2 = self.check_expression(right)?;
-                // Support pour 'inside' qui prend (Int, Range)
                 if *operator == Token::Inside {
                     return Ok(Type::Boolean);
                 }
@@ -70,7 +75,7 @@ impl TypeChecker {
                 let t2 = self.check_expression(end)?;
                 if t1 == t2 { Ok(t1) } else { Err("Range types mismatch".to_string()) }
             },
-            Expression::Call { .. } => Ok(Type::Unknown), // Simplifié pour le proto
+            Expression::Call { .. } => Ok(Type::Unknown),
             Expression::StructInst { .. } => Ok(Type::Unknown),
         }
     }

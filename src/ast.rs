@@ -42,7 +42,8 @@ pub enum Statement {
     Return { value: Expression, intent: Option<String> },
     ExpressionStmt(Expression),
     If { condition: Expression, then_branch: Vec<Statement>, else_branch: Option<Vec<Statement>> },
-    Spawn(Vec<Statement>), // Le mot-clé pour la concurrence
+    For { var: String, range: Expression, body: Vec<Statement> }, // Ajout de For
+    Spawn(Vec<Statement>), 
 }
 
 #[derive(Debug, Clone)]

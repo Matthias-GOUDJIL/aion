@@ -167,21 +167,22 @@ impl<'a> Parser<'a> {
                 if self.current_token == Token::Else { self.next_token(); else_branch = Some(self.parse_block()); }
                 Some(Statement::If { condition, then_branch, else_branch })
             },
-            Token::Return => { // Double check for Return if needed, but handled above
+            // SUPPORT POUR FOR (LOOPS)
+            Token::Identifier(ref id) if id == "for" => {
                 self.next_token();
-                let value = self.parse_expression();
-                Some(Statement::Return { value, intent })
+                let var = match &self.current_token { Token::Identifier(n) => n.clone(), _ => "i".to_string() };
+                self.next_token();
+                if let Token::Identifier(ref mid) = self.current_token { if mid == "in" { self.next_token(); } }
+                let range = self.parse_expression();
+                let body = self.parse_block();
+                Some(Statement::For { var, range, body })
             },
-            // SUPPORT POUR SPAWN (CONCURRENCE)
             Token::Identifier(ref id) if id == "spawn" => {
                 self.next_token();
                 let body = self.parse_block();
                 Some(Statement::Spawn(body))
             },
-            _ => {
-                let expr = self.parse_expression();
-                Some(Statement::ExpressionStmt(expr))
-            },
+            _ => Some(Statement::ExpressionStmt(self.parse_expression())),
         }
     }
 
@@ -254,11 +255,7 @@ impl<'a> Parser<'a> {
                     Expression::Identifier(full_name)
                 }
             },
-            _ => { 
-                let err = format!("Unexpected token: {:?}", self.current_token);
-                self.next_token();
-                Expression::Identifier(err)
-            },
+            _ => { self.next_token(); Expression::Identifier("unknown".to_string()) },
         }
     }
 }

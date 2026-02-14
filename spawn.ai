@@ -1,10 +1,11 @@
+::intent "Test real concurrency with Sparks"
 fn main() {
-    io.println("Main Thread Start")
+    io.println("Main Thread: Starting...")
     
     spawn {
-        io.println("Spark Thread: I am alive!")
+        io.println("Spark Thread: Hello from the other side!")
     }
     
-    io.println("Main Thread End")
+    io.println("Main Thread: Continuing...")
     return 0
 }

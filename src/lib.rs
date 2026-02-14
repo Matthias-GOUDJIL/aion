@@ -115,6 +115,37 @@ fn compile_block<'ctx>(
 
                 builder.position_at_end(merge_bb);
             },
+            Statement::For { var, range, body } => {
+                if let Expression::Range { start, end } = range {
+                    let start_val = compile_expr_internal(start, context, builder, module, variables, struct_types)?.into_int_value();
+                    let end_val = compile_expr_internal(end, context, builder, module, variables, struct_types)?.into_int_value();
+                    
+                    let i64_type = context.i64_type();
+                    let alloca = builder.build_alloca(i64_type, var).map_err(|e| e.to_string())?;
+                    builder.build_store(alloca, start_val).map_err(|e| e.to_string())?;
+                    variables.insert(var.clone(), alloca);
+
+                    let loop_bb = context.append_basic_block(function, "loop");
+                    let after_bb = context.append_basic_block(function, "afterloop");
+
+                    builder.build_unconditional_branch(loop_bb).map_err(|e| e.to_string())?;
+                    builder.position_at_end(loop_bb);
+
+                    // Body
+                    compile_block(body, context, builder, module, variables, struct_types, function)?;
+
+                    // Increment
+                    let curr = builder.build_load(i64_type, alloca, "counter").map_err(|e| e.to_string())?.into_int_value();
+                    let next = builder.build_int_add(curr, i64_type.const_int(1, false), "next").map_err(|e| e.to_string())?;
+                    builder.build_store(alloca, next).map_err(|e| e.to_string())?;
+
+                    // Condition
+                    let cond = builder.build_int_compare(IntPredicate::SLT, next, end_val, "loopcond").map_err(|e| e.to_string())?;
+                    builder.build_conditional_branch(cond, loop_bb, after_bb).map_err(|e| e.to_string())?;
+
+                    builder.position_at_end(after_bb);
+                }
+            },
             Statement::Spawn(spark_body) => {
                 let spark_fn_type = context.void_type().fn_type(&[], false);
                 let spark_fn = module.add_function("aion_spark_handler", spark_fn_type, None);
