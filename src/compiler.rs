@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use inkwell::context::Context;
 use inkwell::builder::Builder;
 use inkwell::module::Module;
-use inkwell::values::{BasicValueEnum, PointerValue, FunctionValue, BasicValue};
-use inkwell::types::{StructType, BasicTypeEnum};
+use inkwell::values::{BasicValueEnum, PointerValue, FunctionValue, BasicValue, ValueKind};
+use inkwell::types::{StructType, BasicTypeEnum, BasicType};
 use inkwell::{AddressSpace, IntPredicate};
 use crate::ast::*;
 use crate::token::Token;
@@ -29,6 +29,19 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
+    fn aion_type_to_llvm(&self, type_name: &str) -> BasicTypeEnum<'ctx> {
+        match type_name {
+            "i64" => self.context.i64_type().into(),
+            "f64" => self.context.f64_type().into(),
+            "bool" => self.context.i64_type().into(),
+            "String" => self.context.ptr_type(AddressSpace::default()).into(),
+            "Date" => self.context.i64_type().into(),
+            "Duration" => self.context.i64_type().into(),
+            "void" => self.context.i64_type().into(),
+            _ => self.context.i64_type().into(),
+        }
+    }
+
     pub fn compile(&mut self, program: &Program) -> Result<(), String> {
         // 1. Run Type Checker (Safety Pass)
         let mut checker = TypeChecker::new();
@@ -36,7 +49,6 @@ impl<'ctx> Compiler<'ctx> {
             return Err(format!("Type/Safety Error: {}", e));
         }
 
-        let i64_type = self.context.i64_type();
         let f64_type = self.context.f64_type();
         let ptr_type = self.context.ptr_type(AddressSpace::default());
 
@@ -62,11 +74,12 @@ impl<'ctx> Compiler<'ctx> {
         for decl in &program.declarations {
             if let Declaration::Function(f) = decl {
                 let mut param_types = Vec::new();
-                for _ in &f.params {
-                    param_types.push(i64_type.into());
+                for (_, p_type) in &f.params {
+                    param_types.push(self.aion_type_to_llvm(p_type).into());
                 }
                 
-                let fn_type = i64_type.fn_type(&param_types, false);
+                let ret_type = self.aion_type_to_llvm(&f.return_type);
+                let fn_type = ret_type.fn_type(&param_types, false);
                 let function = self.module.add_function(&f.name, fn_type, None);
 
                 for (i, arg) in function.get_param_iter().enumerate() {
@@ -80,15 +93,16 @@ impl<'ctx> Compiler<'ctx> {
                     let mut local_vars = HashMap::new(); 
                     for (i, arg) in function.get_param_iter().enumerate() {
                         let arg_name = &f.params[i].0;
-                        let alloca = self.builder.build_alloca(i64_type, arg_name).unwrap();
+                        let arg_type = arg.get_type();
+                        let alloca = self.builder.build_alloca(arg_type, arg_name).unwrap();
                         self.builder.build_store(alloca, arg).unwrap();
-                        local_vars.insert(arg_name.clone(), (alloca, i64_type.into()));
+                        local_vars.insert(arg_name.clone(), (alloca, arg_type));
                     }
 
                     self.compile_block(body, &mut local_vars, function)?;
                     
                     if basic_block.get_terminator().is_none() {
-                        self.builder.build_return(Some(&i64_type.const_int(0, false))).unwrap();
+                        self.builder.build_return(Some(&ret_type.const_zero())).unwrap();
                     }
                 }
             }
@@ -209,57 +223,75 @@ impl<'ctx> Compiler<'ctx> {
                     }
                     let call = self.builder.build_call(fn_val, &compiled_args, "calltmp").unwrap();
                     match call.try_as_basic_value() {
-                        inkwell::values::ValueKind::Basic(val) => Ok(val),
-                        inkwell::values::ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
+                        ValueKind::Basic(val) => Ok(val),
+                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
                     }
                 }
             },
             Expression::Infix { left, operator, right } => {
-                let lhs = self.compile_expr(left, variables, function)?.into_int_value();
-                let rhs = self.compile_expr(right, variables, function)?.into_int_value();
+                let lhs = self.compile_expr(left, variables, function)?;
+                let rhs = self.compile_expr(right, variables, function)?;
                 
-                match operator {
-                    Token::Plus => Ok(self.builder.build_int_add(lhs, rhs, "addtmp").unwrap().into()),
-                    Token::Minus => Ok(self.builder.build_int_sub(lhs, rhs, "subtmp").unwrap().into()),
-                    Token::Star => Ok(self.builder.build_int_mul(lhs, rhs, "multmp").unwrap().into()),
-                    Token::Slash => Ok(self.builder.build_int_signed_div(lhs, rhs, "divtmp").unwrap().into()),
-                    Token::Percent => Ok(self.builder.build_int_signed_rem(lhs, rhs, "remtmp").unwrap().into()),
-                    
-                    Token::And => Ok(self.builder.build_and(lhs, rhs, "andtmp").unwrap().into()),
-                    Token::Or => Ok(self.builder.build_or(lhs, rhs, "ortmp").unwrap().into()),
-                    Token::Bang => {
-                        Ok(self.builder.build_xor(rhs, i64_type.const_int(1, false), "nottmp").unwrap().into())
-                    },
-                    
-                    Token::EqEq => {
-                        let res = self.builder.build_int_compare(IntPredicate::EQ, lhs, rhs, "eqtmp").unwrap();
-                        Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
-                    },
-                    Token::NotEq => {
-                        let res = self.builder.build_int_compare(IntPredicate::NE, lhs, rhs, "netmp").unwrap();
-                        Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
-                    },
-                    Token::Gt => {
-                        let res = self.builder.build_int_compare(IntPredicate::SGT, lhs, rhs, "gttmp").unwrap();
-                        Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
-                    },
-                    Token::Lt => {
-                        let res = self.builder.build_int_compare(IntPredicate::SLT, lhs, rhs, "lttmp").unwrap();
-                        Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
-                    },
-                    Token::GtEq => {
-                        let res = self.builder.build_int_compare(IntPredicate::SGE, lhs, rhs, "getmp").unwrap();
-                        Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
-                    },
-                    Token::LtEq => {
-                        let res = self.builder.build_int_compare(IntPredicate::SLE, lhs, rhs, "letmp").unwrap();
-                        Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
-                    },
-                    
-                    Token::Caret => {
-                        Ok(self.builder.build_int_mul(lhs, rhs, "pow_hack").unwrap().into())
-                    },
-                    _ => Err(format!("Operator {:?} not supported", operator)),
+                if lhs.is_int_value() && rhs.is_int_value() {
+                    let l = lhs.into_int_value();
+                    let r = rhs.into_int_value();
+                    match operator {
+                        Token::Plus => Ok(self.builder.build_int_add(l, r, "addtmp").unwrap().into()),
+                        Token::Minus => Ok(self.builder.build_int_sub(l, r, "subtmp").unwrap().into()),
+                        Token::Star => Ok(self.builder.build_int_mul(l, r, "multmp").unwrap().into()),
+                        Token::Slash => Ok(self.builder.build_int_signed_div(l, r, "divtmp").unwrap().into()),
+                        Token::Percent => Ok(self.builder.build_int_signed_rem(l, r, "remtmp").unwrap().into()),
+                        
+                        Token::And => Ok(self.builder.build_and(l, r, "andtmp").unwrap().into()),
+                        Token::Or => Ok(self.builder.build_or(l, r, "ortmp").unwrap().into()),
+                        Token::Bang => Ok(self.builder.build_xor(r, i64_type.const_int(1, false), "nottmp").unwrap().into()),
+                        
+                        Token::EqEq => {
+                            let res = self.builder.build_int_compare(IntPredicate::EQ, l, r, "eqtmp").unwrap();
+                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                        },
+                        Token::NotEq => {
+                            let res = self.builder.build_int_compare(IntPredicate::NE, l, r, "netmp").unwrap();
+                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                        },
+                        Token::Gt => {
+                            let res = self.builder.build_int_compare(IntPredicate::SGT, l, r, "gttmp").unwrap();
+                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                        },
+                        Token::Lt => {
+                            let res = self.builder.build_int_compare(IntPredicate::SLT, l, r, "lttmp").unwrap();
+                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                        },
+                        Token::GtEq => {
+                            let res = self.builder.build_int_compare(IntPredicate::SGE, l, r, "getmp").unwrap();
+                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                        },
+                        Token::LtEq => {
+                            let res = self.builder.build_int_compare(IntPredicate::SLE, l, r, "letmp").unwrap();
+                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                        },
+                        _ => Err(format!("Integer operator {:?} not supported", operator)),
+                    }
+                } else if lhs.is_float_value() && rhs.is_float_value() {
+                    let l = lhs.into_float_value();
+                    let r = rhs.into_float_value();
+                    match operator {
+                        Token::Plus => Ok(self.builder.build_float_add(l, r, "faddtmp").unwrap().into()),
+                        Token::Minus => Ok(self.builder.build_float_sub(l, r, "fsubtmp").unwrap().into()),
+                        Token::Star => Ok(self.builder.build_float_mul(l, r, "fmultmp").unwrap().into()),
+                        Token::Slash => Ok(self.builder.build_float_div(l, r, "fdivtmp").unwrap().into()),
+                        Token::Caret => {
+                            let pow = self.module.get_function("pow").unwrap();
+                            let res = self.builder.build_call(pow, &[l.into(), r.into()], "powtmp").unwrap();
+                            match res.try_as_basic_value() {
+                                ValueKind::Basic(val) => Ok(val),
+                                ValueKind::Instruction(_) => Err("pow must return a value".to_string()),
+                            }
+                        },
+                        _ => Err(format!("Float operator {:?} not supported", operator)),
+                    }
+                } else {
+                    Err(format!("Mismatched types for operator {:?}", operator))
                 }
             },
             Expression::Block { statements, .. } => {
