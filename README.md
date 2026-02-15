@@ -1,17 +1,16 @@
-# Aion Language v0.1 - The Universal Nexus
+# Aion Language v0.5 - The Universal Nexus (Phase 1.5)
 
-Aion est un langage de programmation universel conçu pour l'ère de l'IA. Il combine la performance brute du C++/Rust avec la fluidité de Python, tout en intégrant l'IA au cœur de sa syntaxe.
+Aion est un langage de programmation universel conçu pour l'ère de l'IA. Il combine la performance brute du C++/Inkwell avec la fluidité de Python, tout en intégrant l'IA au cœur de sa syntaxe.
 
-## 🚀 Capacités Actuelles (v0.1)
+## 🚀 Capacités Actuelles (v0.5)
 
-- **Compilation Native** : Génération de code LLVM IR ultra-performant.
-- **AI-Native Syntax** : Les blocs `::intent` sont des nœuds de l'AST, permettant une compréhension mutuelle Homme-IA.
-- **Sécurité Statique** : Type Checker intégré empêchant les opérations illégales (ex: `int + string`).
-- **Gestion Mémoire** : Modèle "Smart Ownership" sans Garbage Collector (Zero-Overhead).
-- **StdLib Modulaire** :
-  - `aion.core` : Manipulation mémoire bas niveau (malloc/memcpy).
-  - `aion.std` : Réseau (TCP/HTTP) et Entrées/Sorties.
-  - `aion.web` : Manipulation du DOM pour WebAssembly.
+- **Compilation Native** : Génération de code LLVM IR via Inkwell (Rust).
+- **Temporal First-Class** : Support natif des types `Duration` (ex: `5s`) et `Date` (ex: `D2024-01-01`).
+- **Arithmétique de Dates** : `Date + Duration` géré nativement par le Type Checker.
+- **AI-Native Syntax** : Les blocs `::intent` sont des nœuds de l'AST.
+- **Isolation Docker** : Compilateur isolé avec gestion intelligente des signaux et fichiers temporaires uniques.
+- **Architecture Modulaire** : Logique de génération de code isolée dans `src/compiler.rs` pour faciliter l'ajout de nouveaux backends.
+- **Transpilation SQL** : Support initial pour transformer la logique Aion en SQL (Phase 1.5).
 
 ## 🛠 Installation
 

@@ -45,9 +45,11 @@ To support Elo's ISO8601 strings, the standard library will provide:
 io.println(Duration("P1DT2H")) // Parses string at runtime
 ```
 
-## 4. Implementation Plan
-1.  **Lexer**: Recognize suffixes `s`, `ms`, `us`, `ns`, `m`, `h`.
-2.  **AST**: Add `Expression::Duration(u64, u32)`.
-3.  **Codegen**:
-    *   Store as `{i64, i32}` struct in LLVM.
-    *   Implement arithmetic intrinsics.
+## 4. Implementation Status
+- [x] **Lexer**: Recognize suffixes `s`, `ms`, `us`, `ns`, `m`, `h` and `DYYYY-MM-DD`.
+- [x] **AST**: Add `Expression::Duration(u64, u32)` and `Expression::Date(i64)`.
+- [x] **Type Checker**: Support for `Date + Duration` arithmetic.
+- [x] **Codegen**:
+    *   `Duration` stored as milliseconds in `i64`.
+    *   `Date` stored as millisecond timestamp in `i64`.
+    *   Arithmetic intrinsics implemented in `src/lib.rs`.

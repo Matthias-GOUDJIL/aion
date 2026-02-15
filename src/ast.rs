@@ -76,6 +76,7 @@ pub enum Statement {
     For { var: String, range: Expression, body: Vec<Statement> },
     Spawn(Vec<Statement>),
     Match { condition: Expression, arms: Vec<MatchArm> },
+    UnsafeBlock(Vec<Statement>),
 }
 
 #[derive(Debug, Clone)]
@@ -101,4 +102,5 @@ pub enum Expression {
         fields: Vec<(String, Expression)> 
     },
     Range { start: Box<Expression>, end: Box<Expression> },
+    Block { statements: Vec<Statement>, is_unsafe: bool },
 }

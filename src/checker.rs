@@ -5,18 +5,20 @@ use crate::token::Token;
 
 pub struct TypeChecker {
     pub env: Environment,
+    in_unsafe_context: bool,
 }
 
 impl TypeChecker {
     pub fn new() -> Self {
-        Self { env: Environment::new() }
+        Self { env: Environment::new(), in_unsafe_context: false }
     }
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), String> {
-        // First pass: register functions
+        // First pass: register functions and their safety status
         for decl in &program.declarations {
             if let Declaration::Function(f) = decl {
-                self.env.set(f.name.clone(), Type::Function { is_unsafe: false });
+                let is_unsafe = f.modifiers.contains(&Token::Unsafe);
+                self.env.set(f.name.clone(), Type::Function { is_unsafe });
             }
         }
 
@@ -26,6 +28,12 @@ impl TypeChecker {
                 // Create a new scope for the function
                 let outer_env = self.env.clone();
                 self.env = Environment::new_enclosed(outer_env.clone());
+                
+                // Track if the function itself is unsafe
+                let was_in_unsafe = self.in_unsafe_context;
+                if f.modifiers.contains(&Token::Unsafe) {
+                    self.in_unsafe_context = true;
+                }
                 
                 // Add parameters to scope
                 for (param_name, _) in &f.params {
@@ -38,7 +46,8 @@ impl TypeChecker {
                     }
                 }
                 
-                // Restore outer scope
+                // Restore state
+                self.in_unsafe_context = was_in_unsafe;
                 self.env = outer_env;
             }
         }
@@ -62,6 +71,15 @@ impl TypeChecker {
                 }
                 Ok(Type::Unit)
             },
+            Statement::UnsafeBlock(body) => {
+                let was_in_unsafe = self.in_unsafe_context;
+                self.in_unsafe_context = true;
+                for s in body {
+                    self.check_statement(s)?;
+                }
+                self.in_unsafe_context = was_in_unsafe;
+                Ok(Type::Unit)
+            }
             _ => Ok(Type::Unit),
         }
     }
@@ -79,6 +97,14 @@ impl TypeChecker {
             },
             Expression::Call { function, arguments } => {
                 if function == "io.println" { return Ok(Type::Unit); }
+                
+                let func_type = self.env.get(function).ok_or(format!("Error: Function '{}' not defined.", function))?;
+                if let Type::Function { is_unsafe } = func_type {
+                    if is_unsafe && !self.in_unsafe_context {
+                        return Err(format!("Security Error: Call to unsafe function '{}' requires an unsafe block.", function));
+                    }
+                }
+
                 for arg in arguments { self.check_expression(arg)?; }
                 Ok(Type::Unknown) 
             },
@@ -86,6 +112,18 @@ impl TypeChecker {
                 let t1 = self.check_expression(left)?;
                 let t2 = self.check_expression(right)?;
                 self.check_compatibility(t1, t2, operator)
+            },
+            Expression::Block { statements, is_unsafe } => {
+                let was_in_unsafe = self.in_unsafe_context;
+                if *is_unsafe { self.in_unsafe_context = true; }
+                
+                let mut last_type = Type::Unit;
+                for stmt in statements {
+                    last_type = self.check_statement(stmt)?;
+                }
+                
+                self.in_unsafe_context = was_in_unsafe;
+                Ok(last_type)
             },
             _ => Ok(Type::Unknown),
         }

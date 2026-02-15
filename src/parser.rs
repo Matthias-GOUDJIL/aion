@@ -311,6 +311,14 @@ impl<'a> Parser<'a> {
                 }
                 Some(Statement::If { condition, then_branch, else_branch })
             },
+            Token::Unsafe => {
+                self.next_token();
+                if self.current_token == Token::LBrace {
+                    Some(Statement::UnsafeBlock(self.parse_block()))
+                } else {
+                    None // Handled by parse_declaration if it's a function
+                }
+            },
             _ => Some(Statement::ExpressionStmt(self.parse_expression())),
         }
     }
@@ -384,6 +392,14 @@ impl<'a> Parser<'a> {
             Token::FString(s) => { self.next_token(); self.parse_fstring(s) },
             Token::DurationLiteral(s, n) => { self.next_token(); Expression::Duration(s, n) },
             Token::DateLiteral(ts) => { self.next_token(); Expression::Date(ts) },
+            Token::Unsafe => {
+                self.next_token();
+                if self.current_token == Token::LBrace {
+                    Expression::Block { statements: self.parse_block(), is_unsafe: true }
+                } else {
+                    Expression::Identifier("invalid_unsafe_usage".to_string())
+                }
+            },
             Token::Identifier(n) => {
                 let mut full_name = n;
                 self.next_token();

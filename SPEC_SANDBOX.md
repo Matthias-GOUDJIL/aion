@@ -33,6 +33,10 @@ The compiler enforces isolation rules based on the build profile:
     *   Cannot import modules marked `@system`.
     *   Cannot call non-whitelisted external functions.
 
-## 5. Implementation (v0.5)
-We will implement a **Safety Checker** pass that runs before codegen.
-It verifies that no unsafe operations occur outside of `unsafe` blocks.
+## 5. Implementation Status
+- [x] **Lexer/Parser**: Support for `unsafe` keyword and `unsafe { ... }` blocks.
+- [x] **AST**: `Statement::UnsafeBlock` and `Expression::Block` (with `is_unsafe` flag).
+- [x] **Type Checker**: Rigorous safety pass that:
+    -   Tracks safety context (`in_unsafe_context`).
+    -   Flags an error if an `unsafe fn` is called outside an `unsafe` block or an `unsafe fn`.
+- [x] **Codegen**: Transparent execution of `unsafe` blocks in LLVM.

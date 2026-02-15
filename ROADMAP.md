@@ -8,9 +8,9 @@ Ce document trace la route technique pour transformer Aion, actuellement un prot
 *Objectif : Rendre Aion capable d'écrire des programmes complexes et manipulateurs de données.*
 
 ### **v0.4 : Le Système de Types Avancé**
-- [ ] **Enums & Pattern Matching** : Indispensable pour la logique du compilateur (`match token { ... }`).
+- [ ] **Enums & Pattern Matching** : Indispensable pour la logique du compilateur (AST prêt, Codegen partiel).
 - [ ] **Generics** : Introduction de `Type<T>` pour les structures de données réutilisables.
-- [ ] **Strings de Première Classe** : Passage du simple pointeur `*u8` à une structure `String` robuste.
+- [x] **Strings de Première Classe** : Support initial avec typage correct dans LLVM.
 
 ### **v0.5 : La Standard Library Étendue**
 - [ ] **`std.fs`** : Capacités de lecture/écriture de fichiers.
@@ -26,18 +26,18 @@ Ce document trace la route technique pour transformer Aion, actuellement un prot
 ## 💎 Phase 1.5 : L'Héritage d'Elo (v0.5 - v0.6)
 *Objectif : Intégrer les primitives de données et la sécurité éprouvées par Elo.*
 
-1.  **Gestion Temporelle Native (Time & Duration)**
-    *   Primitives de première classe : `Duration` (ex: `5s`, `10ms`), `DateTime`, `Interval`.
+1.  **Gestion Temporelle Native (Time & Duration)** [TERMINÉ]
+    *   Primitives de première classe : `Duration` (ex: `5s`, `10ms`), `Date` (ex: `D2024-01-01`).
     *   Indispensable pour le scheduling et les logs dans Shyrka OS.
-2.  **Pipeline Operator (`|>`)**
+2.  **Pipeline Operator (`|>`)** [TERMINÉ]
     *   Syntaxe fluide pour le traitement de données (ex: `data |> filter |> map`).
     *   Améliore la lisibilité des algorithmes d'IA et de transformation.
-3.  **Backend SQL & Interopérabilité**
+3.  **Backend SQL & Interopérabilité** [EN COURS]
     *   Capacité de compiler des sous-ensembles d'Aion vers du SQL pur.
-    *   Permet de projeter la logique métier directement dans la base de données (Zero-Latency).
-4.  **Sandboxing de Données (Safe-Mode)**
-    *   Mode d'exécution contraint pour les scripts utilisateur (User-Land).
-    *   Garantit qu'aucun script ne peut corrompre la mémoire du noyau (inspiré du modèle `_` d'Elo).
+    *   Support des blocs IF et des expressions complexes (Phase 1.5).
+4.  **Sandboxing de Données (Safe-Mode)** [TERMINÉ]
+    *   Mot-clé `unsafe` reconnu dans le Lexer/Parser.
+    *   Vérification de sécurité stricte dans le TypeChecker : les appels aux fonctions `unsafe` sont bloqués hors des blocs `unsafe { ... }`.
 
 ---
 
@@ -64,10 +64,10 @@ Ce document trace la route technique pour transformer Aion, actuellement un prot
 
 ---
 
-## 📊 État Actuel : v0.3
-- [x] Lexer / Parser EBNF v0.1.
-- [x] Type Checker (Safety).
-- [x] CodeGen LLVM (Native).
+## 📊 État Actuel : v0.5 (Phase 1.5)
+- [x] Lexer / Parser EBNF v0.5.
+- [x] Type Checker (Safety & Temporal & Security Enforcement).
+- [x] CodeGen LLVM (Native & Dynamic Strings & Function Returns).
 - [x] Support des `struct`.
 - [x] Concurrence native (Sparks/Spawn).
 - [x] Documentation IA automatique.

@@ -71,6 +71,30 @@ $$ LANGUAGE plpgsql;
                 self.buffer.push_str(";
 ");
             },
+            Statement::If { condition, then_branch, else_branch } => {
+                self.buffer.push_str("    IF ");
+                self.transpile_expression(condition);
+                self.buffer.push_str(" THEN
+");
+                for s in then_branch {
+                    self.transpile_statement(s);
+                }
+                if let Some(eb) = else_branch {
+                    self.buffer.push_str("    ELSE
+");
+                    for s in eb {
+                        self.transpile_statement(s);
+                    }
+                }
+                self.buffer.push_str("    END IF;
+");
+            },
+            Statement::ExpressionStmt(expr) => {
+                self.buffer.push_str("    PERFORM ");
+                self.transpile_expression(expr);
+                self.buffer.push_str(";
+");
+            },
             _ => self.buffer.push_str("    -- Unsupported statement
 "),
         }

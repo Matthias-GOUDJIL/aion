@@ -1,0 +1,23 @@
+fn double(x: i64) -> i64 {
+    return x * 2
+}
+
+fn add_five(x: i64) -> i64 {
+    return x + 5
+}
+
+fn square(x: i64) -> i64 {
+    return x * x
+}
+
+fn main() {
+    let val = 2
+    let result = val |> double() |> add_five() |> square()
+    
+    // (2 * 2 + 5)^2 = 9^2 = 81
+    if result == 81 {
+        io.println("Complex pipeline successful\n")
+    }
+    
+    return result
+}

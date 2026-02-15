@@ -18,7 +18,12 @@
 
 ## Debugging Compiler Segfaults
 1.  **LLVM IR Inspection**: Run `./aion build file.ai` and check `output.ll`. Look for `undef`, `null`, or misaligned pointers.
-2.  **GDB/LLDB**: Run `gdb --args ./aion build file.ai`.
+2.  **LLVM-Auditor Protocol**:
+    -   Check `printf` calls: ensure arguments are `ptr` for strings and match the format string.
+    -   Verify `alloca` types match `store` types.
+    -   Check for missing terminators (`ret`, `br`) in basic blocks.
+    -   Validate using `opt-15 -verify output.ll`.
+3.  **GDB/LLDB**: Run `gdb --args ./aion build file.ai`.
 3.  **AddressSanitizer**: Recompile Aion with `RUSTFLAGS="-Z sanitizer=address" cargo build` (requires nightly) to find use-after-free.
 
 ## Writing AI-Native Standard Library
