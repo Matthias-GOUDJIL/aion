@@ -1,0 +1,18 @@
+fn main() {
+    let path = "test_file.txt"
+    let content = "Aion is writing to a file!
+"
+    
+    // Write
+    unsafe {
+        aion_write_file(path, content)
+    }
+    
+    // Read back
+    let read_content = unsafe {
+        aion_read_file(path)
+    }
+    
+    io.println(read_content)
+    return 0
+}

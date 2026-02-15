@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <string.h>
 
 void* spark_entry_point(void* func_ptr) {
     void (*aion_func)() = (void (*)(void))func_ptr;
@@ -16,4 +17,32 @@ void aion_spawn(void (*func)(void)) {
         return;
     }
     pthread_detach(thread);
+}
+
+char* aion_read_file(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    char* string = malloc(fsize + 1);
+    fread(string, fsize, 1, f);
+    fclose(f);
+
+    string[fsize] = 0;
+    return string;
+}
+
+int aion_write_file(const char* path, const char* content) {
+    FILE* f = fopen(path, "wb");
+    if (!f) return -1;
+    size_t written = fwrite(content, 1, strlen(content), f);
+    fclose(f);
+    return (int)written;
+}
+
+char* aion_get_argv_index(char** argv, int index) {
+    return argv[index];
 }

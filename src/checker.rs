@@ -10,7 +10,15 @@ pub struct TypeChecker {
 
 impl TypeChecker {
     pub fn new() -> Self {
-        Self { env: Environment::new(), in_unsafe_context: false }
+        let mut checker = Self { env: Environment::new(), in_unsafe_context: false };
+        checker.register_builtins();
+        checker
+    }
+
+    fn register_builtins(&mut self) {
+        self.env.set("aion_read_file".to_string(), Type::Function { is_unsafe: true });
+        self.env.set("aion_write_file".to_string(), Type::Function { is_unsafe: true });
+        self.env.set("aion_get_argv_index".to_string(), Type::Function { is_unsafe: true });
     }
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), String> {
@@ -36,8 +44,13 @@ impl TypeChecker {
                 }
                 
                 // Add parameters to scope
-                for (param_name, _) in &f.params {
-                    self.env.set(param_name.clone(), Type::Integer); 
+                if f.name == "main" {
+                    self.env.set("argc".to_string(), Type::Integer);
+                    self.env.set("argv".to_string(), Type::String); // Using String as a proxy for ptr
+                } else {
+                    for (param_name, _) in &f.params {
+                        self.env.set(param_name.clone(), Type::Integer); 
+                    }
                 }
                 
                 if let Some(body) = &f.body {

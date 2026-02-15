@@ -62,6 +62,16 @@ impl<'ctx> Compiler<'ctx> {
         let pow_type = f64_type.fn_type(&[f64_type.into(), f64_type.into()], false);
         self.module.add_function("pow", pow_type, None);
 
+        // std.fs support
+        let read_file_type = ptr_type.fn_type(&[ptr_type.into()], false);
+        self.module.add_function("aion_read_file", read_file_type, None);
+
+        let write_file_type = self.context.i32_type().fn_type(&[ptr_type.into(), ptr_type.into()], false);
+        self.module.add_function("aion_write_file", write_file_type, None);
+
+        let get_argv_type = ptr_type.fn_type(&[ptr_type.into(), self.context.i32_type().into()], false);
+        self.module.add_function("aion_get_argv_index", get_argv_type, None);
+
         // Register Structs
         for decl in &program.declarations {
             if let Declaration::Struct(s) = decl {
@@ -79,11 +89,27 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 
                 let ret_type = self.aion_type_to_llvm(&f.return_type);
-                let fn_type = ret_type.fn_type(&param_types, false);
+                
+                // Special case for main: always takes (i64, ptr) if defined as such
+                let (fn_type, is_main) = if f.name == "main" {
+                    let main_params = vec![
+                        self.context.i64_type().into(),
+                        self.context.ptr_type(AddressSpace::default()).into()
+                    ];
+                    (ret_type.fn_type(&main_params, false), true)
+                } else {
+                    (ret_type.fn_type(&param_types, false), false)
+                };
+
                 let function = self.module.add_function(&f.name, fn_type, None);
 
-                for (i, arg) in function.get_param_iter().enumerate() {
-                    arg.set_name(&f.params[i].0);
+                if is_main {
+                    function.get_nth_param(0).unwrap().set_name("argc");
+                    function.get_nth_param(1).unwrap().set_name("argv");
+                } else {
+                    for (i, arg) in function.get_param_iter().enumerate() {
+                        arg.set_name(&f.params[i].0);
+                    }
                 }
 
                 if let Some(body) = &f.body {
@@ -91,12 +117,26 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.position_at_end(basic_block);
                     
                     let mut local_vars = HashMap::new(); 
-                    for (i, arg) in function.get_param_iter().enumerate() {
-                        let arg_name = &f.params[i].0;
-                        let arg_type = arg.get_type();
-                        let alloca = self.builder.build_alloca(arg_type, arg_name).unwrap();
-                        self.builder.build_store(alloca, arg).unwrap();
-                        local_vars.insert(arg_name.clone(), (alloca, arg_type));
+                    
+                    if is_main {
+                        let argc = function.get_nth_param(0).unwrap();
+                        let argv = function.get_nth_param(1).unwrap();
+                        
+                        let argc_alloca = self.builder.build_alloca(self.context.i64_type(), "argc").unwrap();
+                        self.builder.build_store(argc_alloca, argc).unwrap();
+                        local_vars.insert("argc".to_string(), (argc_alloca, self.context.i64_type().into()));
+                        
+                        let argv_alloca = self.builder.build_alloca(self.context.ptr_type(AddressSpace::default()), "argv").unwrap();
+                        self.builder.build_store(argv_alloca, argv).unwrap();
+                        local_vars.insert("argv".to_string(), (argv_alloca, self.context.ptr_type(AddressSpace::default()).into()));
+                    } else {
+                        for (i, arg) in function.get_param_iter().enumerate() {
+                            let arg_name = &f.params[i].0;
+                            let arg_type = arg.get_type();
+                            let alloca = self.builder.build_alloca(arg_type, arg_name).unwrap();
+                            self.builder.build_store(alloca, arg).unwrap();
+                            local_vars.insert(arg_name.clone(), (alloca, arg_type));
+                        }
                     }
 
                     self.compile_block(body, &mut local_vars, function)?;
@@ -116,7 +156,8 @@ impl<'ctx> Compiler<'ctx> {
         body: &[Statement],
         variables: &mut HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
         function: FunctionValue<'ctx>
-    ) -> Result<(), String> {
+    ) -> Result<Option<BasicValueEnum<'ctx>>, String> {
+        let mut last_val = None;
         for stmt in body {
             match stmt {
                 Statement::Let { name, value, .. } => {
@@ -125,10 +166,12 @@ impl<'ctx> Compiler<'ctx> {
                     let alloca = self.builder.build_alloca(val_type, name).unwrap();
                     self.builder.build_store(alloca, val).unwrap();
                     variables.insert(name.clone(), (alloca, val_type));
+                    last_val = None;
                 },
                 Statement::Return { value, .. } => {
                     let val = self.compile_expr(value, variables, function)?;
                     self.builder.build_return(Some(&val)).unwrap();
+                    last_val = Some(val);
                 },
                 Statement::If { condition, then_branch, else_branch } => {
                     let cond_val = self.compile_expr(condition, variables, function)?.into_int_value();
@@ -139,14 +182,17 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.build_conditional_branch(comparison, then_bb, else_bb).unwrap();
                     
                     self.builder.position_at_end(then_bb);
-                    self.compile_block(then_branch, variables, function)?;
+                    let then_val = self.compile_block(then_branch, variables, function)?;
                     if then_bb.get_terminator().is_none() { self.builder.build_unconditional_branch(merge_bb).unwrap(); }
                     
                     self.builder.position_at_end(else_bb);
-                    if let Some(eb) = else_branch { self.compile_block(eb, variables, function)?; }
+                    let else_val = if let Some(eb) = else_branch { 
+                        self.compile_block(eb, variables, function)?
+                    } else { None };
                     if else_bb.get_terminator().is_none() { self.builder.build_unconditional_branch(merge_bb).unwrap(); }
                     
                     self.builder.position_at_end(merge_bb);
+                    last_val = then_val.or(else_val);
                 },
                 Statement::Match { condition, arms } => {
                     let _cond_val = self.compile_expr(condition, variables, function)?.into_int_value();
@@ -160,17 +206,18 @@ impl<'ctx> Compiler<'ctx> {
                     }
                     
                     self.builder.position_at_end(exit_bb);
+                    last_val = None;
                 },
                 Statement::ExpressionStmt(expr) => {
-                    self.compile_expr(expr, variables, function)?;
+                    last_val = Some(self.compile_expr(expr, variables, function)?);
                 },
                 Statement::UnsafeBlock(body) => {
-                    self.compile_block(body, variables, function)?;
+                    last_val = self.compile_block(body, variables, function)?;
                 },
-                _ => {}
+                _ => { last_val = None; }
             }
         }
-        Ok(())
+        Ok(last_val)
     }
 
     fn compile_expr(
@@ -296,8 +343,8 @@ impl<'ctx> Compiler<'ctx> {
             },
             Expression::Block { statements, .. } => {
                 let mut local_vars = variables.clone();
-                self.compile_block(statements, &mut local_vars, function)?;
-                Ok(i64_type.const_int(0, false).into())
+                let val = self.compile_block(statements, &mut local_vars, function)?;
+                Ok(val.unwrap_or(i64_type.const_int(0, false).into()))
             },
             _ => Ok(i64_type.const_int(0, false).into()),
         }

@@ -1,0 +1,17 @@
+fn main() {
+    // argc and argv are automatically available in main
+    io.println("Arg count received
+")
+    
+    // Get first arg (program name)
+    let arg0 = unsafe {
+        aion_get_argv_index(argv, 0)
+    }
+    
+    io.println("Program name: ")
+    io.println(arg0)
+    io.println("
+")
+    
+    return argc
+}
