@@ -1,0 +1,14 @@
+::intent "Test pipeline operator"
+
+fn add_one(x: i64) -> i64 {
+    return x + 1
+}
+
+fn main() {
+    io.println("Start pipeline test\n")
+    let x = 10
+    let y = x |> add_one()
+    
+    io.println("Result: 11\n")
+    return 0
+}

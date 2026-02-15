@@ -1,0 +1,8 @@
+unsafe fn dangerous() {
+    return 1
+}
+
+fn main() {
+    // Must fail because dangerous() is unsafe and we are not in an unsafe block
+    dangerous()
+}

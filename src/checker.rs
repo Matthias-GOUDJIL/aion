@@ -1,4 +1,4 @@
-use crate::ast::{Statement, Expression};
+use crate::ast::{Statement, Expression, Program, Declaration};
 use crate::types::Type;
 use crate::environment::Environment;
 use crate::token::Token;
@@ -12,20 +12,43 @@ impl TypeChecker {
         Self { env: Environment::new() }
     }
 
-    pub fn check_program(&mut self, statements: &[Statement]) -> Result<(), String> {
-        for stmt in statements {
-            self.check_statement(stmt)?;
+    pub fn check_program(&mut self, program: &Program) -> Result<(), String> {
+        // First pass: register functions
+        for decl in &program.declarations {
+            if let Declaration::Function(f) = decl {
+                self.env.set(f.name.clone(), Type::Function { is_unsafe: false });
+            }
+        }
+
+        // Second pass: check function bodies
+        for decl in &program.declarations {
+            if let Declaration::Function(f) = decl {
+                // Create a new scope for the function
+                let outer_env = self.env.clone();
+                self.env = Environment::new_enclosed(outer_env.clone());
+                
+                // Add parameters to scope
+                for (param_name, _) in &f.params {
+                    self.env.set(param_name.clone(), Type::Integer); 
+                }
+                
+                if let Some(body) = &f.body {
+                    for stmt in body {
+                        self.check_statement(stmt)?;
+                    }
+                }
+                
+                // Restore outer scope
+                self.env = outer_env;
+            }
         }
         Ok(())
     }
 
     fn check_statement(&mut self, stmt: &Statement) -> Result<Type, String> {
         match stmt {
-            Statement::Let { name, value, intent, .. } => {
+            Statement::Let { name, value, .. } => {
                 let value_type = self.check_expression(value)?;
-                if let Some(msg) = intent {
-                    println!("AI Intent Analysis for '{}': {}", name, msg);
-                }
                 self.env.set(name.clone(), value_type);
                 Ok(Type::Unit)
             },
@@ -39,23 +62,7 @@ impl TypeChecker {
                 }
                 Ok(Type::Unit)
             },
-            Statement::For { var, range, body } => {
-                self.check_expression(range)?;
-                self.env.set(var.clone(), Type::Integer);
-                for s in body { self.check_statement(s)?; }
-                Ok(Type::Unit)
-            },
-            Statement::Spawn(body) => {
-                for s in body { self.check_statement(s)?; }
-                Ok(Type::Unit)
-            },
-            Statement::Match { condition, arms } => {
-                self.check_expression(condition)?;
-                for arm in arms {
-                    for s in &arm.body { self.check_statement(s)?; }
-                }
-                Ok(Type::Unit)
-            },
+            _ => Ok(Type::Unit),
         }
     }
 
@@ -65,38 +72,31 @@ impl TypeChecker {
             Expression::Float(_) => Ok(Type::Float),
             Expression::Boolean(_) => Ok(Type::Boolean),
             Expression::String(_) => Ok(Type::String),
+            Expression::Duration(_, _) => Ok(Type::Duration),
+            Expression::Date(_) => Ok(Type::Date),
             Expression::Identifier(name) => {
                 self.env.get(name).ok_or(format!("Error: Variable '{}' not defined.", name))
+            },
+            Expression::Call { function, arguments } => {
+                if function == "io.println" { return Ok(Type::Unit); }
+                for arg in arguments { self.check_expression(arg)?; }
+                Ok(Type::Unknown) 
             },
             Expression::Infix { left, operator, right } => {
                 let t1 = self.check_expression(left)?;
                 let t2 = self.check_expression(right)?;
-                if *operator == Token::Inside {
-                    return Ok(Type::Boolean);
-                }
                 self.check_compatibility(t1, t2, operator)
             },
-            Expression::Range { start, end } => {
-                let t1 = self.check_expression(start)?;
-                let t2 = self.check_expression(end)?;
-                if t1 == t2 { Ok(t1) } else { Err("Range types mismatch".to_string()) }
-            },
-            Expression::Call { .. } => Ok(Type::Unknown),
-            Expression::StructInst { .. } => Ok(Type::Unknown),
+            _ => Ok(Type::Unknown),
         }
     }
 
     fn check_compatibility(&self, t1: Type, t2: Type, op: &Token) -> Result<Type, String> {
         match (t1, t2) {
-            (Type::Integer, Type::Integer) => {
-                match op {
-                    Token::EqEq | Token::NotEq | Token::Gt | Token::Lt => Ok(Type::Boolean),
-                    _ => Ok(Type::Integer)
-                }
-            },
-            (Type::Float, Type::Float) => Ok(Type::Float),
-            (Type::String, Type::String) if *op == Token::Plus => Ok(Type::String),
-            (t1, t2) => Err(format!("Type Mismatch: Cannot use {:?} with {:?} and {:?}", t1, op, t2)),
+            (Type::Integer, Type::Integer) => Ok(Type::Integer),
+            (Type::Boolean, Type::Boolean) => Ok(Type::Boolean),
+            (Type::Date, Type::Duration) if *op == Token::Plus => Ok(Type::Date),
+            _ => Ok(Type::Unknown),
         }
     }
 }

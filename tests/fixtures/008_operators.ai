@@ -1,0 +1,15 @@
+fn main() {
+    let m = 10 % 3
+    let a = true
+    let b = false
+    
+    if a && !b {
+        io.println("Logic AND/NOT works")
+    }
+    
+    if b || a {
+        io.println("Logic OR works")
+    }
+    
+    return m + 10
+}

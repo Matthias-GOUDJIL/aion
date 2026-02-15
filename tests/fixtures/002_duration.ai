@@ -1,0 +1,6 @@
+::intent "Test duration literals"
+fn main() {
+    let t = 5s
+    io.println("Created duration: 5 seconds")
+    return 0
+}

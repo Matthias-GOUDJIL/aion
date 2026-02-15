@@ -1,0 +1,19 @@
+::intent "Test SQL transpilation"
+
+fn is_adult(age: i64) -> bool {
+    return age >= 18
+}
+
+fn calculate_discount(price: i64) -> i64 {
+    let discount = 10
+    return price - discount
+}
+
+fn main() {
+    let price = 100
+    let discount = calculate_discount(price)
+    if is_adult(20) {
+        io.println("Adult discount applied")
+    }
+    return discount
+}

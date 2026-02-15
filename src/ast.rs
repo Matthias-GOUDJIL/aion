@@ -18,20 +18,20 @@ pub enum Declaration {
     Function(Function),
     Struct(Struct),
     Enum(Enum),
-    Interface(Interface), // Nouveau
-    Impl(ImplBlock),      // Nouveau
+    Interface(Interface),
+    Impl(ImplBlock),
 }
 
 #[derive(Debug, Clone)]
 pub struct Interface {
     pub name: String,
-    pub methods: Vec<Function>, // Signatures des méthodes
+    pub methods: Vec<Function>, // Method signatures
 }
 
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
     pub target_name: String,
-    pub interface_name: Option<String>, // Optionnel : impl Interface for Target
+    pub interface_name: Option<String>, // Optional: impl Interface for Target
     pub functions: Vec<Function>,
 }
 
@@ -89,6 +89,8 @@ pub enum Expression {
     Integer(i64),
     Float(f64),
     String(String),
+    Duration(u64, u32), // secs, nanos
+    Date(i64),          // timestamp
     Identifier(String),
     Boolean(bool),
     Infix { left: Box<Expression>, operator: Token, right: Box<Expression> },

@@ -12,4 +12,4 @@ if [[ "$(docker images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
 fi
 
 # Exécuter la commande dans le conteneur en montant le dossier actuel
-docker run --rm -v "$(pwd)":/workspace -w /workspace $IMAGE_NAME cargo run --quiet -- "$@"
+exec docker run --rm -v "$(pwd)":/workspace -w /workspace $IMAGE_NAME cargo run --quiet -- "$@"

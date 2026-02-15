@@ -1,0 +1,10 @@
+fn main() {
+    let d = D2024-01-01
+    let duration = 10d
+    let future = d + duration
+    
+    io.println("Date arithmetic executed")
+    
+    // Adding duration (requires 'd' or 'h' suffix)
+    return future
+}

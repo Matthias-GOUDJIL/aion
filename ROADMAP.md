@@ -23,6 +23,24 @@ Ce document trace la route technique pour transformer Aion, actuellement un prot
 
 ---
 
+## 💎 Phase 1.5 : L'Héritage d'Elo (v0.5 - v0.6)
+*Objectif : Intégrer les primitives de données et la sécurité éprouvées par Elo.*
+
+1.  **Gestion Temporelle Native (Time & Duration)**
+    *   Primitives de première classe : `Duration` (ex: `5s`, `10ms`), `DateTime`, `Interval`.
+    *   Indispensable pour le scheduling et les logs dans Shyrka OS.
+2.  **Pipeline Operator (`|>`)**
+    *   Syntaxe fluide pour le traitement de données (ex: `data |> filter |> map`).
+    *   Améliore la lisibilité des algorithmes d'IA et de transformation.
+3.  **Backend SQL & Interopérabilité**
+    *   Capacité de compiler des sous-ensembles d'Aion vers du SQL pur.
+    *   Permet de projeter la logique métier directement dans la base de données (Zero-Latency).
+4.  **Sandboxing de Données (Safe-Mode)**
+    *   Mode d'exécution contraint pour les scripts utilisateur (User-Land).
+    *   Garantit qu'aucun script ne peut corrompre la mémoire du noyau (inspiré du modèle `_` d'Elo).
+
+---
+
 ## 🔄 Phase 2 : Le Grand Portage (v0.7 - v0.9)
 *Objectif : Réécrire le cœur du compilateur (actuellement en Rust) dans le langage Aion.*
 

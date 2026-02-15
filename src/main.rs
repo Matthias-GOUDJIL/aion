@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use aionc::{compile_file, generate_docs};
+use aionc::{compile_file, generate_docs, transpile_sql};
 use std::fs;
 use std::process::Command;
 
@@ -24,6 +24,13 @@ enum Commands {
     },
     Run {
         input: String,
+    },
+    Transpile {
+        input: String,
+        #[arg(short, default_value = "output.sql")]
+        output: String,
+        #[arg(short, long, default_value = "sql")]
+        target: String,
     }
 }
 
@@ -52,18 +59,19 @@ fn main() {
         Commands::Run { input } => {
             println!("🚀 Compiling and Running {}...", input);
             
-            let ir_file = "temp.ll";
-            let obj_file = "temp.o";
-            let bin_file = "./aion_app";
+            let pid = std::process::id();
+            let ir_file = format!("temp_{}.ll", pid);
+            let obj_file = format!("temp_{}.o", pid);
+            let bin_file = format!("./aion_app_{}", pid);
 
-            if let Err(e) = compile_file(&input, ir_file) {
+            if let Err(e) = compile_file(&input, &ir_file) {
                 println!("❌ Aion Compilation Error: {}", e);
                 return;
             }
 
-            // Correction: Ajout du modèle de relocation PIC pour compatibilité Linux moderne
+            // Fix: Add PIC relocation model for modern Linux compatibility
             let llc_status = Command::new("llc-15")
-                .args(&["-filetype=obj", "-relocation-model=pic", ir_file, "-o", obj_file])
+                .args(&["-filetype=obj", "-relocation-model=pic", &ir_file, "-o", &obj_file])
                 .status();
 
             if llc_status.is_err() || !llc_status.unwrap().success() {
@@ -72,7 +80,7 @@ fn main() {
             }
 
             let gcc_status = Command::new("gcc")
-                .args(&[obj_file, "src/runtime.c", "-o", bin_file, "-lpthread"])
+                .args(&[&obj_file, "src/runtime.c", "-o", &bin_file, "-lpthread"])
                 .status();
 
             if gcc_status.is_err() || !gcc_status.unwrap().success() {
@@ -82,7 +90,7 @@ fn main() {
 
             println!("✨ Execution Output:");
             println!("-------------------------------");
-            let output = Command::new(bin_file).output();
+            let output = Command::new(&bin_file).output();
             
             match output {
                 Ok(out) => {
@@ -98,6 +106,21 @@ fn main() {
             let _ = fs::remove_file(ir_file);
             let _ = fs::remove_file(obj_file);
             let _ = fs::remove_file(bin_file);
+        }
+        Commands::Transpile { input, output, target } => {
+            println!("🔄 Transpiling {} to {}...", input, target);
+            if target != "sql" {
+                println!("❌ Only SQL target is supported for now.");
+                return;
+            }
+            
+            match transpile_sql(&input) {
+                Ok(sql) => {
+                    fs::write(&output, sql).unwrap();
+                    println!("✨ Success! Generated {}", output);
+                },
+                Err(e) => println!("❌ Error: {}", e),
+            }
         }
     }
 }

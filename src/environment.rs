@@ -3,13 +3,17 @@ use crate::types::Type;
 
 #[derive(Clone, Debug)]
 pub struct Environment {
-    store: HashMap<String, Type>,
-    outer: Option<Box<Environment>>,
+    pub store: HashMap<String, Type>,
+    pub outer: Option<Box<Environment>>,
 }
 
 impl Environment {
     pub fn new() -> Self {
         Self { store: HashMap::new(), outer: None }
+    }
+    
+    pub fn new_enclosed(outer: Environment) -> Self {
+        Self { store: HashMap::new(), outer: Some(Box::new(outer)) }
     }
 
     pub fn get(&self, name: &str) -> Option<Type> {

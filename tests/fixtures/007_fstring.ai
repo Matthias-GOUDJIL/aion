@@ -1,0 +1,12 @@
+fn main() {
+    let name = "World"
+    let age = 30
+    
+    // f-strings are syntax sugar for concatenation
+    let msg = f"Hello {name}, you are {age}!"
+    
+    io.println(msg)
+    
+    // We cannot print the result because io.println expects a pointer, and we have an integer 30.
+    return age
+}
