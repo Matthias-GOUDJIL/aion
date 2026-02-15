@@ -95,6 +95,21 @@ $$ LANGUAGE plpgsql;
                 self.buffer.push_str(";
 ");
             },
+            Statement::Match { condition, arms } => {
+                self.buffer.push_str("    CASE ");
+                self.transpile_expression(condition);
+                self.buffer.push_str("
+");
+                for arm in arms {
+                    self.buffer.push_str(&format!("        WHEN '{}' THEN
+", arm.pattern));
+                    for s in &arm.body {
+                        self.transpile_statement(s);
+                    }
+                }
+                self.buffer.push_str("    END CASE;
+");
+            },
             _ => self.buffer.push_str("    -- Unsupported statement
 "),
         }

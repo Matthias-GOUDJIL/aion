@@ -1,0 +1,19 @@
+enum Status {
+    Ok(i64),
+    Err(i64)
+}
+
+fn main() {
+    let s = Status::Err(404)
+    
+    match s {
+        Ok => {
+            io.println("Matched Ok")
+        },
+        Err => {
+            io.println("Matched Err")
+        }
+    }
+    
+    return 0
+}

@@ -311,6 +311,41 @@ impl<'a> Parser<'a> {
                 }
                 Some(Statement::If { condition, then_branch, else_branch })
             },
+            Token::Match => {
+                self.next_token();
+                let condition = self.parse_expression();
+                if self.current_token != Token::LBrace { return None; }
+                self.next_token();
+                let mut arms = Vec::new();
+                while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+                    if let Token::Identifier(p) = &self.current_token {
+                        let pattern = p.clone(); self.next_token();
+                        let mut params = Vec::new();
+                        
+                        // Parse (val, ...) if present
+                        if self.current_token == Token::LParen {
+                            self.next_token();
+                            while self.current_token != Token::RParen && self.current_token != Token::EOF {
+                                if let Token::Identifier(param) = &self.current_token {
+                                    params.push(param.clone());
+                                    self.next_token();
+                                }
+                                if self.current_token == Token::Comma { self.next_token(); }
+                            }
+                            if self.current_token == Token::RParen { self.next_token(); }
+                        }
+
+                        if self.current_token == Token::Arrow {
+                            self.next_token();
+                            let body = if self.current_token == Token::LBrace { self.parse_block() } else { vec![self.parse_statement().unwrap()] };
+                            arms.push(MatchArm { pattern, params, body });
+                        }
+                    }
+                    if self.current_token == Token::Comma { self.next_token(); }
+                }
+                if self.current_token == Token::RBrace { self.next_token(); }
+                Some(Statement::Match { condition, arms })
+            },
             Token::Unsafe => {
                 self.next_token();
                 if self.current_token == Token::LBrace {
@@ -440,6 +475,24 @@ impl<'a> Parser<'a> {
                     }
                     if self.current_token == Token::RParen { self.next_token(); }
                     Expression::Call { function: full_name, arguments: args }
+                } else if self.current_token == Token::DoubleColon {
+                    self.next_token();
+                    if let Token::Identifier(variant) = &self.current_token {
+                        let variant_name = variant.clone();
+                        self.next_token();
+                        let mut args = Vec::new();
+                        if self.current_token == Token::LParen {
+                            self.next_token();
+                            while self.current_token != Token::RParen && self.current_token != Token::EOF {
+                                args.push(self.parse_expression());
+                                if self.current_token == Token::Comma { self.next_token(); }
+                            }
+                            if self.current_token == Token::RParen { self.next_token(); }
+                        }
+                        Expression::EnumInst { name: full_name, variant: variant_name, arguments: args }
+                    } else {
+                        Expression::Identifier(full_name)
+                    }
                 } else {
                     Expression::Identifier(full_name)
                 }

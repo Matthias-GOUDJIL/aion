@@ -15,6 +15,7 @@ pub struct Compiler<'ctx> {
     pub module: Module<'ctx>,
     pub builder: Builder<'ctx>,
     pub struct_types: HashMap<String, StructType<'ctx>>,
+    pub enum_types: HashMap<String, StructType<'ctx>>,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -26,6 +27,7 @@ impl<'ctx> Compiler<'ctx> {
             module,
             builder,
             struct_types: HashMap::new(),
+            enum_types: HashMap::new(),
         }
     }
 
@@ -80,9 +82,20 @@ impl<'ctx> Compiler<'ctx> {
 
         // Register Structs
         for decl in &program.declarations {
-            if let Declaration::Struct(s) = decl {
-                let struct_type = self.context.opaque_struct_type(&s.name);
-                self.struct_types.insert(s.name.clone(), struct_type);
+            match decl {
+                Declaration::Struct(s) => {
+                    let struct_type = self.context.opaque_struct_type(&s.name);
+                    self.struct_types.insert(s.name.clone(), struct_type);
+                },
+                Declaration::Enum(e) => {
+                    // Enum represented as { i64 tag, [N x i8] data }
+                    // For prototype, we use a fixed size data buffer (e.g., 64 bytes)
+                    let tag_type = self.context.i64_type();
+                    let data_type = self.context.i8_type().array_type(64);
+                    let enum_type = self.context.struct_type(&[tag_type.into(), data_type.into()], false);
+                    self.enum_types.insert(e.name.clone(), enum_type);
+                },
+                _ => {}
             }
         }
 
@@ -96,15 +109,22 @@ impl<'ctx> Compiler<'ctx> {
                 
                 let ret_type = self.aion_type_to_llvm(&f.return_type);
                 
+                // If it's a known Enum, use its registered struct type
+                let llvm_ret_type = if let Some(e_type) = self.enum_types.get(&f.return_type) {
+                    e_type.as_basic_type_enum()
+                } else {
+                    ret_type
+                };
+
                 // Special case for main: always takes (i64, ptr) if defined as such
                 let (fn_type, is_main) = if f.name == "main" {
                     let main_params = vec![
                         self.context.i64_type().into(),
                         self.context.ptr_type(AddressSpace::default()).into()
                     ];
-                    (ret_type.fn_type(&main_params, false), true)
+                    (self.context.i64_type().fn_type(&main_params, false), true)
                 } else {
-                    (ret_type.fn_type(&param_types, false), false)
+                    (llvm_ret_type.fn_type(&param_types, false), false)
                 };
 
                 let function = self.module.add_function(&f.name, fn_type, None);
@@ -148,7 +168,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.compile_block(body, &mut local_vars, function)?;
                     
                     if basic_block.get_terminator().is_none() {
-                        self.builder.build_return(Some(&ret_type.const_zero())).unwrap();
+                        self.builder.build_return(Some(&llvm_ret_type.const_zero())).unwrap();
                     }
                 }
             }
@@ -187,28 +207,89 @@ impl<'ctx> Compiler<'ctx> {
                     let merge_bb = self.context.append_basic_block(function, "ifcont");
                     self.builder.build_conditional_branch(comparison, then_bb, else_bb).unwrap();
                     
+                    let mut reachable = false;
                     self.builder.position_at_end(then_bb);
                     let then_val = self.compile_block(then_branch, variables, function)?;
-                    if then_bb.get_terminator().is_none() { self.builder.build_unconditional_branch(merge_bb).unwrap(); }
+                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        self.builder.build_unconditional_branch(merge_bb).unwrap();
+                        reachable = true;
+                    }
                     
                     self.builder.position_at_end(else_bb);
                     let else_val = if let Some(eb) = else_branch { 
                         self.compile_block(eb, variables, function)?
                     } else { None };
-                    if else_bb.get_terminator().is_none() { self.builder.build_unconditional_branch(merge_bb).unwrap(); }
+                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        self.builder.build_unconditional_branch(merge_bb).unwrap();
+                        reachable = true;
+                    }
                     
-                    self.builder.position_at_end(merge_bb);
+                    if reachable {
+                        self.builder.position_at_end(merge_bb);
+                    } else {
+                        unsafe { merge_bb.delete().unwrap(); }
+                    }
                     last_val = then_val.or(else_val);
                 },
                 Statement::Match { condition, arms } => {
-                    let _cond_val = self.compile_expr(condition, variables, function)?.into_int_value();
+                    let cond_val = self.compile_expr(condition, variables, function)?;
                     let exit_bb = self.context.append_basic_block(function, "matchexit");
                     
-                    for arm in arms {
-                        let arm_bb = self.context.append_basic_block(function, &format!("arm_{}", arm.pattern));
-                        self.builder.position_at_end(arm_bb);
-                        self.compile_block(&arm.body, variables, function)?;
-                        if arm_bb.get_terminator().is_none() { self.builder.build_unconditional_branch(exit_bb).unwrap(); }
+                    if cond_val.is_struct_value() {
+                        // It's an Enum (Tagged Union)
+                        let enum_val = cond_val.into_struct_value();
+                        let alloca = self.builder.build_alloca(enum_val.get_type(), "matched_enum").unwrap();
+                        self.builder.build_store(alloca, enum_val).unwrap();
+                        
+                        let tag_ptr = self.builder.build_struct_gep(enum_val.get_type(), alloca, 0, "tagptr").unwrap();
+                        let tag = self.builder.build_load(self.context.i64_type(), tag_ptr, "tag").unwrap().into_int_value();
+                        
+                        for (i, arm) in arms.iter().enumerate() {
+                            let arm_bb = self.context.append_basic_block(function, &format!("arm_{}", arm.pattern));
+                            let next_bb = self.context.append_basic_block(function, "match_next");
+                            
+                            // Map "Ok" to 0, "Err" to 1 for prototype
+                            let arm_tag = if arm.pattern == "Ok" { 0 } else if arm.pattern == "Err" { 1 } else { i as u64 };
+                            
+                            let is_arm = self.builder.build_int_compare(IntPredicate::EQ, tag, self.context.i64_type().const_int(arm_tag, false), "is_arm").unwrap();
+                            self.builder.build_conditional_branch(is_arm, arm_bb, next_bb).unwrap();
+                            
+                            self.builder.position_at_end(arm_bb);
+                            
+                            // Extract data from enum into local variables if pattern has args
+                            let mut arm_vars = variables.clone();
+                            if !arm.params.is_empty() {
+                                let data_ptr = self.builder.build_struct_gep(enum_val.get_type(), alloca, 1, "arm_dataptr").unwrap();
+                                // For prototype, extract first arg as i64
+                                let param_name = &arm.params[0];
+                                let casted_data_ptr = self.builder.build_bit_cast(data_ptr, self.context.ptr_type(AddressSpace::default()), "arm_datacast").unwrap();
+                                let loaded_val = self.builder.build_load(self.context.i64_type(), casted_data_ptr.into_pointer_value(), param_name).unwrap();
+                                
+                                let param_alloca = self.builder.build_alloca(self.context.i64_type(), param_name).unwrap();
+                                self.builder.build_store(param_alloca, loaded_val).unwrap();
+                                arm_vars.insert(param_name.clone(), (param_alloca, self.context.i64_type().into()));
+                            }
+
+                            self.compile_block(&arm.body, &mut arm_vars, function)?;
+                            
+                            // Re-check current block after compiling arm body
+                            let current_bb = self.builder.get_insert_block().unwrap();
+                            if current_bb.get_terminator().is_none() {
+                                self.builder.build_unconditional_branch(exit_bb).unwrap();
+                            }
+                            
+                            self.builder.position_at_end(next_bb);
+                        }
+                        self.builder.build_unconditional_branch(exit_bb).unwrap();
+                    } else {
+                        // Fallback for primitive match
+                        let _val = cond_val.into_int_value();
+                        for arm in arms {
+                            let arm_bb = self.context.append_basic_block(function, &format!("arm_{}", arm.pattern));
+                            self.builder.position_at_end(arm_bb);
+                            self.compile_block(&arm.body, variables, function)?;
+                            if arm_bb.get_terminator().is_none() { self.builder.build_unconditional_branch(exit_bb).unwrap(); }
+                        }
                     }
                     
                     self.builder.position_at_end(exit_bb);
@@ -252,8 +333,8 @@ impl<'ctx> Compiler<'ctx> {
                 Ok(global_str.as_basic_value_enum())
             },
             Expression::Identifier(name) => {
-                let (ptr, basic_type) = variables.get(name).ok_or_else(|| format!("Var '{}' not found", name))?;
-                Ok(self.builder.build_load(*basic_type, *ptr, name).unwrap())
+                let (ptr, var_type) = variables.get(name).ok_or_else(|| format!("Var '{}' not found", name))?;
+                Ok(self.builder.build_load(*var_type, *ptr, name).unwrap())
             },
             Expression::Call { function: func_name, arguments } => {
                 if func_name == "io.println" {
@@ -273,7 +354,15 @@ impl<'ctx> Compiler<'ctx> {
                 let call = self.builder.build_call(fn_val, &compiled_args, "calltmp").unwrap();
                 match call.try_as_basic_value() {
                     ValueKind::Basic(val) => Ok(val),
-                    ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
+                    ValueKind::Instruction(_) => {
+                        // For void or aggregate returns that might not be 'Basic'
+                        let ret_type = fn_val.get_type().get_return_type();
+                        if let Some(t) = ret_type {
+                            Ok(t.const_zero())
+                        } else {
+                            Ok(i64_type.const_int(0, false).into())
+                        }
+                    }
                 }
             },
             Expression::Intrinsic { name, arguments } => {
@@ -385,6 +474,29 @@ impl<'ctx> Compiler<'ctx> {
                 let mut local_vars = variables.clone();
                 let val = self.compile_block(statements, &mut local_vars, function)?;
                 Ok(val.unwrap_or(i64_type.const_int(0, false).into()))
+            },
+            Expression::EnumInst { name, variant, arguments } => {
+                let enum_type = self.enum_types.get(name).ok_or(format!("Enum '{}' not found", name))?;
+                let alloca = self.builder.build_alloca(*enum_type, &format!("{}_inst", name)).unwrap();
+                
+                // Find variant index
+                // For prototype, we search the program decls again (should be cached)
+                // Let's assume tags are 0, 1, 2...
+                // We'll hardcode some for now to test Result
+                let tag = if variant == "Ok" { 0 } else if variant == "Err" { 1 } else { 0 };
+                
+                let tag_ptr = self.builder.build_struct_gep(*enum_type, alloca, 0, "tagptr").unwrap();
+                self.builder.build_store(tag_ptr, self.context.i64_type().const_int(tag, false)).unwrap();
+                
+                if !arguments.is_empty() {
+                    let data_val = self.compile_expr(&arguments[0], variables, function)?;
+                    let data_ptr = self.builder.build_struct_gep(*enum_type, alloca, 1, "dataptr").unwrap();
+                    // Cast data_ptr to the type of the argument for storing
+                    let casted_ptr = self.builder.build_bit_cast(data_ptr, self.context.ptr_type(AddressSpace::default()), "datacast").unwrap();
+                    self.builder.build_store(casted_ptr.into_pointer_value(), data_val).unwrap();
+                }
+                
+                Ok(self.builder.build_load(*enum_type, alloca, "enumtmp").unwrap())
             },
             _ => Ok(i64_type.const_int(0, false).into()),
         }

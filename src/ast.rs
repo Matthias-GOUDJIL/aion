@@ -82,6 +82,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct MatchArm {
     pub pattern: String,
+    pub params: Vec<String>, // Variables bound in the pattern (e.g., val in Ok(val))
     pub body: Vec<Statement>,
 }
 
@@ -104,4 +105,9 @@ pub enum Expression {
     Range { start: Box<Expression>, end: Box<Expression> },
     Block { statements: Vec<Statement>, is_unsafe: bool },
     Intrinsic { name: String, arguments: Vec<Expression> },
+    EnumInst { 
+        name: String, 
+        variant: String,
+        arguments: Vec<Expression> 
+    },
 }

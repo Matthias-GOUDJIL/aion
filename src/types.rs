@@ -8,5 +8,6 @@ pub enum Type {
     Duration,
     Date,
     Function { is_unsafe: bool },
+    Enum { name: String },
     Unknown,
 }

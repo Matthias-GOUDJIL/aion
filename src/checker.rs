@@ -25,11 +25,17 @@ impl TypeChecker {
     }
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), String> {
-        // First pass: register functions and their safety status
+        // First pass: register functions, structs, and enums
         for decl in &program.declarations {
-            if let Declaration::Function(f) = decl {
-                let is_unsafe = f.modifiers.contains(&Token::Unsafe);
-                self.env.set(f.name.clone(), Type::Function { is_unsafe });
+            match decl {
+                Declaration::Function(f) => {
+                    let is_unsafe = f.modifiers.contains(&Token::Unsafe);
+                    self.env.set(f.name.clone(), Type::Function { is_unsafe });
+                },
+                Declaration::Enum(e) => {
+                    self.env.set(e.name.clone(), Type::Enum { name: e.name.clone() });
+                },
+                _ => {}
             }
         }
 
@@ -95,7 +101,28 @@ impl TypeChecker {
                 }
                 self.in_unsafe_context = was_in_unsafe;
                 Ok(Type::Unit)
-            }
+            },
+            Statement::Match { condition, arms } => {
+                self.check_expression(condition)?;
+                for arm in arms {
+                    // Create scope for the arm if it has parameters
+                    let outer_env = self.env.clone();
+                    if !arm.params.is_empty() {
+                        self.env = Environment::new_enclosed(outer_env.clone());
+                        for param in &arm.params {
+                            // In a real Aion we'd look up the variant type. 
+                            // For now assume Integer for prototype.
+                            self.env.set(param.clone(), Type::Integer);
+                        }
+                    }
+                    
+                    for s in &arm.body { self.check_statement(s)?; }
+                    
+                    // Restore scope
+                    self.env = outer_env;
+                }
+                Ok(Type::Unit)
+            },
             _ => Ok(Type::Unit),
         }
     }
@@ -142,6 +169,11 @@ impl TypeChecker {
             Expression::Intrinsic { name: _, arguments } => {
                 for arg in arguments { self.check_expression(arg)?; }
                 Ok(Type::Unknown)
+            },
+            Expression::EnumInst { name, variant: _, arguments } => {
+                let enum_type = self.env.get(name).ok_or(format!("Error: Enum '{}' not defined.", name))?;
+                for arg in arguments { self.check_expression(arg)?; }
+                Ok(enum_type)
             },
             _ => Ok(Type::Unknown),
         }

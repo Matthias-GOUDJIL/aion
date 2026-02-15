@@ -4,11 +4,12 @@
 **Name:** Aion
 **Type:** System Programming Language (AI-Native)
 **Core Philosophy:** Performance (Rust/LLVM) + Expressiveness (Python/Elo) + Intelligence (First-class Intents).
-**Current Phase:** Phase 1.5 - "Elo Legacy" (Porting high-level features).
+**Current Phase:** Phase 1.6 - "Rigor & Completeness" (Finalizing existing features).
 
 ## 📏 Coding Standards
 1.  **Language**: **ENGLISH ONLY**. All comments, documentation, commit messages, and variable names must be in English.
-2.  **Clean Code**:
+2.  **Completion First Mandate**: NEVER start a new feature if existing ones are incomplete or experimental. Every feature must be "Production-Ready": exhaustive Type Checking, full LLVM implementation (no type hacks), and 100% test coverage.
+3.  **Clean Code**:
     *   Remove dead code and commented-out blocks immediately.
     *   Avoid debugging print statements in production code (use `log` crate or `eprintln!` with feature flags).
     *   Keep functions short and focused.

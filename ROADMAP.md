@@ -64,10 +64,9 @@ This document outlines the technical path to transform Aion from its current Rus
 
 ---
 
-## 📊 Current State: v0.5 (Phase 1.5)
+## 📊 Current State: v0.6 (Phase 1.6 - Rigor & Completeness)
 - [x] Lexer / Parser EBNF v0.5.
 - [x] Type Checker (Safety & Temporal & Security Enforcement).
 - [x] CodeGen LLVM (Native & Dynamic Strings & Function Returns).
-- [x] `struct` support.
-- [x] Native concurrency (Sparks/Spawn).
-- [x] Automatic AI documentation.
+- [x] Modular Compiler Architecture (`src/compiler.rs`).
+- [ ] **EXHAUSTIVITY GOAL**: Real Enum Tagged Unions and deep Pattern Matching.

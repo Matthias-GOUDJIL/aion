@@ -1,0 +1,30 @@
+enum Result {
+    Ok(i64),
+    Err(i64)
+}
+
+fn simulate_read(success: bool) -> Result {
+    if success {
+        return Result::Ok(42)
+    } else {
+        return Result::Err(1)
+    }
+}
+
+fn main() {
+    let r = simulate_read(false)
+    
+    match r {
+        Ok(val) => {
+            io.println("Read success")
+        },
+        Err(code) => {
+            io.println("Read error, code:")
+            if code == 1 {
+                io.println("Extracted error code 1 correctly")
+            }
+        }
+    }
+    
+    return 0
+}
