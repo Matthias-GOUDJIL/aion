@@ -5,10 +5,10 @@ fn add_one(x: i64) -> i64 {
 }
 
 fn main() {
-    io.println("Start pipeline test\n")
+    io.println("Start pipeline test")
     let x = 10
     let y = x |> add_one()
     
-    io.println("Result: 11\n")
+    io.println("Result: 11")
     return 0
 }

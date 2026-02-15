@@ -1,7 +1,6 @@
 fn main() {
     let path = "test_file.txt"
-    let content = "Aion is writing to a file!
-"
+    let content = "Aion is writing to a file!"
     
     // Write
     unsafe {

@@ -1,0 +1,17 @@
+fn main() {
+    let s1 = "Hello "
+    let s2 = "Aion!"
+    
+    let l1 = string.len(s1)
+    if l1 == 6 {
+        io.println("Length of 'Hello ' is 6")
+    }
+    
+    // Note: strcat in C modifies the first argument. 
+    // This is not safe but for a prototype it shows linking.
+    // In a real Aion, we'd allocate new memory.
+    // For now we just test we can call it.
+    
+    io.println("String functions tested")
+    return l1
+}

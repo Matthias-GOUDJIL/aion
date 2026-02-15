@@ -103,4 +103,5 @@ pub enum Expression {
     },
     Range { start: Box<Expression>, end: Box<Expression> },
     Block { statements: Vec<Statement>, is_unsafe: bool },
+    Intrinsic { name: String, arguments: Vec<Expression> },
 }

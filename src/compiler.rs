@@ -56,6 +56,12 @@ impl<'ctx> Compiler<'ctx> {
         let printf_type = self.context.i32_type().fn_type(&[ptr_type.into()], true);
         self.module.add_function("printf", printf_type, None);
 
+        let strlen_type = self.context.i64_type().fn_type(&[ptr_type.into()], false);
+        self.module.add_function("strlen", strlen_type, None);
+
+        let strcat_type = ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false);
+        self.module.add_function("strcat", strcat_type, None);
+
         let spawn_type = self.context.void_type().fn_type(&[ptr_type.into()], false);
         self.module.add_function("aion_spawn", spawn_type, None);
 
@@ -241,8 +247,8 @@ impl<'ctx> Compiler<'ctx> {
                 Ok(i64_type.const_int(total_ms as u64, false).into())
             },
             Expression::String(s) => {
-                let s_with_newline = format!("{}\n\0", s);
-                let global_str = self.builder.build_global_string_ptr(&s_with_newline, "aion_str").unwrap();
+                let s_with_null = format!("{}\0", s);
+                let global_str = self.builder.build_global_string_ptr(&s_with_null, "aion_str").unwrap();
                 Ok(global_str.as_basic_value_enum())
             },
             Expression::Identifier(name) => {
@@ -251,24 +257,58 @@ impl<'ctx> Compiler<'ctx> {
             },
             Expression::Call { function: func_name, arguments } => {
                 if func_name == "io.println" {
+                    return self.compile_expr(&Expression::Intrinsic { name: "io_println".to_string(), arguments: arguments.clone() }, variables, function);
+                }
+                if func_name == "string.len" {
+                    return self.compile_expr(&Expression::Intrinsic { name: "str_len".to_string(), arguments: arguments.clone() }, variables, function);
+                }
+                if func_name == "string.concat" {
+                    return self.compile_expr(&Expression::Intrinsic { name: "str_concat".to_string(), arguments: arguments.clone() }, variables, function);
+                }
+                let fn_val = self.module.get_function(func_name).ok_or(format!("Function '{}' not found", func_name))?;
+                let mut compiled_args = Vec::new();
+                for arg in arguments {
+                    compiled_args.push(self.compile_expr(arg, variables, function)?.into());
+                }
+                let call = self.builder.build_call(fn_val, &compiled_args, "calltmp").unwrap();
+                match call.try_as_basic_value() {
+                    ValueKind::Basic(val) => Ok(val),
+                    ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
+                }
+            },
+            Expression::Intrinsic { name, arguments } => {
+                if name == "io_println" {
                     let printf = self.module.get_function("printf").ok_or("printf not found")?;
                     let arg = self.compile_expr(&arguments[0], variables, function)?;
+                    let printf_arg = if arg.get_type().is_pointer_type() { arg.into() } else { arg.into() };
                     
-                    let printf_arg = if arg.get_type().is_pointer_type() {
-                        arg.into()
-                    } else {
-                        arg.into()
-                    };
-                    
-                    self.builder.build_call(printf, &[printf_arg], "printftmp").unwrap();
+                    let fmt_str = self.builder.build_global_string_ptr("%s\n\0", "println_fmt").unwrap();
+                    self.builder.build_call(printf, &[fmt_str.as_basic_value_enum().into(), printf_arg], "printftmp").unwrap();
                     Ok(i64_type.const_int(0, false).into())
-                } else { 
-                    let fn_val = self.module.get_function(func_name).ok_or(format!("Function '{}' not found", func_name))?;
+                } else if name == "str_len" {
+                    let strlen = self.module.get_function("strlen").ok_or("strlen not found")?;
+                    let arg = self.compile_expr(&arguments[0], variables, function)?;
+                    let call = self.builder.build_call(strlen, &[arg.into()], "strlentmp").unwrap();
+                    match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => Ok(val),
+                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
+                    }
+                } else if name == "str_concat" {
+                    let strcat = self.module.get_function("strcat").ok_or("strcat not found")?;
+                    let arg1 = self.compile_expr(&arguments[0], variables, function)?;
+                    let arg2 = self.compile_expr(&arguments[1], variables, function)?;
+                    let call = self.builder.build_call(strcat, &[arg1.into(), arg2.into()], "strcattmp").unwrap();
+                    match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => Ok(val),
+                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
+                    }
+                } else {
+                    let fn_val = self.module.get_function(name).ok_or(format!("Intrinsic '{}' not found", name))?;
                     let mut compiled_args = Vec::new();
                     for arg in arguments {
                         compiled_args.push(self.compile_expr(arg, variables, function)?.into());
                     }
-                    let call = self.builder.build_call(fn_val, &compiled_args, "calltmp").unwrap();
+                    let call = self.builder.build_call(fn_val, &compiled_args, "intrinsictmp").unwrap();
                     match call.try_as_basic_value() {
                         ValueKind::Basic(val) => Ok(val),
                         ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),

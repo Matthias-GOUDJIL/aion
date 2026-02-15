@@ -392,6 +392,26 @@ impl<'a> Parser<'a> {
             Token::FString(s) => { self.next_token(); self.parse_fstring(s) },
             Token::DurationLiteral(s, n) => { self.next_token(); Expression::Duration(s, n) },
             Token::DateLiteral(ts) => { self.next_token(); Expression::Date(ts) },
+            Token::At => {
+                self.next_token();
+                if let Token::Identifier(name) = self.current_token.clone() {
+                    self.next_token();
+                    if self.current_token == Token::LParen {
+                        self.next_token();
+                        let mut args = Vec::new();
+                        while self.current_token != Token::RParen && self.current_token != Token::EOF {
+                            args.push(self.parse_expression());
+                            if self.current_token == Token::Comma { self.next_token(); }
+                        }
+                        if self.current_token == Token::RParen { self.next_token(); }
+                        Expression::Intrinsic { name, arguments: args }
+                    } else {
+                        Expression::Identifier(format!("invalid_attribute_{}", name))
+                    }
+                } else {
+                    Expression::Identifier("invalid_at_usage".to_string())
+                }
+            },
             Token::Unsafe => {
                 self.next_token();
                 if self.current_token == Token::LBrace {

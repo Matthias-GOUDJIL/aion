@@ -16,7 +16,7 @@ fn main() {
     
     // (2 * 2 + 5)^2 = 9^2 = 81
     if result == 81 {
-        io.println("Complex pipeline successful\n")
+        io.println("Complex pipeline successful")
     }
     
     return result

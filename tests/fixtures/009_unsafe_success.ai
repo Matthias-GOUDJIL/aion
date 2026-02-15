@@ -1,11 +1,11 @@
 unsafe fn dangerous() {
-    io.println("Dangerous operation executed\n")
+    io.println("Dangerous operation executed")
 }
 
 fn main() {
     unsafe {
         dangerous()
     }
-    io.println("Safe call successful\n")
+    io.println("Safe call successful")
     return 0
 }
