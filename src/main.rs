@@ -59,10 +59,10 @@ fn main() {
         Commands::Run { input } => {
             println!("🚀 Compiling and Running {}...", input);
             
-            let pid = std::process::id();
-            let ir_file = format!("temp_{}.ll", pid);
-            let obj_file = format!("temp_{}.o", pid);
-            let bin_file = format!("./aion_app_{}", pid);
+            let run_id = std::env::var("AION_RUN_ID").unwrap_or_else(|_| std::process::id().to_string());
+            let ir_file = format!("temp_{}.ll", run_id);
+            let obj_file = format!("temp_{}.o", run_id);
+            let bin_file = format!("./aion_app_{}", run_id);
 
             if let Err(e) = compile_file(&input, &ir_file) {
                 println!("❌ Aion Compilation Error: {}", e);

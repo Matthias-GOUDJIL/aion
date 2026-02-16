@@ -96,7 +96,11 @@ pub enum Expression {
     Identifier(String),
     Boolean(bool),
     Infix { left: Box<Expression>, operator: Token, right: Box<Expression> },
-    Call { function: String, arguments: Vec<Expression> },
+    Call { 
+        function: String, 
+        generic_args: Vec<String>,
+        arguments: Vec<Expression> 
+    },
     StructInst { 
         name: String, 
         generic_args: Vec<String>,
@@ -108,6 +112,7 @@ pub enum Expression {
     EnumInst { 
         name: String, 
         variant: String,
+        generic_args: Vec<String>,
         arguments: Vec<Expression> 
     },
 }

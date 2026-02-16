@@ -1,5 +1,5 @@
 fn main() {
-    let path = "test_file.txt"
+    let path = "tests/test_file.txt"
     let content = "Aion is writing to a file!"
     
     // Write

@@ -1,0 +1,23 @@
+fn identity<T>(val: T) -> T {
+    return val
+}
+
+fn add_one(val: i64) -> i64 {
+    return val + 1
+}
+
+fn main() {
+    // Explicit generic call
+    let x = identity<i64>(42)
+    if x == 42 {
+        io.println("Generic identity<i64> works")
+    }
+    
+    // Test with another type (proxy for now since we use i64 for bool)
+    let y = identity<i64>(1)
+    if y == 1 {
+        io.println("Generic identity<i64> instance 2 works")
+    }
+    
+    return x
+}

@@ -1,0 +1,23 @@
+enum GenericResult {
+    Ok(i64),
+    Err(i64)
+}
+
+fn wrap_i64(val: i64) -> GenericResult {
+    return GenericResult::Ok(val)
+}
+
+fn main() {
+    let r = wrap_i64(100)
+    
+    match r {
+        Ok(v) => {
+            io.println("Extracted value from GenericResult")
+        },
+        Err(e) => {
+            io.println("Error")
+        }
+    }
+    
+    return 0
+}

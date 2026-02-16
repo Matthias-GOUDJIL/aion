@@ -1,1 +1,18 @@
+# Generated outputs
+*.ll
+*.o
+*.so
+*.out
+*.sql
+
+# Python
+__pycache__/
+
+# Aion compiler output
+aion_app_*
+output
+test_file.txt
+tests/test_file.txt
+
+# Existing
 /target

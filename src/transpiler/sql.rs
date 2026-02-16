@@ -138,7 +138,7 @@ $$ LANGUAGE plpgsql;
                 self.buffer.push_str(&format!(" {} ", op));
                 self.transpile_expression(right);
             },
-            Expression::Call { function, arguments } => {
+            Expression::Call { function, arguments, .. } => {
                 self.buffer.push_str(&format!("{}(", function));
                 for (i, arg) in arguments.iter().enumerate() {
                     if i > 0 { self.buffer.push_str(", "); }

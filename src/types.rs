@@ -9,5 +9,7 @@ pub enum Type {
     Date,
     Function { is_unsafe: bool },
     Enum { name: String },
+    Placeholder(String), // Placeholder like 'T'
+    GenericInstance(String, Vec<Type>), // Concrete like 'Vector<i64>'
     Unknown,
 }

@@ -13,9 +13,9 @@
     *   Remove dead code and commented-out blocks immediately.
     *   Avoid debugging print statements in production code (use `log` crate or `eprintln!` with feature flags).
     *   Keep functions short and focused.
-3.  **Documentation**:
-    *   Public functions (`pub fn`) must have a docstring (`///`).
-    *   Complex logic must have explanatory comments focused on *WHY*, not *WHAT*.
+4.  **Documentation Consistency**:
+    *   **Single Source of Truth**: Code behavior MUST match `docs/SPEC.md`. If code changes, update SPEC first.
+    *   **Centralization**: All documentation lives in `docs/`. No stray MD files at root.
 
 ## 🤖 Sophisticated AI Workflow
 
@@ -28,9 +28,10 @@ This project uses a multi-role AI development workflow. I will adapt my persona 
 1.  **Zero-Cost Abstractions**: Always verify the generated assembly/IR is optimal.
 2.  **Safety First**: Isolate `unsafe` code blocks. Document invariants.
 3.  **Error Handling**: Use `Result<T, E>` extensively. No `unwrap()` in production code.
+4.  **LLVM Modernity**: Use Opaque Pointers (LLVM 15+ compatible). No deprecated `ptr_type(Type)`.
 
 ### 📚 Role 2: The Librarian (StdLib & Features)
-**Trigger:** Modifying `stdlib/*.ai`, `SPEC.md`, or designing new syntax.
+**Trigger:** Modifying `stdlib/*.ai`, `docs/SPEC.md`, or designing new syntax.
 **Expertise:** API Design, Functional Programming (Pipe `|>`), Time Series (Elo inheritance).
 **Mandate:**
 1.  **Elo-Alignment**: Consult `../elo/src/stdlib.ts` or `../elo/src/types.ts` before implementing standard features (Time, Date, Data).
@@ -38,18 +39,13 @@ This project uses a multi-role AI development workflow. I will adapt my persona 
 3.  **Documentation**: Every public function in `stdlib` must have a docstring.
 
 ### 🛡️ Role 3: The QA Sentinel (Testing & Verification)
-**Trigger:** Debugging, Benchmarking, or writing tests (`tests/`, `*.ai` examples).
+**Trigger:** Debugging, Benchmarking, or writing tests (`tests/`, `examples/*.ai`).
 **Expertise:** Edge Case Analysis, Fuzzing, Performance Profiling.
 **Mandate:**
 1.  **Regression Testing**: Ensure new features don't break existing `hello.ai` or `v05_test.ai`.
 2.  **Atomic-Change Protocol**: You MUST run `python3 tests/runner.py` after any compiler change and BEFORE committing. No commit is allowed if tests fail.
 3.  **Benchmark**: Measure compilation time and runtime performance.
-4.  **Sandboxing**: Verify that user scripts cannot crash the host (Simulate malicious inputs).
-
-### 🖋️ Role 4: The Chronicler (Documentation)
-**Trigger:** Any change affecting public APIs or project structure.
-**Mandate:**
-1.  **Auto-Doc**: Keep `API.md` and `STDLIB.md` updated in real-time. If a new function is added to `src/lib.rs` or `stdlib/`, regenerate or manually update the docs immediately.
+4.  **Parser Robustness**: Beware of ambiguous grammar (e.g. `If` vs `StructInst`). Prefer parenthesized expressions in ambiguous contexts.
 
 ## 🔄 The "Elo Integration" Protocol
 ... (rest of the section) ...

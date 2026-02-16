@@ -1,15 +1,19 @@
 #!/bin/bash
 
 # Aion Universal Compiler Wrapper
-# Ce script redirige les commandes vers l'environnement Docker sécurisé
-
 IMAGE_NAME="aion-compiler"
 
-# Vérifier si l'image existe, sinon la construire
+# Proactive cleanup of any stale containers before starting
+docker ps -q --filter "ancestor=$IMAGE_NAME" | xargs -r docker stop > /dev/null 2>&1
+
+# Build image if missing
 if [[ "$(docker images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
-    echo "📦 Initialisation de l'environnement Aion (première exécution)..."
+    echo "📦 Initializing Aion Environment..."
     docker build -t $IMAGE_NAME . > /dev/null
 fi
 
-# Exécuter la commande dans le conteneur en montant le dossier actuel
-exec docker run --rm -v "$(pwd)":/workspace -w /workspace $IMAGE_NAME cargo run --quiet -- "$@"
+# Run with isolated target directory inside container to avoid host locks
+# Using /tmp/target inside container ensures clean build environment
+docker run --rm -v "$(pwd)":/workspace -w /workspace \
+    $IMAGE_NAME \
+    cargo run --quiet --color never --target-dir /tmp/target -- "$@"

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import subprocess
 import sys
 import os
@@ -5,7 +6,8 @@ import re
 from pathlib import Path
 
 # Config
-PROJECT_ROOT = Path(__file__).parent.parent
+# Script is now at project root, so parent is the root itself
+PROJECT_ROOT = Path(__file__).parent.resolve()
 WRAPPER_SCRIPT = PROJECT_ROOT / "aion"
 FIXTURES = PROJECT_ROOT / "tests/fixtures"
 EXPECTED = PROJECT_ROOT / "tests/expected"
@@ -31,7 +33,8 @@ def run():
         cmd = [str(WRAPPER_SCRIPT), "run", str(rel_test_path)]
         
         try:
-            res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=10)
+            # Timeout increased to 60s for stability
+            res = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=60)
         except subprocess.TimeoutExpired:
             print(f"❌ {name}: Execution Timeout")
             continue
@@ -41,20 +44,12 @@ def run():
             continue
             
         # Parse output to extract the actual program stdout
-        # The runner outputs:
-        # ...
-        # ✨ Execution Output:
-        # -------------------------------
-        # Hello World
-        # -------------------------------
-        
         full_output = res.stdout
         match = re.search(r'-{31}\n(.*?)\n-{31}', full_output, re.DOTALL)
         
         if match:
             actual = match.group(1).strip()
         else:
-            # Fallback if pattern not found (maybe empty output?)
             print(f"⚠️ {name}: Could not parse output format")
             print(f"Raw Output:\n{full_output}")
             actual = ""

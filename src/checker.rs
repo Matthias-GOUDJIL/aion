@@ -3,16 +3,52 @@ use crate::types::Type;
 use crate::environment::Environment;
 use crate::token::Token;
 
+use std::collections::HashMap;
+
 pub struct TypeChecker {
     pub env: Environment,
+    pub type_params: HashMap<String, Type>, // Mapping from 'T' to concrete type
     in_unsafe_context: bool,
 }
 
 impl TypeChecker {
     pub fn new() -> Self {
-        let mut checker = Self { env: Environment::new(), in_unsafe_context: false };
+        let mut checker = Self { 
+            env: Environment::new(), 
+            type_params: HashMap::new(),
+            in_unsafe_context: false 
+        };
         checker.register_builtins();
         checker
+    }
+
+    fn resolve_type(&self, name: &str) -> Type {
+        if let Some(t) = self.type_params.get(name) {
+            return t.clone();
+        }
+        
+        match name {
+            "i64" => Type::Integer,
+            "f64" => Type::Float,
+            "bool" => Type::Boolean,
+            "String" => Type::String,
+            "Date" => Type::Date,
+            "Duration" => Type::Duration,
+            "void" | "Unit" => Type::Unit,
+            _ => {
+                if name.contains('<') {
+                    // Primitive generic resolution for prototype
+                    // e.g. "Vector<i64>"
+                    let parts: Vec<&str> = name.split('<').collect();
+                    let base = parts[0].to_string();
+                    return Type::GenericInstance(base, vec![Type::Unknown]);
+                }
+                if let Some(t) = self.env.get(name) {
+                    return t;
+                }
+                Type::Placeholder(name.to_string())
+            }
+        }
     }
 
     fn register_builtins(&mut self) {
@@ -57,8 +93,8 @@ impl TypeChecker {
                     self.env.set("argc".to_string(), Type::Integer);
                     self.env.set("argv".to_string(), Type::String); // Using String as a proxy for ptr
                 } else {
-                    for (param_name, _) in &f.params {
-                        self.env.set(param_name.clone(), Type::Integer); 
+                    for (param_name, param_type) in &f.params {
+                        self.env.set(param_name.clone(), self.resolve_type(param_type)); 
                     }
                 }
                 
@@ -138,7 +174,7 @@ impl TypeChecker {
             Expression::Identifier(name) => {
                 self.env.get(name).ok_or(format!("Error: Variable '{}' not defined.", name))
             },
-            Expression::Call { function, arguments } => {
+            Expression::Call { function, arguments, .. } => {
                 let func_type = self.env.get(function).ok_or(format!("Error: Function '{}' not defined.", function))?;
                 if let Type::Function { is_unsafe } = func_type {
                     if is_unsafe && !self.in_unsafe_context {
@@ -170,7 +206,7 @@ impl TypeChecker {
                 for arg in arguments { self.check_expression(arg)?; }
                 Ok(Type::Unknown)
             },
-            Expression::EnumInst { name, variant: _, arguments } => {
+            Expression::EnumInst { name, variant: _, arguments, .. } => {
                 let enum_type = self.env.get(name).ok_or(format!("Error: Enum '{}' not defined.", name))?;
                 for arg in arguments { self.check_expression(arg)?; }
                 Ok(enum_type)
