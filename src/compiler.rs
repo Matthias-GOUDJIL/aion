@@ -430,11 +430,22 @@ impl<'ctx> Compiler<'ctx> {
             },
             Expression::Identifier(name) => {
                 let var = variables.get(name);
-                if var.is_none() {
+                if let Some((ptr, var_type)) = var {
+                    Ok(self.builder.build_load(*var_type, *ptr, name).unwrap())
+                } else {
+                    // Check globals
+                    if name == "argc" {
+                        if let Some(global) = self.module.get_global("aion_argc") {
+                            return Ok(self.builder.build_load(self.context.i64_type(), global.as_pointer_value(), "argc_load").unwrap());
+                        }
+                    } else if name == "argv" {
+                        if let Some(global) = self.module.get_global("aion_argv") {
+                            return Ok(self.builder.build_load(self.context.ptr_type(AddressSpace::default()), global.as_pointer_value(), "argv_load").unwrap());
+                        }
+                    }
                     eprintln!("DEBUG: Var '{}' not found. Available: {:?}", name, variables.keys());
+                    Err(format!("Var '{}' not found", name))
                 }
-                let (ptr, var_type) = var.ok_or_else(|| format!("Var '{}' not found", name))?;
-                Ok(self.builder.build_load(*var_type, *ptr, name).unwrap())
             },
             Expression::Call { function: func_name, generic_args, arguments } => {
                 if func_name == "io.println" {
