@@ -170,12 +170,22 @@ impl<'ctx> Compiler<'ctx> {
                         let alloca = self.builder.build_alloca(self.context.i64_type(), "argc").unwrap();
                         self.builder.build_store(alloca, argc_val).unwrap();
                         local_vars.insert("argc".to_string(), (alloca, self.context.i64_type().into()));
+                        
+                        // Store to global
+                        if let Some(global) = self.module.get_global("aion_argc") {
+                            self.builder.build_store(global.as_pointer_value(), argc_val).unwrap();
+                        }
                     }
                     if let Some(argv) = function.get_nth_param(1) {
                         argv.set_name("argv");
                         let alloca = self.builder.build_alloca(self.context.ptr_type(AddressSpace::default()), "argv").unwrap();
                         self.builder.build_store(alloca, argv).unwrap();
                         local_vars.insert("argv".to_string(), (alloca, self.context.ptr_type(AddressSpace::default()).into()));
+                        
+                        // Store to global
+                        if let Some(global) = self.module.get_global("aion_argv") {
+                            self.builder.build_store(global.as_pointer_value(), argv).unwrap();
+                        }
                     }
                 } else {
                     for (i, arg) in function.get_param_iter().enumerate() {
@@ -228,6 +238,14 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function("aion_fs_exists", self.context.i64_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_getenv", ptr_type.fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_get_argv_index", ptr_type.fn_type(&[ptr_type.into(), self.context.i32_type().into()], false), None);
+        
+        // Add global argc/argv
+        let argc_global = self.module.add_global(self.context.i64_type(), Some(AddressSpace::default()), "aion_argc");
+        argc_global.set_initializer(&self.context.i64_type().const_zero());
+        
+        let argv_global = self.module.add_global(self.context.ptr_type(AddressSpace::default()), Some(AddressSpace::default()), "aion_argv");
+        argv_global.set_initializer(&self.context.ptr_type(AddressSpace::default()).const_null());
+
         // Added for NULL check
         // Note: mem_is_null is handled as pure LLVM IR generation, no C runtime needed for pointer diff.
         // But if we want runtime function:
