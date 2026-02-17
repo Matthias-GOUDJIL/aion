@@ -1,0 +1,29 @@
+{
+  "general": {
+    "debugKeystrokeLogging": true,
+    "sessionRetention": {
+      "enabled": true
+    },
+    "previewFeatures": true
+  },
+  "ui": {
+    "showStatusInTitle": true,
+    "footer": {
+      "hideContextPercentage": false
+    },
+    "showModelInfoInChat": true
+  },
+  "context": {
+    "discoveryMaxDirs": 1000,
+    "loadMemoryFromIncludeDirectories": true
+  },
+  "tools": {
+    "shell": {
+      "showColor": true
+    },
+    "approvalMode": "auto_edit"
+  },
+  "security": {
+    "enablePermanentToolApproval": true
+  }
+}
