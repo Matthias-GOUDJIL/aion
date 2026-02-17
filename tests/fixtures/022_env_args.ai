@@ -1,0 +1,24 @@
+// Mock std.env functions (since we don't link stdlib yet)
+fn args_len() -> i64 {
+    return unsafe { argc }
+}
+
+fn arg(index: i64) -> String {
+    return unsafe {
+        aion_get_argv_index(argv, index)
+    }
+}
+
+fn main() {
+    let count = args_len()
+    io.println("Count:")
+    io.println(count)
+
+    if count >= 1 {
+        let arg0 = arg(0)
+        io.println("Arg 0:")
+        io.println(arg0)
+    } else {
+        io.println("Error: argc < 1")
+    }
+}
