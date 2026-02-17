@@ -50,6 +50,14 @@ This project uses a multi-role AI development workflow. I will adapt my persona 
 ## 🔄 The "Elo Integration" Protocol
 ... (rest of the section) ...
 
+## 💡 Architectural Invariants (v0.6)
+1.  **Enum Layout**: Enums are compiled as `{ i64, [64 x i8] }`. Index 0 is the Tag, Index 1 is the Payload.
+    - Tags: `Some/Ok = 0`, `None/Err = 1`.
+2.  **Global System Args**: `argc` and `argv` are stored in global LLVM variables `aion_argc` and `aion_argv` during `main` setup. Access them via `argc`/`argv` identifiers in any scope (compiler falls back to globals).
+3.  **Smart `io.println`**: The `io_println` intrinsic automatically detects if the argument is a pointer (`%s`) or an integer (`%lld`). Do not manually cast pointers to integers for printing.
+4.  **Block Termination**: Every basic block in `compiler.rs` MUST be terminated. Always check `builder.get_insert_block().unwrap().get_terminator().is_none()` before adding a default return at the end of functions or branches.
+5.  **Inkwell Safety**: Use `ValueKind` matching for call results instead of `inkwell::values::Either` to avoid resolution errors during compiler builds.
+
 ## 🛠️ Essential Commands
 - **Build & Run**: `./aion build <file.ai> && ./output`
 - **Gen Docs**: `./aion doc <file.ai>`
