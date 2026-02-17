@@ -228,6 +228,10 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function("aion_fs_exists", self.context.i64_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_getenv", ptr_type.fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_get_argv_index", ptr_type.fn_type(&[ptr_type.into(), self.context.i32_type().into()], false), None);
+        // Added for NULL check
+        // Note: mem_is_null is handled as pure LLVM IR generation, no C runtime needed for pointer diff.
+        // But if we want runtime function:
+        // self.module.add_function("aion_mem_is_null", ...);
 
         for decl in &program.declarations {
             match decl {
@@ -516,6 +520,16 @@ impl<'ctx> Compiler<'ctx> {
                     match call.try_as_basic_value() {
                         ValueKind::Basic(val) => Ok(val),
                         ValueKind::Instruction(_) => Ok(self.context.ptr_type(AddressSpace::default()).const_null().into()),
+                    }
+                } else if name == "mem_is_null" {
+                    let arg = self.compile_expr(&arguments[0], variables, function)?;
+                    if arg.is_pointer_value() {
+                        let ptr = arg.into_pointer_value();
+                        let ptr_int = self.builder.build_ptr_to_int(ptr, self.context.i64_type(), "ptrtoint").unwrap();
+                        let eq_zero = self.builder.build_int_compare(IntPredicate::EQ, ptr_int, self.context.i64_type().const_zero(), "eqzero").unwrap();
+                        Ok(self.builder.build_int_z_extend(eq_zero, self.context.i64_type(), "boolcast").unwrap().into())
+                    } else {
+                        Ok(i64_type.const_int(0, false).into())
                     }
                 } else {
                     let fn_val = self.module.get_function(name).ok_or(format!("Intrinsic '{}' not found", name))?;

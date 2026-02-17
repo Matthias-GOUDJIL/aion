@@ -1,0 +1,32 @@
+use std.env
+use std.io
+
+fn main() {
+    // 1. Check an environment variable that likely exists (HOME or PATH)
+    // We can't guarantee what env vars are present, but HOME is usually there on Linux.
+    let home = env.var("HOME")
+    
+    match home {
+        Some(path) => {
+            io.println("HOME found:")
+            io.println(path)
+        },
+        None => {
+            io.println("HOME not found (weird but possible)")
+        }
+    }
+
+    // 2. Check a variable that definitely doesn't exist
+    let missing = env.var("AION_MISSING_VAR_XYZ_123")
+    
+    match missing {
+        Some(_) => {
+            io.println("Error: Found missing variable!")
+        },
+        None => {
+            io.println("Correctly handled missing variable")
+        }
+    }
+    
+    return 0
+}

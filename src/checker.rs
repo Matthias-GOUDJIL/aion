@@ -62,6 +62,7 @@ impl TypeChecker {
         self.env.set("fs.write".to_string(), Type::Function { is_unsafe: false });
         self.env.set("fs.exists".to_string(), Type::Function { is_unsafe: false });
         self.env.set("env.var".to_string(), Type::Function { is_unsafe: false });
+        self.env.set("mem.is_null".to_string(), Type::Function { is_unsafe: false });
         self.env.set("string.len".to_string(), Type::Function { is_unsafe: false });
         self.env.set("string.concat".to_string(), Type::Function { is_unsafe: false });
     }
