@@ -56,6 +56,9 @@ impl TypeChecker {
         self.env.set("aion_write_file".to_string(), Type::Function { is_unsafe: true });
         self.env.set("aion_get_argv_index".to_string(), Type::Function { is_unsafe: true });
         self.env.set("io.println".to_string(), Type::Function { is_unsafe: false });
+        self.env.set("fs.read_to_string".to_string(), Type::Function { is_unsafe: false });
+        self.env.set("fs.write".to_string(), Type::Function { is_unsafe: false });
+        self.env.set("fs.exists".to_string(), Type::Function { is_unsafe: false });
         self.env.set("string.len".to_string(), Type::Function { is_unsafe: false });
         self.env.set("string.concat".to_string(), Type::Function { is_unsafe: false });
     }

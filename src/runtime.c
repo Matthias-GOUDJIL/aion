@@ -43,6 +43,15 @@ int aion_write_file(const char* path, const char* content) {
     return (int)written;
 }
 
+int aion_fs_exists(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (f) {
+        fclose(f);
+        return 1;
+    }
+    return 0;
+}
+
 char* aion_get_argv_index(char** argv, int index) {
     return argv[index];
 }

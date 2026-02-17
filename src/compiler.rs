@@ -225,6 +225,7 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function("pow", self.context.f64_type().fn_type(&[self.context.f64_type().into(), self.context.f64_type().into()], false), None);
         self.module.add_function("aion_read_file", ptr_type.fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_write_file", self.context.i32_type().fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
+        self.module.add_function("aion_fs_exists", self.context.i64_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_get_argv_index", ptr_type.fn_type(&[ptr_type.into(), self.context.i32_type().into()], false), None);
 
         for decl in &program.declarations {
@@ -393,6 +394,15 @@ impl<'ctx> Compiler<'ctx> {
                 if func_name == "io.println" {
                     return self.compile_expr(&Expression::Intrinsic { name: "io_println".to_string(), arguments: arguments.clone() }, variables, function);
                 }
+                if func_name == "fs.read_to_string" {
+                    return self.compile_expr(&Expression::Intrinsic { name: "fs_read_to_string".to_string(), arguments: arguments.clone() }, variables, function);
+                }
+                if func_name == "fs.write" {
+                    return self.compile_expr(&Expression::Intrinsic { name: "fs_write".to_string(), arguments: arguments.clone() }, variables, function);
+                }
+                if func_name == "fs.exists" {
+                    return self.compile_expr(&Expression::Intrinsic { name: "fs_exists".to_string(), arguments: arguments.clone() }, variables, function);
+                }
                 if func_name == "string.len" {
                     return self.compile_expr(&Expression::Intrinsic { name: "str_len".to_string(), arguments: arguments.clone() }, variables, function);
                 }
@@ -457,6 +467,45 @@ impl<'ctx> Compiler<'ctx> {
                     let call = self.builder.build_call(strcat, &[arg1.into(), arg2.into()], "strcattmp").unwrap();
                     match call.try_as_basic_value() {
                         ValueKind::Basic(val) => Ok(val),
+                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
+                    }
+                } else if name == "fs_read_to_string" {
+                    let read_fn = self.module.get_function("aion_read_file").ok_or("aion_read_file not found")?;
+                    let arg = self.compile_expr(&arguments[0], variables, function)?;
+                    let call = self.builder.build_call(read_fn, &[arg.into()], "readtmp").unwrap();
+                    match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => Ok(val),
+                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
+                    }
+                } else if name == "fs_write" {
+                    let write_fn = self.module.get_function("aion_write_file").ok_or("aion_write_file not found")?;
+                    let arg1 = self.compile_expr(&arguments[0], variables, function)?;
+                    let arg2 = self.compile_expr(&arguments[1], variables, function)?;
+                    let call = self.builder.build_call(write_fn, &[arg1.into(), arg2.into()], "writetmp").unwrap();
+                    match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => {
+                            // Cast i32 result to i64
+                            if val.is_int_value() && val.into_int_value().get_type().get_bit_width() == 32 {
+                                Ok(self.builder.build_int_s_extend(val.into_int_value(), self.context.i64_type(), "i32toi64").unwrap().into())
+                            } else {
+                                Ok(val)
+                            }
+                        },
+                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
+                    }
+                } else if name == "fs_exists" {
+                    let exists_fn = self.module.get_function("aion_fs_exists").ok_or("aion_fs_exists not found")?;
+                    let arg = self.compile_expr(&arguments[0], variables, function)?;
+                    let call = self.builder.build_call(exists_fn, &[arg.into()], "existstmp").unwrap();
+                    match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => {
+                            // Cast i32 result to i64 (bool)
+                            if val.is_int_value() && val.into_int_value().get_type().get_bit_width() == 32 {
+                                Ok(self.builder.build_int_z_extend(val.into_int_value(), self.context.i64_type(), "boolcast").unwrap().into())
+                            } else {
+                                Ok(val)
+                            }
+                        },
                         ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
                     }
                 } else {

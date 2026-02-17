@@ -1,0 +1,28 @@
+use std.fs
+use std.io
+
+fn main() {
+    // 1. Write a file
+    let path = "test_fs_output.txt"
+    let content = "Hello Aion FS!"
+    let bytes = fs.write(path, content)
+    
+    if bytes > 0 {
+        io.println("File written successfully")
+    } else {
+        io.println("File write failed")
+    }
+
+    // 2. Read the file back
+    let read_content = fs.read_to_string(path)
+    if string.len(read_content) > 0 {
+        io.println("File read successfully:")
+        io.println(read_content)
+    } else {
+        io.println("File read failed or empty")
+    }
+
+    // 3. Clean up (not possible yet via std.fs.remove_file)
+    
+    return 0
+}
