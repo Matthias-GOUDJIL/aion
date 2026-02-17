@@ -247,6 +247,12 @@ impl<'ctx> Compiler<'ctx> {
             }
         }
 
+        // Manually register Option enum if missing (for stdlib mocking)
+        if !self.enum_types.contains_key("Option") {
+             let enum_type = self.context.struct_type(&[self.context.i64_type().into(), self.context.i8_type().array_type(64).into()], false);
+             self.enum_types.insert("Option".to_string(), enum_type);
+        }
+
         // Compile all non-generic functions
         for decl in &program.declarations {
             if let Declaration::Function(f) = decl {
@@ -310,6 +316,8 @@ impl<'ctx> Compiler<'ctx> {
                 },
                 Statement::Match { condition, arms } => {
                     let cond_val = self.compile_expr(condition, variables, function)?;
+                    // eprintln!("DEBUG: Match condition type: {:?}", cond_val.get_type());
+                    
                     let exit_bb = self.context.append_basic_block(function, "matchexit");
                     
                     if cond_val.is_struct_value() {
@@ -320,9 +328,19 @@ impl<'ctx> Compiler<'ctx> {
                         let tag = self.builder.build_load(self.context.i64_type(), tag_ptr, "tag").unwrap().into_int_value();
                         
                         for (i, arm) in arms.iter().enumerate() {
-                            let arm_bb = self.context.append_basic_block(function, &format!("arm_{}", arm.pattern));
+                            // Fix: Use arm.pattern for uniqueness? 
+                            // If pattern is same (e.g. literals), might conflict block names?
+                            let arm_bb_name = format!("arm_{}_{}", arm.pattern, i);
+                            let arm_bb = self.context.append_basic_block(function, &arm_bb_name);
                             let next_bb = self.context.append_basic_block(function, "match_next");
-                            let arm_tag = if arm.pattern == "Ok" { 0 } else if arm.pattern == "Err" { 1 } else { i as u64 };
+                            
+                            // Determine tag value for pattern
+                            // Default to pattern index if not Ok/Err
+                            // This is fragile. Ideally we resolve Enum Variant Tag from TypeChecker info.
+                            let arm_tag = if arm.pattern == "Some" || arm.pattern == "Ok" { 0 } 
+                                     else if arm.pattern == "None" || arm.pattern == "Err" { 1 } 
+                                     else { i as u64 };
+                                     
                             let is_arm = self.builder.build_int_compare(IntPredicate::EQ, tag, self.context.i64_type().const_int(arm_tag, false), "is_arm").unwrap();
                             self.builder.build_conditional_branch(is_arm, arm_bb, next_bb).unwrap();
                             
@@ -336,6 +354,7 @@ impl<'ctx> Compiler<'ctx> {
                                 let param_alloca = self.builder.build_alloca(self.context.i64_type(), param_name).unwrap();
                                 self.builder.build_store(param_alloca, loaded_val).unwrap();
                                 arm_vars.insert(param_name.clone(), (param_alloca, self.context.i64_type().into()));
+                                eprintln!("DEBUG: Bound param '{}'", param_name);
                             }
                             self.compile_block(&arm.body, &mut arm_vars, function)?;
                             if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
@@ -392,12 +411,54 @@ impl<'ctx> Compiler<'ctx> {
                 Ok(global_str.as_basic_value_enum())
             },
             Expression::Identifier(name) => {
-                let (ptr, var_type) = variables.get(name).ok_or_else(|| format!("Var '{}' not found", name))?;
+                let var = variables.get(name);
+                if var.is_none() {
+                    eprintln!("DEBUG: Var '{}' not found. Available: {:?}", name, variables.keys());
+                }
+                let (ptr, var_type) = var.ok_or_else(|| format!("Var '{}' not found", name))?;
                 Ok(self.builder.build_load(*var_type, *ptr, name).unwrap())
             },
             Expression::Call { function: func_name, generic_args, arguments } => {
                 if func_name == "io.println" {
                     return self.compile_expr(&Expression::Intrinsic { name: "io_println".to_string(), arguments: arguments.clone() }, variables, function);
+                }
+                // Intercept env.var to return Option<String>
+                if func_name == "env.var" {
+                    let getenv_fn = self.module.get_function("aion_getenv").ok_or("aion_getenv not found")?;
+                    let arg = self.compile_expr(&arguments[0], variables, function)?;
+                    let call = self.builder.build_call(getenv_fn, &[arg.into()], "getenvtmp").unwrap();
+                    
+                    let ptr_val = match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => val,
+                        ValueKind::Instruction(_) => return Err("getenv returned instruction value".to_string()),
+                    };
+                    
+                    let option_type = *self.enum_types.get("Option").ok_or("Option type not found")?;
+                    let alloca = self.builder.build_alloca(option_type, "env_var_res").unwrap();
+                    
+                    let ptr_int = self.builder.build_ptr_to_int(ptr_val.into_pointer_value(), self.context.i64_type(), "ptrtoint").unwrap();
+                    let is_null = self.builder.build_int_compare(IntPredicate::EQ, ptr_int, self.context.i64_type().const_zero(), "isnull").unwrap();
+                    
+                    let then_bb = self.context.append_basic_block(function, "is_null");
+                    let else_bb = self.context.append_basic_block(function, "not_null");
+                    let merge_bb = self.context.append_basic_block(function, "merge");
+                    self.builder.build_conditional_branch(is_null, then_bb, else_bb).unwrap();
+                    
+                    self.builder.position_at_end(then_bb);
+                    let tag_ptr = self.builder.build_struct_gep(option_type, alloca, 0, "tagptr_none").unwrap();
+                    self.builder.build_store(tag_ptr, self.context.i64_type().const_int(1, false)).unwrap();
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    
+                    self.builder.position_at_end(else_bb);
+                    let tag_ptr = self.builder.build_struct_gep(option_type, alloca, 0, "tagptr_some").unwrap();
+                    self.builder.build_store(tag_ptr, self.context.i64_type().const_int(0, false)).unwrap();
+                    let data_ptr = self.builder.build_struct_gep(option_type, alloca, 1, "dataptr_some").unwrap();
+                    let casted_ptr_ptr = self.builder.build_bit_cast(data_ptr, self.context.ptr_type(AddressSpace::default()), "cast_to_ptrptr").unwrap();
+                    self.builder.build_store(casted_ptr_ptr.into_pointer_value(), ptr_val).unwrap();
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    
+                    self.builder.position_at_end(merge_bb);
+                    return Ok(self.builder.build_load(option_type, alloca, "option_res").unwrap());
                 }
                 if func_name == "fs.read_to_string" {
                     return self.compile_expr(&Expression::Intrinsic { name: "fs_read_to_string".to_string(), arguments: arguments.clone() }, variables, function);

@@ -16,3 +16,6 @@ pub use std.convert::Into
 // Common functions
 pub use std.io::print
 pub use std.io::println
+
+// Core modules usually available or aliased?
+// Actually env is not usually in prelude but users use it via `use std.env`
