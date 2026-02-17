@@ -30,10 +30,6 @@ impl<'a> Parser<'a> {
         self.buffer[n].clone()
     }
 
-    fn peek(&mut self) -> Token {
-        self.peek_at(0)
-    }
-
     pub fn parse_program(&mut self) -> Program {
         let mut module_name = None;
         let mut imports = Vec::new();
@@ -369,6 +365,9 @@ impl<'a> Parser<'a> {
                             let body = if self.current_token == Token::LBrace { self.parse_block() } else { vec![self.parse_statement().unwrap()] };
                             arms.push(MatchArm { pattern, params, body });
                         }
+                    } else if self.current_token != Token::Comma {
+                        // Consuming unexpected token to prevent infinite loop
+                        self.next_token();
                     }
                     if self.current_token == Token::Comma { self.next_token(); }
                 }

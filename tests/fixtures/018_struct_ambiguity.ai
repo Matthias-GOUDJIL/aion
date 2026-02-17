@@ -1,0 +1,18 @@
+use std.io
+
+fn main() {
+    let condition = true
+    
+    // Test 1: IF with simple identifier
+    // Parser must decide that "condition {" is NOT a StructInst.
+    // If ambiguity resolution works, this parses as If Statement.
+    // If it fails, it parses as ExpressionStmt(StructInst), which would likely cause
+    // other errors or unexpected behavior.
+    if condition {
+        io.println("Test 1 Passed")
+    } else {
+        io.println("Test 1 Failed")
+    }
+    
+    return 0
+}
