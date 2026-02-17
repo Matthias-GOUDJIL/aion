@@ -150,16 +150,20 @@ impl TypeChecker {
                 Ok(Type::Unit)
             },
             Statement::Match { condition, arms } => {
-                self.check_expression(condition)?;
+                let cond_type = self.check_expression(condition)?;
                 for arm in arms {
                     // Create scope for the arm if it has parameters
                     let outer_env = self.env.clone();
                     if !arm.params.is_empty() {
                         self.env = Environment::new_enclosed(outer_env.clone());
                         for param in &arm.params {
-                            // In a real Aion we'd look up the variant type. 
-                            // For now assume Integer for prototype.
-                            self.env.set(param.clone(), Type::Integer);
+                            // Heuristic for prototype: if pattern is Some or Ok, it's likely a String payload
+                            let param_type = if arm.pattern == "Some" || arm.pattern == "Ok" {
+                                Type::String
+                            } else {
+                                Type::Integer
+                            };
+                            self.env.set(param.clone(), param_type);
                         }
                     }
                     
