@@ -65,6 +65,10 @@ impl TypeChecker {
         self.env.set("mem.is_null".to_string(), Type::Function { is_unsafe: false });
         self.env.set("string.len".to_string(), Type::Function { is_unsafe: false });
         self.env.set("string.concat".to_string(), Type::Function { is_unsafe: false });
+        
+        // Globals for stdlib
+        self.env.set("argc".to_string(), Type::Integer);
+        self.env.set("argv".to_string(), Type::String); // Pointer proxy
     }
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), String> {
