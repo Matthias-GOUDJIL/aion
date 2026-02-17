@@ -200,9 +200,11 @@ impl<'ctx> Compiler<'ctx> {
                 }
 
                 self.compile_block(body, &mut local_vars, function)?;
-                if basic_block.get_terminator().is_none() {
-                    let ret_type = function.get_type().get_return_type().map(|t| t.as_basic_type_enum()).unwrap_or(self.context.i64_type().into());
-                    self.builder.build_return(Some(&ret_type.const_zero())).unwrap();
+                if let Some(current_block) = self.builder.get_insert_block() {
+                    if current_block.get_terminator().is_none() {
+                        let ret_type = function.get_type().get_return_type().map(|t| t.as_basic_type_enum()).unwrap_or(self.context.i64_type().into());
+                        self.builder.build_return(Some(&ret_type.const_zero())).unwrap();
+                    }
                 }
                 if let Some(prev) = prev_block { self.builder.position_at_end(prev); }
             }
@@ -367,12 +369,22 @@ impl<'ctx> Compiler<'ctx> {
                             if !arm.params.is_empty() {
                                 let data_ptr = self.builder.build_struct_gep(enum_val.get_type(), alloca, 1, "arm_dataptr").unwrap();
                                 let param_name = &arm.params[0];
-                                let casted_ptr = self.builder.build_bit_cast(data_ptr, self.context.ptr_type(AddressSpace::default()), "arm_datacast").unwrap();
-                                let loaded_val = self.builder.build_load(self.context.i64_type(), casted_ptr.into_pointer_value(), param_name).unwrap();
-                                let param_alloca = self.builder.build_alloca(self.context.i64_type(), param_name).unwrap();
+                                
+                                // Heuristic for prototype: Some/Ok payloads are often Strings (pointers)
+                                let (load_type, cast_type) = if arm.pattern == "Some" || arm.pattern == "Ok" {
+                                    let ptr_t = self.context.ptr_type(AddressSpace::default());
+                                    (ptr_t.into(), ptr_t.ptr_type(AddressSpace::default()))
+                                } else {
+                                    let i64_t = self.context.i64_type();
+                                    (i64_t.into(), i64_t.ptr_type(AddressSpace::default()))
+                                };
+
+                                let casted_ptr = self.builder.build_bit_cast(data_ptr, cast_type, "arm_datacast").unwrap();
+                                let loaded_val = self.builder.build_load(load_type, casted_ptr.into_pointer_value(), param_name).unwrap();
+                                let param_alloca = self.builder.build_alloca(load_type, param_name).unwrap();
                                 self.builder.build_store(param_alloca, loaded_val).unwrap();
-                                arm_vars.insert(param_name.clone(), (param_alloca, self.context.i64_type().into()));
-                                eprintln!("DEBUG: Bound param '{}'", param_name);
+                                arm_vars.insert(param_name.clone(), (param_alloca, load_type));
+                                eprintln!("DEBUG: Bound param '{}' with type {:?}", param_name, load_type);
                             }
                             self.compile_block(&arm.body, &mut arm_vars, function)?;
                             if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
@@ -543,9 +555,15 @@ impl<'ctx> Compiler<'ctx> {
                 if name == "io_println" {
                     let printf = self.module.get_function("printf").ok_or("printf not found")?;
                     let arg = self.compile_expr(&arguments[0], variables, function)?;
-                    let printf_arg = if arg.get_type().is_pointer_type() { arg.into() } else { arg.into() };
-                    let fmt_str = self.builder.build_global_string_ptr("%s\n\0", "println_fmt").unwrap();
-                    self.builder.build_call(printf, &[fmt_str.as_basic_value_enum().into(), printf_arg], "printftmp").unwrap();
+                    
+                    let fmt = if arg.get_type().is_pointer_type() {
+                        "%s\n\0"
+                    } else {
+                        "%lld\n\0"
+                    };
+                    
+                    let fmt_str = self.builder.build_global_string_ptr(fmt, "println_fmt").unwrap();
+                    self.builder.build_call(printf, &[fmt_str.as_basic_value_enum().into(), arg.into()], "printftmp").unwrap();
                     Ok(i64_type.const_int(0, false).into())
                 } else if name == "str_len" {
                     let strlen = self.module.get_function("strlen").ok_or("strlen not found")?;
