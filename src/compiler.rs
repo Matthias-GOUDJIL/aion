@@ -226,6 +226,7 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function("aion_read_file", ptr_type.fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_write_file", self.context.i32_type().fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
         self.module.add_function("aion_fs_exists", self.context.i64_type().fn_type(&[ptr_type.into()], false), None);
+        self.module.add_function("aion_getenv", ptr_type.fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_get_argv_index", ptr_type.fn_type(&[ptr_type.into(), self.context.i32_type().into()], false), None);
 
         for decl in &program.declarations {
@@ -507,6 +508,14 @@ impl<'ctx> Compiler<'ctx> {
                             }
                         },
                         ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
+                    }
+                } else if name == "env_var" {
+                    let getenv_fn = self.module.get_function("aion_getenv").ok_or("aion_getenv not found")?;
+                    let arg = self.compile_expr(&arguments[0], variables, function)?;
+                    let call = self.builder.build_call(getenv_fn, &[arg.into()], "getenvtmp").unwrap();
+                    match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => Ok(val),
+                        ValueKind::Instruction(_) => Ok(self.context.ptr_type(AddressSpace::default()).const_null().into()),
                     }
                 } else {
                     let fn_val = self.module.get_function(name).ok_or(format!("Intrinsic '{}' not found", name))?;

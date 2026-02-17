@@ -52,6 +52,10 @@ int aion_fs_exists(const char* path) {
     return 0;
 }
 
+char* aion_getenv(const char* key) {
+    return getenv(key);
+}
+
 char* aion_get_argv_index(char** argv, int index) {
     return argv[index];
 }
