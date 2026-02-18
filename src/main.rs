@@ -44,6 +44,8 @@ fn main() {
                 println!("❌ Error: {}", e);
             } else {
                 println!("✨ Success! Generated {}", output);
+                println!("💡 To run this, use: ./aion run {}", input);
+                println!("🛠️  Or compile manually: clang {} src/runtime.c -o output -lpthread && ./output", output);
             }
         }
         Commands::Doc { input, output } => {

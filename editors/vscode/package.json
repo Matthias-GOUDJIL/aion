@@ -2,7 +2,7 @@
     "name": "aion-lang",
     "displayName": "Aion Language Support",
     "description": "Syntax highlighting for the Aion programming language",
-    "version": "0.1.0",
+    "version": "0.1.2",
     "engines": { "vscode": "^1.60.0" },
     "categories": [ "Programming Languages" ],
     "contributes": {
@@ -16,6 +16,10 @@
             "language": "aion",
             "scopeName": "source.ai",
             "path": "./syntaxes/aion.tmLanguage.json"
+        }],
+        "snippets": [{
+            "language": "aion",
+            "path": "./snippets.json"
         }]
     }
 }

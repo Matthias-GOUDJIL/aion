@@ -373,10 +373,10 @@ impl<'ctx> Compiler<'ctx> {
                                 // Heuristic for prototype: Some/Ok payloads are often Strings (pointers)
                                 let (load_type, cast_type) = if arm.pattern == "Some" || arm.pattern == "Ok" {
                                     let ptr_t = self.context.ptr_type(AddressSpace::default());
-                                    (ptr_t.into(), ptr_t.ptr_type(AddressSpace::default()))
+                                    (ptr_t.into(), ptr_t)
                                 } else {
                                     let i64_t = self.context.i64_type();
-                                    (i64_t.into(), i64_t.ptr_type(AddressSpace::default()))
+                                    (i64_t.into(), self.context.ptr_type(AddressSpace::default()))
                                 };
 
                                 let casted_ptr = self.builder.build_bit_cast(data_ptr, cast_type, "arm_datacast").unwrap();

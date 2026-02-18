@@ -5,9 +5,11 @@
     "patterns": [
         { "include": "#comments" },
         { "include": "#strings" },
+        { "include": "#fstrings" },
         { "include": "#keywords" },
         { "include": "#intents" },
         { "include": "#invariants" },
+        { "include": "#attributes" },
         { "include": "#constants" },
         { "include": "#operators" },
         { "include": "#types" },
@@ -51,6 +53,12 @@
                 "match": "::invariant"
             }]
         },
+        "attributes": {
+            "patterns": [{
+                "name": "entity.name.tag.aion",
+                "match": "@[a-zA-Z_][a-zA-Z0-9_]*"
+            }]
+        },
         "strings": {
             "name": "string.quoted.double.aion",
             "begin": "\"",
@@ -62,8 +70,35 @@
                 }
             ]
         },
+        "fstrings": {
+            "name": "string.quoted.double.fstring.aion",
+            "begin": "f\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.aion",
+                    "match": "\\\\."
+                },
+                {
+                    "name": "variable.interpolation.aion",
+                    "begin": "\\{",
+                    "end": "\\}",
+                    "patterns": [
+                        { "include": "$self" }
+                    ]
+                }
+            ]
+        },
         "constants": {
             "patterns": [
+                {
+                    "name": "constant.numeric.date.aion",
+                    "match": "\\bD[0-9]{4}-[0-9]{2}-[0-9]{2}\\b"
+                },
+                {
+                    "name": "constant.numeric.duration.aion",
+                    "match": "\\b[0-9]+(ms|s|m|h|d|y)\\b"
+                },
                 {
                     "name": "constant.numeric.float.aion",
                     "match": "\\b[0-9]+\\.[0-9]+\\b"
@@ -75,6 +110,10 @@
                 {
                     "name": "constant.language.boolean.aion",
                     "match": "\\b(true|false)\\b"
+                },
+                {
+                    "name": "constant.language.option.aion",
+                    "match": "\\b(Some|None|Ok|Err)\\b"
                 }
             ]
         },
@@ -89,8 +128,16 @@
                     "match": "==|!=|<=|>=|<|>"
                 },
                 {
+                    "name": "keyword.operator.logical.aion",
+                    "match": "&&|\\|\\||!"
+                },
+                {
                     "name": "keyword.operator.arithmetic.aion",
-                    "match": "\\+|\\-|\\*|/|%"
+                    "match": "\\+|\\-|\\*|/|%|\\^"
+                },
+                {
+                    "name": "keyword.operator.pipeline.aion",
+                    "match": "\\|>"
                 },
                 {
                     "name": "keyword.operator.arrow.aion",

@@ -150,7 +150,7 @@ impl TypeChecker {
                 Ok(Type::Unit)
             },
             Statement::Match { condition, arms } => {
-                let cond_type = self.check_expression(condition)?;
+                let _cond_type = self.check_expression(condition)?;
                 for arm in arms {
                     // Create scope for the arm if it has parameters
                     let outer_env = self.env.clone();
