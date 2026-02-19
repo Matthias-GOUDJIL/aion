@@ -1,0 +1,14 @@
+struct Box<T> {
+    value: T
+}
+
+impl Box<T> {
+    fn get(self) -> T {
+        self.value
+    }
+}
+
+fn main() {
+    let b = Box<i64> { value: 10 }
+    io.println(b.get())
+}

@@ -7,7 +7,7 @@ pub enum Type {
     String,
     Duration,
     Date,
-    Function { is_unsafe: bool },
+    Function { is_unsafe: bool, return_type: Box<Type> },
     Enum { name: String },
     Placeholder(String), // Placeholder like 'T'
     GenericInstance(String, Vec<Type>), // Concrete like 'Vector<i64>'

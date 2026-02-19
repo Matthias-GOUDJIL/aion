@@ -1,0 +1,18 @@
+use std.env
+use std.collections.vector_string
+use std.io
+
+fn main() {
+    let args = std.env.args()
+    io.print("Args count: ")
+    io.println(args.len())
+    
+    let first = args.get(0)
+    match first {
+        Some(s) => {
+            io.print("Arg 0: ")
+            io.println(s)
+        },
+        None => io.println("No args")
+    }
+}

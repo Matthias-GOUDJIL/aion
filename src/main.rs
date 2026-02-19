@@ -24,6 +24,8 @@ enum Commands {
     },
     Run {
         input: String,
+        #[arg(trailing_var_arg = true)]
+        args: Vec<String>,
     },
     Transpile {
         input: String,
@@ -58,7 +60,7 @@ fn main() {
                 Err(e) => println!("❌ Error: {}", e),
             }
         }
-        Commands::Run { input } => {
+        Commands::Run { input, args } => {
             println!("🚀 Compiling and Running {}...", input);
             
             let run_id = std::env::var("AION_RUN_ID").unwrap_or_else(|_| std::process::id().to_string());
@@ -92,7 +94,9 @@ fn main() {
 
             println!("✨ Execution Output:");
             println!("-------------------------------");
-            let output = Command::new(&bin_file).output();
+            let output = Command::new(&bin_file)
+                .args(&args)
+                .output();
             
             match output {
                 Ok(out) => {

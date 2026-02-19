@@ -31,6 +31,7 @@ pub struct Interface {
 #[derive(Debug, Clone)]
 pub struct ImplBlock {
     pub target_name: String,
+    pub generic_params: Vec<String>,
     pub interface_name: Option<String>, // Optional: impl Interface for Target
     pub functions: Vec<Function>,
 }
@@ -73,10 +74,13 @@ pub enum Statement {
     Return { value: Expression, intent: Option<String> },
     ExpressionStmt(Expression),
     If { condition: Expression, then_branch: Vec<Statement>, else_branch: Option<Vec<Statement>> },
+    Assignment { target: Expression, value: Expression },
+    While { condition: Expression, body: Vec<Statement> },
     For { var: String, range: Expression, body: Vec<Statement> },
     Spawn(Vec<Statement>),
     Match { condition: Expression, arms: Vec<MatchArm> },
     UnsafeBlock(Vec<Statement>),
+    NoOp,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +112,9 @@ pub enum Expression {
     },
     Range { start: Box<Expression>, end: Box<Expression> },
     Block { statements: Vec<Statement>, is_unsafe: bool },
+    If { condition: Box<Expression>, then_branch: Vec<Statement>, else_branch: Option<Vec<Statement>> },
+    Deref { expr: Box<Expression> },
+    Cast { expr: Box<Expression>, target: String },
     Intrinsic { name: String, arguments: Vec<Expression> },
     EnumInst { 
         name: String, 

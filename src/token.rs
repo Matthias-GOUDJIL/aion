@@ -1,7 +1,7 @@
 #[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     // System Keywords
-    Fn, Let, Mut, Struct, Enum, Return, If, Else, Match,
+    Fn, Let, Mut, Struct, Enum, Return, If, Else, Match, As, While,
     Use, Pub, Async, Unsafe, Require,
     Interface, Impl, Channel,
     For, In, Type, SelfToken, Spawn,

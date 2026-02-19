@@ -4,7 +4,8 @@
     "sessionRetention": {
       "enabled": true
     },
-    "previewFeatures": true
+    "previewFeatures": true,
+    "defaultApprovalMode": "auto_edit"
   },
   "ui": {
     "showStatusInTitle": true,

@@ -2,16 +2,21 @@
 
 ## 1. File System (`std.fs`)
 - [x] `read_to_string(path: String) -> String`
-    - Implemented as `fs.read_to_string` intrinsic.
 - [x] `write(path: String, content: String) -> i64`
-    - Implemented as `fs.write` intrinsic (returns bytes written).
 - [x] `exists(path: String) -> bool`
-    - Implemented as `fs.exists` intrinsic.
 
 ## 2. Collections (`std.collections`)
-- [ ] `Vector<T>` implementation.
+- [x] `VectorString` implementation (Manual monomorphization).
+- [x] `Option<T>` enum support.
 - [ ] `HashMap<K, V>` implementation.
+- [ ] Transition `VectorString` to generic `Vector<T>`.
 
 ## 3. Environment (`std.env`)
-- [ ] `args() -> Vector<String>`
-- [ ] `var(key: String) -> Option<String>`
+- [x] `var(key: String) -> Option<String>`
+- [x] `args() -> VectorString`
+
+## 4. IO (`std.io`)
+- [x] `print(msg: String)` (via intrinsic).
+- [x] `println(msg: String)` (via intrinsic).
+- [ ] `read_line() -> String`.
+

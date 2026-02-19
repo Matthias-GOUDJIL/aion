@@ -81,6 +81,7 @@ impl<'a> Lexer<'a> {
                     if self.peek_char() == ':' { self.input.next(); Token::DoubleColon } 
                     else { Token::Colon }
                 }
+                '@' => Token::At,
                 '"' => self.read_string(),
                 c if c.is_alphabetic() || c == '_' => {
                     if c == 'f' && self.peek_char() == '"' {
@@ -99,7 +100,9 @@ impl<'a> Lexer<'a> {
                             "return" => Token::Return,
                             "if" => Token::If,
                             "else" => Token::Else,
+                            "while" => Token::While,
                             "match" => Token::Match,
+                            "as" => Token::As,
                             "use" => Token::Use,
                             "pub" => Token::Pub,
                             "async" => Token::Async,

@@ -1,33 +1,32 @@
 use crate::token::Token;
 use crate::lexer::Lexer;
 use crate::ast::*;
-use std::collections::VecDeque;
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current_token: Token,
-    buffer: VecDeque<Token>,
+    peek_buffer: Vec<Token>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(mut lexer: Lexer<'a>) -> Self {
         let current_token = lexer.next_token();
-        Self { lexer, current_token, buffer: VecDeque::new() }
+        Self { lexer, current_token, peek_buffer: Vec::new() }
     }
 
     fn next_token(&mut self) {
-        if let Some(t) = self.buffer.pop_front() {
-            self.current_token = t;
+        if !self.peek_buffer.is_empty() {
+            self.current_token = self.peek_buffer.remove(0);
         } else {
             self.current_token = self.lexer.next_token();
         }
     }
 
     fn peek_at(&mut self, n: usize) -> Token {
-        while self.buffer.len() <= n {
-            self.buffer.push_back(self.lexer.next_token());
+        while self.peek_buffer.len() <= n {
+            self.peek_buffer.push(self.lexer.next_token());
         }
-        self.buffer[n].clone()
+        self.peek_buffer[n].clone()
     }
 
     pub fn parse_program(&mut self) -> Program {
@@ -35,24 +34,22 @@ impl<'a> Parser<'a> {
         let mut imports = Vec::new();
         let mut declarations = Vec::new();
 
-        if let Token::Identifier(id) = &self.current_token {
-            if id == "module" {
-                self.next_token();
-                module_name = Some(self.parse_path().join("."));
-            }
-        }
-
         while self.current_token != Token::EOF {
-            match &self.current_token {
+            match self.current_token {
+                Token::Identifier(ref id) if id == "module" => {
+                    self.next_token();
+                    let path = self.parse_path();
+                    module_name = Some(path.join("."));
+                    if self.current_token == Token::Semicolon { self.next_token(); }
+                },
                 Token::Use => imports.push(self.parse_import()),
-                Token::Pub | Token::Async | Token::Unsafe | Token::Fn | Token::At | Token::Struct | Token::Enum | Token::Interface | Token::Impl => {
-                    if let Some(decl) = self.parse_declaration() { 
-                        declarations.push(decl); 
+                _ => {
+                    if let Some(decl) = self.parse_declaration() {
+                        declarations.push(decl);
                     } else {
                         self.next_token();
                     }
                 },
-                _ => self.next_token(),
             }
         }
         Program { module_name, imports, declarations }
@@ -79,6 +76,7 @@ impl<'a> Parser<'a> {
     fn parse_import(&mut self) -> Import {
         self.next_token();
         let path = self.parse_path();
+        if self.current_token == Token::Semicolon { self.next_token(); }
         Import { path, alias: None }
     }
 
@@ -118,25 +116,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_interface(&mut self) -> Option<Interface> {
-        self.next_token();
-        let name = match &self.current_token { Token::Identifier(n) => n.clone(), _ => return None };
-        self.next_token();
-        if self.current_token != Token::LBrace { return None; }
-        self.next_token();
-        let mut methods = Vec::new();
-        while self.current_token != Token::RBrace && self.current_token != Token::EOF {
-            if let Some(f) = self.parse_function(vec![], vec![]) { methods.push(f); }
-            if self.current_token == Token::Semicolon { self.next_token(); }
-        }
-        if self.current_token == Token::RBrace { self.next_token(); }
-        Some(Interface { name, methods })
-    }
-
     fn parse_impl(&mut self) -> Option<ImplBlock> {
         self.next_token();
         let name1 = match &self.current_token { Token::Identifier(n) => n.clone(), _ => return None };
         self.next_token();
+        let generic_params = self.parse_generic_params();
         
         let (interface_name, target_name) = if let Token::Identifier(ref id) = self.current_token {
             if id == "for" {
@@ -151,10 +135,19 @@ impl<'a> Parser<'a> {
         self.next_token();
         let mut functions = Vec::new();
         while self.current_token != Token::RBrace && self.current_token != Token::EOF {
-            if let Some(f) = self.parse_function(vec![], vec![]) { functions.push(f); }
+            let mut modifiers = Vec::new();
+            while matches!(self.current_token, Token::Pub | Token::Async | Token::Unsafe) {
+                modifiers.push(self.current_token.clone());
+                self.next_token();
+            }
+            if self.current_token == Token::Fn {
+                if let Some(f) = self.parse_function(modifiers, vec![]) { functions.push(f); }
+            } else {
+                self.next_token();
+            }
         }
         if self.current_token == Token::RBrace { self.next_token(); }
-        Some(ImplBlock { target_name, interface_name, functions })
+        Some(ImplBlock { target_name, generic_params, interface_name, functions })
     }
 
     fn parse_generic_params(&mut self) -> Vec<String> {
@@ -185,7 +178,7 @@ impl<'a> Parser<'a> {
                 if self.current_token == Token::LParen {
                     self.next_token();
                     while self.current_token != Token::RParen && self.current_token != Token::EOF {
-                        data_types.push(self.parse_type_name()); 
+                        data_types.push(self.parse_type_name());
                         if self.current_token == Token::Comma { self.next_token(); }
                     }
                     if self.current_token == Token::RParen { self.next_token(); }
@@ -196,6 +189,21 @@ impl<'a> Parser<'a> {
         }
         if self.current_token == Token::RBrace { self.next_token(); }
         Some(Enum { name, generic_params, variants })
+    }
+
+    fn parse_interface(&mut self) -> Option<Interface> {
+        self.next_token();
+        let name = match &self.current_token { Token::Identifier(n) => n.clone(), _ => return None };
+        self.next_token();
+        if self.current_token != Token::LBrace { return None; }
+        self.next_token();
+        let mut methods = Vec::new();
+        while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+            if let Some(f) = self.parse_function(vec![], vec![]) { methods.push(f); }
+            if self.current_token == Token::Semicolon { self.next_token(); }
+        }
+        if self.current_token == Token::RBrace { self.next_token(); }
+        Some(Interface { name, methods })
     }
 
     fn parse_struct(&mut self, attributes: Vec<(String, String)>) -> Option<Struct> {
@@ -222,6 +230,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_name(&mut self) -> String {
+        if self.current_token == Token::Star {
+            self.next_token();
+            return format!("*{}", self.parse_type_name());
+        }
+
         let mut full_type;
         if let Token::Identifier(id) = self.current_token.clone() {
             full_type = id;
@@ -232,7 +245,16 @@ impl<'a> Parser<'a> {
             return format!("invalid_type_{:?}", tok);
         }
         
-        // Handle generic args like <i64, String>
+        while self.current_token == Token::Dot || self.current_token == Token::DoubleColon {
+            self.next_token();
+            if let Token::Identifier(sub) = &self.current_token { 
+                full_type.push('.'); full_type.push_str(sub); 
+                self.next_token(); 
+            } else {
+                break;
+            }
+        }
+
         if self.current_token == Token::Lt {
             full_type.push('<');
             self.next_token();
@@ -268,14 +290,33 @@ impl<'a> Parser<'a> {
         if self.current_token == Token::LParen {
             self.next_token();
             while self.current_token != Token::RParen && self.current_token != Token::EOF {
-                if let Token::Identifier(p_name) = &self.current_token {
+                if self.current_token == Token::SelfToken {
+                    params.push(("self".to_string(), "Self".to_string()));
+                    self.next_token();
+                } else if self.current_token == Token::Mut {
+                    self.next_token();
+                    if self.current_token == Token::SelfToken {
+                        params.push(("self".to_string(), "Self".to_string()));
+                        self.next_token();
+                    } else if let Token::Identifier(p_name) = &self.current_token {
+                        let p_name = p_name.clone();
+                        self.next_token();
+                        if self.current_token == Token::Colon {
+                            self.next_token();
+                            params.push((p_name, self.parse_type_name()));
+                        }
+                    }
+                } else if let Token::Identifier(p_name) = &self.current_token {
                     let p_name = p_name.clone();
                     self.next_token();
                     if self.current_token == Token::Colon {
                         self.next_token();
                         params.push((p_name, self.parse_type_name()));
                     }
+                } else {
+                    self.next_token();
                 }
+                
                 if self.current_token == Token::Comma { self.next_token(); }
             }
             if self.current_token == Token::RParen { self.next_token(); }
@@ -310,14 +351,27 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> Option<Statement> {
         match self.current_token {
+            Token::DoubleColon => {
+                if self.peek_at(0) == Token::Intent {
+                    self.next_token(); // ::
+                    self.next_token(); // intent
+                    if let Token::StringLiteral(_) = self.current_token {
+                        self.next_token();
+                    }
+                    Some(Statement::NoOp)
+                } else {
+                    Some(Statement::ExpressionStmt(self.parse_expression()))
+                }
+            },
             Token::Let => {
                 self.next_token();
+                let is_mut = if self.current_token == Token::Mut { self.next_token(); true } else { false };
                 let name = match &self.current_token { Token::Identifier(n) => n.clone(), _ => return None };
                 self.next_token();
                 if self.current_token == Token::Eq { 
                     self.next_token(); 
                     let value = self.parse_expression(); 
-                    Some(Statement::Let { name, value, intent: None, is_mut: false }) 
+                    Some(Statement::Let { name, value, intent: None, is_mut }) 
                 } else { None }
             },
             Token::Return => { 
@@ -336,6 +390,12 @@ impl<'a> Parser<'a> {
                 }
                 Some(Statement::If { condition, then_branch, else_branch })
             },
+            Token::While => {
+                self.next_token();
+                let condition = self.parse_expression();
+                let body = self.parse_block();
+                Some(Statement::While { condition, body })
+            },
             Token::Match => {
                 self.next_token();
                 let condition = self.parse_expression();
@@ -347,7 +407,6 @@ impl<'a> Parser<'a> {
                         let pattern = p.clone(); self.next_token();
                         let mut params = Vec::new();
                         
-                        // Parse (val, ...) if present
                         if self.current_token == Token::LParen {
                             self.next_token();
                             while self.current_token != Token::RParen && self.current_token != Token::EOF {
@@ -366,7 +425,6 @@ impl<'a> Parser<'a> {
                             arms.push(MatchArm { pattern, params, body });
                         }
                     } else if self.current_token != Token::Comma {
-                        // Consuming unexpected token to prevent infinite loop
                         self.next_token();
                     }
                     if self.current_token == Token::Comma { self.next_token(); }
@@ -379,93 +437,65 @@ impl<'a> Parser<'a> {
                 if self.current_token == Token::LBrace {
                     Some(Statement::UnsafeBlock(self.parse_block()))
                 } else {
-                    None // Handled by parse_declaration if it's a function
+                    None
                 }
             },
-            _ => Some(Statement::ExpressionStmt(self.parse_expression())),
+            _ => {
+                let expr = self.parse_expression();
+                if self.current_token == Token::Eq {
+                    self.next_token();
+                    let value = self.parse_expression();
+                    if self.current_token == Token::Semicolon { self.next_token(); }
+                    Some(Statement::Assignment { target: expr, value })
+                } else {
+                    if self.current_token == Token::Semicolon { self.next_token(); }
+                    Some(Statement::ExpressionStmt(expr))
+                }
+            },
         }
     }
 
-        fn parse_expression(&mut self) -> Expression {
+    fn parse_expression(&mut self) -> Expression {
+        self.parse_infix(0)
+    }
 
-            self.parse_infix(0)
+    fn parse_infix(&mut self, precedence: i32) -> Expression {
+        let mut left = self.parse_primary();
 
-        }
-
-    
-
-                fn parse_infix(&mut self, precedence: i32) -> Expression {
-
-    
-
-                    let mut left = self.parse_primary();
-
-    
-
-                    while self.current_token != Token::EOF && self.get_precedence() > precedence {
-
-    
-
-                        let op = self.current_token.clone();
-
-    
-
-                        self.next_token();
-
+        while self.current_token != Token::EOF && self.get_precedence() > precedence {
+            let op = self.current_token.clone();
+            self.next_token();
                 
-
-                if op == Token::Pipeline {
-
-                    let right = self.parse_infix(1);
-
-                    left = match right {
-
-                        Expression::Call { function, mut arguments, generic_args } => {
-
-                            arguments.insert(0, left);
-
-                            Expression::Call { function, generic_args, arguments }
-
-                        },
-
-                        Expression::Identifier(function) => {
-
-                            Expression::Call { function, generic_args: vec![], arguments: vec![left] }
-
-                        },
-
-                        _ => Expression::Infix { left: Box::new(left), operator: op, right: Box::new(right) }
-
-                    };
-
-                } else if op == Token::Range {
-
-                    let right = self.parse_infix(10); 
-
-                    left = Expression::Range { start: Box::new(left), end: Box::new(right) };
-
-                } else {
-
-                    let right = self.parse_infix(self.get_precedence_for_op(&op));
-
-                    left = Expression::Infix { left: Box::new(left), operator: op, right: Box::new(right) };
-
-                }
-
+            if op == Token::As {
+                let target = self.parse_type_name();
+                left = Expression::Cast { expr: Box::new(left), target };
+                continue;
             }
 
-            left
-
+            if op == Token::Pipeline {
+                let right = self.parse_infix(1);
+                left = match right {
+                    Expression::Call { function, mut arguments, generic_args } => {
+                        arguments.insert(0, left);
+                        Expression::Call { function, generic_args, arguments }
+                    },
+                    Expression::Identifier(function) => {
+                        Expression::Call { function, generic_args: vec![], arguments: vec![left] }
+                    },
+                    _ => Expression::Infix { left: Box::new(left), operator: op, right: Box::new(right) }
+                };
+            } else {
+                let right = self.parse_infix(self.get_precedence());
+                left = Expression::Infix { left: Box::new(left), operator: op, right: Box::new(right) };
+            }
         }
-
-        fn get_precedence(&self) -> i32 {
-        self.get_precedence_for_op(&self.current_token)
+        left
     }
 
-    fn get_precedence_for_op(&self, token: &Token) -> i32 {
-        match token {
-            Token::Caret => 10,
+    fn get_precedence(&self) -> i32 {
+        match self.current_token {
             Token::Star | Token::Slash | Token::Percent => 8,
+            Token::As => 7,
             Token::Plus | Token::Minus => 6,
             Token::Gt | Token::Lt | Token::GtEq | Token::LtEq | Token::EqEq | Token::NotEq | Token::Inside => 4,
             Token::And => 3,
@@ -484,7 +514,7 @@ impl<'a> Parser<'a> {
                     args.push(id.clone()); 
                     self.next_token(); 
                 } else {
-                    self.next_token(); // Avoid infinite loop
+                    self.next_token();
                 }
                 if self.current_token == Token::Comma { self.next_token(); }
             }
@@ -495,6 +525,49 @@ impl<'a> Parser<'a> {
 
     fn parse_primary(&mut self) -> Expression {
         match self.current_token.clone() {
+            Token::If => {
+                self.next_token();
+                let condition = self.parse_expression();
+                let then_branch = self.parse_block();
+                let mut else_branch = None;
+                if self.current_token == Token::Else { 
+                    self.next_token(); 
+                    else_branch = Some(self.parse_block()); 
+                }
+                Expression::If { condition: Box::new(condition), then_branch, else_branch }
+            },
+            Token::LBrace => {
+                Expression::Block { statements: self.parse_block(), is_unsafe: false }
+            },
+            Token::SelfToken => {
+                let mut full_name = "self".to_string();
+                self.next_token();
+                while self.current_token == Token::Dot {
+                    self.next_token();
+                    if let Token::Identifier(sub) = &self.current_token { 
+                        full_name.push('.'); full_name.push_str(sub); self.next_token(); 
+                    } else {
+                        break;
+                    }
+                }
+                
+                if self.current_token == Token::LParen {
+                    self.next_token();
+                    let mut args = Vec::new();
+                    while self.current_token != Token::RParen && self.current_token != Token::EOF {
+                        args.push(self.parse_expression());
+                        if self.current_token == Token::Comma { self.next_token(); }
+                    }
+                    if self.current_token == Token::RParen { self.next_token(); }
+                    Expression::Call { function: full_name, generic_args: vec![], arguments: args }
+                } else {
+                    Expression::Identifier(full_name)
+                }
+            },
+            Token::Star => {
+                self.next_token();
+                Expression::Deref { expr: Box::new(self.parse_primary()) }
+            },
             Token::Bang => {
                 self.next_token();
                 let expr = self.parse_primary();
@@ -509,8 +582,6 @@ impl<'a> Parser<'a> {
                 let expr = self.parse_expression();
                 if self.current_token == Token::RParen {
                     self.next_token();
-                } else {
-                    // TODO: Error handling for missing RParen
                 }
                 expr
             },
@@ -574,19 +645,18 @@ impl<'a> Parser<'a> {
                     if self.current_token == Token::RParen { self.next_token(); }
                     Expression::Call { function: full_name, generic_args, arguments: args }
                 } else if self.current_token == Token::LBrace {
-                    // Disambiguation Logic using Lookahead
                     let next_tok = self.peek_at(0);
                     let is_struct = if next_tok == Token::RBrace {
-                        true // Empty struct instantiation: MyStruct {}
+                        true 
                     } else if let Token::Identifier(_) = next_tok {
                         let next_next = self.peek_at(1);
                         matches!(next_next, Token::Colon | Token::Eq)
                     } else {
-                        false // Not a struct (e.g. if cond { ... })
+                        false 
                     };
 
                     if is_struct {
-                        self.next_token(); // Consume {
+                        self.next_token(); 
                         let mut fields = Vec::new();
                         while self.current_token != Token::RBrace && self.current_token != Token::EOF {
                             if let Token::Identifier(f_name) = &self.current_token {
@@ -595,8 +665,6 @@ impl<'a> Parser<'a> {
                                     self.next_token(); 
                                     let val = self.parse_expression(); 
                                     fields.push((f_name, val)); 
-                                } else {
-                                    // Should not happen if lookahead worked, but safety fallback
                                 }
                             } else if self.current_token == Token::Comma { 
                                 self.next_token(); 
@@ -607,7 +675,6 @@ impl<'a> Parser<'a> {
                         if self.current_token == Token::RBrace { self.next_token(); }
                         Expression::StructInst { name: full_name, generic_args, fields }
                     } else {
-                        // Not a struct instantiation, just return the identifier
                         Expression::Identifier(full_name)
                     }
                 } else if self.current_token == Token::DoubleColon {
