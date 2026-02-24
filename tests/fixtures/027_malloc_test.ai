@@ -1,0 +1,17 @@
+use core.heap
+use std.io
+
+fn main() {
+    io.println("Allocating...")
+    let ptr = unsafe { core.heap.alloc(8) }
+    io.println("Allocated")
+    let p = ptr as *i64
+    unsafe {
+        *p = 42
+        io.println("Stored 42")
+        let val = *p
+        if val == 42 {
+            io.println("Success!")
+        }
+    }
+}

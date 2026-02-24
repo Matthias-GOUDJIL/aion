@@ -1,0 +1,10 @@
+use std.collections.vector
+use std.io
+
+fn main() {
+    io.println("Hello")
+    let mut v = Vector<i64>.new()
+    io.println("Vector created")
+    v.push(42)
+    io.println("Pushed 42")
+}

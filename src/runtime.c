@@ -59,3 +59,19 @@ char* aion_getenv(const char* key) {
 char* aion_get_argv_index(char** argv, int index) {
     return argv[index];
 }
+
+void* aion_malloc(size_t size) {
+    void* p = malloc(size);
+    fprintf(stderr, "aion_malloc(%zu) = %p\n", size, p);
+    return p;
+}
+
+void* aion_realloc(void* ptr, size_t size) {
+    void* p = realloc(ptr, size);
+    fprintf(stderr, "aion_realloc(%p, %zu) = %p\n", ptr, size, p);
+    return p;
+}
+
+void aion_free(void* ptr) {
+    free(ptr);
+}

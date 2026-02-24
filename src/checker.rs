@@ -84,11 +84,27 @@ impl TypeChecker {
                 Declaration::Enum(e) => {
                     self.env.set(e.name.clone(), Type::Enum { name: e.name.clone() });
                 },
+                Declaration::Struct(s) => {
+                    self.env.set(s.name.clone(), Type::Struct { name: s.name.clone() });
+                },
                 Declaration::Impl(i) => {
+                    let mut full_target_name = i.target_name.clone();
+                    if !i.generic_params.is_empty() {
+                        full_target_name = format!("{}<{}>", i.target_name, i.generic_params.join(", "));
+                    }
+                    let base_target = if i.target_name.contains('<') {
+                        i.target_name.split('<').next().unwrap()
+                    } else {
+                        &i.target_name
+                    };
                     for f in &i.functions {
-                        let name = format!("{}.{}", i.target_name, f.name);
+                        let name = format!("{}.{}", base_target, f.name);
                         let is_unsafe = f.modifiers.contains(&Token::Unsafe);
-                        let ret_type = self.resolve_type(&f.return_type);
+                        // Re-resolve return type with potential generics replaced later? 
+                        // For now we just need the name in env.
+                        let mut ret_type_name = f.return_type.clone();
+                        if ret_type_name == "Self" { ret_type_name = full_target_name.clone(); }
+                        let ret_type = self.resolve_type(&ret_type_name);
                         self.env.set(name, Type::Function { is_unsafe, return_type: Box::new(ret_type) });
                     }
                 },
@@ -218,6 +234,7 @@ impl TypeChecker {
                         let type_name = match var_type {
                             Type::GenericInstance(name, _) => name,
                             Type::Enum { name } => name,
+                            Type::Struct { name } => name,
                             Type::Placeholder(name) => name,
                             Type::String => "String".to_string(),
                             _ => "Unknown".to_string(),
@@ -252,7 +269,7 @@ impl TypeChecker {
                 if let Some(eb) = else_branch {
                     for s in eb { self.check_statement(s)?; }
                 }
-                Ok(Type::Unknown) // Should return unified type of branches
+                Ok(Type::Integer) // For prototype, assume it returns something
             },
             Expression::Cast { expr, target } => {
                 self.check_expression(expr)?;
@@ -260,7 +277,7 @@ impl TypeChecker {
             },
             Expression::Deref { expr } => {
                 self.check_expression(expr)?;
-                Ok(Type::Unknown)
+                Ok(Type::Integer)
             },
             Expression::Block { statements, is_unsafe } => {
                 let was_in_unsafe = self.in_unsafe_context;
@@ -274,9 +291,15 @@ impl TypeChecker {
                 self.in_unsafe_context = was_in_unsafe;
                 Ok(last_type)
             },
-            Expression::Intrinsic { name: _, arguments } => {
+            Expression::Intrinsic { name, arguments } => {
                 for arg in arguments { self.check_expression(arg)?; }
-                Ok(Type::Unknown)
+                if name == "str_len" || name == "fs_exists" { Ok(Type::Integer) }
+                else if name == "str_concat" || name == "fs_read_to_string" { Ok(Type::String) }
+                else { Ok(Type::Integer) }
+            },
+            Expression::StructInst { name, fields, .. } => {
+                for (_, f_expr) in fields { self.check_expression(f_expr)?; }
+                Ok(self.resolve_type(name))
             },
             Expression::EnumInst { name, variant: _, arguments, .. } => {
                 let enum_type = self.env.get(name).ok_or(format!("Error: Enum '{}' not defined.", name))?;

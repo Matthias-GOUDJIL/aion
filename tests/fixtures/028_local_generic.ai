@@ -1,0 +1,23 @@
+use std.io
+
+struct LocalVector<T> {
+    ptr: *T,
+    len: i64,
+    cap: i64,
+}
+
+impl LocalVector<T> {
+    pub fn new() -> LocalVector<T> {
+        LocalVector {
+            ptr: 0 as *T,
+            len: 0,
+            cap: 0,
+        }
+    }
+}
+
+fn main() {
+    io.println("Hello")
+    let mut v = LocalVector<i64>.new()
+    io.println("Vector created")
+}

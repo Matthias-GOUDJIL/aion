@@ -2,6 +2,7 @@ module std.collections.vector
 
 use core.memory
 use core.heap
+use std.option
 
 pub struct Vector<T> {
     ptr: *T,
@@ -23,7 +24,8 @@ impl Vector<T> {
             self.grow();
         }
         unsafe {
-            let offset_ptr = self.ptr.offset(self.len);
+            let p = self.ptr;
+            let offset_ptr = p.offset(self.len);
             *offset_ptr = value;
         }
         self.len = self.len + 1;
@@ -35,7 +37,8 @@ impl Vector<T> {
         }
         self.len = self.len - 1;
         unsafe {
-            let offset_ptr = self.ptr.offset(self.len);
+            let p = self.ptr;
+            let offset_ptr = p.offset(self.len);
             return Option::Some(*offset_ptr);
         }
     }
@@ -45,7 +48,8 @@ impl Vector<T> {
             return Option::None;
         }
         unsafe {
-            let offset_ptr = self.ptr.offset(index);
+            let p = self.ptr;
+            let offset_ptr = p.offset(index);
             return Option::Some(*offset_ptr);
         }
     }
@@ -57,10 +61,11 @@ impl Vector<T> {
     fn grow(mut self) {
         let new_cap = if self.cap == 0 { 4 } else { self.cap * 2 };
         let byte_size = new_cap * @sizeof(T);
+        let p = self.ptr;
         let new_ptr_u8 = if self.cap == 0 {
             core.heap.alloc(byte_size)
         } else {
-            core.heap.realloc(self.ptr as *u8, byte_size)
+            core.heap.realloc(p as *u8, byte_size)
         };
         
         self.ptr = new_ptr_u8 as *T;

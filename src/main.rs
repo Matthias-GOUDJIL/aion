@@ -101,6 +101,7 @@ fn main() {
             match output {
                 Ok(out) => {
                     print!("{}", String::from_utf8_lossy(&out.stdout));
+                    eprint!("{}", String::from_utf8_lossy(&out.stderr));
                     if !out.status.success() {
                         println!("⚠️ Process exited with code: {}", out.status.code().unwrap_or(-1));
                     }

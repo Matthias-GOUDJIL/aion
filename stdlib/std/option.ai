@@ -19,4 +19,17 @@ impl Option<T> {
             Option::None => default,
         }
     }
+
+    pub fn unwrap(self) -> T {
+        match self {
+            Option::Some(v) => v,
+            Option::None => {
+                // TODO: Proper panic
+                @intrinsic("io_println", "Error: called Option::unwrap() on a None value")
+                @intrinsic("exit", 1)
+                // The compiler might need a return here if it doesn't know exit is terminal
+                self.unwrap() // dummy
+            },
+        }
+    }
 }

@@ -634,6 +634,15 @@ impl<'a> Parser<'a> {
                 }
 
                 let generic_args = self.parse_generic_args();
+                
+                if self.current_token == Token::Dot {
+                    self.next_token();
+                    if let Token::Identifier(sub) = &self.current_token {
+                        full_name.push('.');
+                        full_name.push_str(sub);
+                        self.next_token();
+                    }
+                }
 
                 if self.current_token == Token::LParen {
                     self.next_token();

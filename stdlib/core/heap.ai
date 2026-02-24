@@ -1,15 +1,15 @@
 module core.heap
 
 ::intent "Allocate raw memory on the heap"
-@intrinsic("libc.malloc")
+@intrinsic("aion_malloc")
 pub unsafe fn alloc(size: i64) -> *u8
 
 ::intent "Release raw memory back to the system"
-@intrinsic("libc.free")
+@intrinsic("aion_free")
 pub unsafe fn dealloc(ptr: *u8)
 
 ::intent "Reallocate memory block with new size"
-@intrinsic("libc.realloc")
+@intrinsic("aion_realloc")
 pub unsafe fn realloc(ptr: *u8, new_size: i64) -> *u8
 
 pub unsafe fn null() -> *u8 {
