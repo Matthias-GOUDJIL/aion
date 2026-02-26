@@ -86,9 +86,78 @@ impl HashMap<V> {
         }
         Option::None
     }
+
+    pub fn len(self) -> i64 {
+        self.len
+    }
+
+    pub fn remove(mut self, key: String) -> bool {
+        let h = std.hash.hash_string(key);
+        let idx = (h % (self.cap as u64)) as i64;
+        
+        unsafe {
+            let bucket_ptr = self.buckets.offset(idx);
+            let mut current = *bucket_ptr;
+            let mut prev = core.heap.null() as *Entry<V>;
+            
+            while current != (core.heap.null() as *Entry<V>) {
+                if std.string.equals((*current).key, key) {
+                    if prev == (core.heap.null() as *Entry<V>) {
+                        *bucket_ptr = (*current).next;
+                    } else {
+                        (*prev).next = (*current).next;
+                    }
+                    core.heap.dealloc(current as *u8);
+                    self.len = self.len - 1;
+                    return true;
+                }
+                prev = current;
+                current = (*current).next;
+            }
+        }
+        false
+    }
     
     fn resize(mut self) {
-        // Placeholder: simplistic resize implementation would go here
-        // Create new buckets, rehash all entries...
+        let old_cap = self.cap;
+        let new_cap = old_cap * 2;
+        let old_buckets = self.buckets;
+        
+        let new_buckets = unsafe { core.heap.alloc(new_cap * 8) as * *Entry<V> };
+        let mut i = 0;
+        while i < new_cap {
+            unsafe {
+                let p = new_buckets.offset(i);
+                *p = core.heap.null() as *Entry<V>;
+            }
+            i = i + 1;
+        }
+        
+        // Rehash
+        i = 0;
+        while i < old_cap {
+            unsafe {
+                let mut current = *old_buckets.offset(i);
+                while current != (core.heap.null() as *Entry<V>) {
+                    let next = (*current).next;
+                    
+                    // Find new bucket
+                    let h = std.hash.hash_string((*current).key);
+                    let new_idx = (h % (new_cap as u64)) as i64;
+                    let new_bucket_ptr = new_buckets.offset(new_idx);
+                    
+                    // Insert into new bucket
+                    (*current).next = *new_bucket_ptr;
+                    *new_bucket_ptr = current;
+                    
+                    current = next;
+                }
+            }
+            i = i + 1;
+        }
+        
+        unsafe { core.heap.dealloc(old_buckets as *u8); }
+        self.buckets = new_buckets;
+        self.cap = new_cap;
     }
 }

@@ -647,12 +647,10 @@ impl<'a> Parser<'a> {
                 let mut full_name = n;
                 while self.current_token == Token::Dot {
                     if let Token::Identifier(sub) = self.peek_at(0) {
-                        if self.peek_at(1) != Token::LParen {
-                            self.next_token(); 
-                            full_name.push('.');
-                            full_name.push_str(&sub);
-                            self.next_token(); 
-                        } else { break; }
+                        self.next_token(); 
+                        full_name.push('.');
+                        full_name.push_str(&sub);
+                        self.next_token(); 
                     } else { break; }
                 }
                 let generic_args = self.parse_generic_args();
@@ -724,6 +722,12 @@ impl<'a> Parser<'a> {
                     if let Token::Identifier(variant) = self.current_token.clone() {
                         let variant_name = variant;
                         self.next_token();
+                        
+                        let mut m_generic_args = Vec::new();
+                        if self.current_token == Token::Lt {
+                            m_generic_args = self.parse_generic_args();
+                        }
+
                         let mut args = Vec::new();
                         if self.current_token == Token::LParen {
                             self.next_token();
@@ -733,12 +737,16 @@ impl<'a> Parser<'a> {
                             }
                             if self.current_token == Token::RParen { self.next_token(); }
                         }
-                        let name = match expr {
-                            Expression::Identifier(ref n) => n.clone(),
-                            Expression::TypeRef { ref name, .. } => name.clone(),
-                            _ => "unknown_enum".to_string(),
+                        let (name, mut combined_generic_args) = match expr {
+                            Expression::Identifier(ref n) => (n.clone(), vec![]),
+                            Expression::TypeRef { ref name, ref generic_args } => (name.clone(), generic_args.clone()),
+                            Expression::EnumInst { ref name, ref variant, ref generic_args, .. } => {
+                                (format!("{}.{}", name, variant), generic_args.clone())
+                            }
+                            _ => ("unknown_enum".to_string(), vec![]),
                         };
-                        expr = Expression::EnumInst { name, variant: variant_name, generic_args: vec![], arguments: args };
+                        combined_generic_args.extend(m_generic_args);
+                        expr = Expression::EnumInst { name, variant: variant_name, generic_args: combined_generic_args, arguments: args };
                     } else { break; }
                 },
                 Token::LParen => {

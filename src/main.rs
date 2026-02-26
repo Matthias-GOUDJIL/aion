@@ -44,6 +44,7 @@ fn main() {
             println!("🚀 Building {}...", input);
             if let Err(e) = compile_file(&input, &output) {
                 println!("❌ Error: {}", e);
+                std::process::exit(1);
             } else {
                 println!("✨ Success! Generated {}", output);
                 println!("💡 To run this, use: ./aion run {}", input);
@@ -57,7 +58,10 @@ fn main() {
                     fs::write(&output, doc).unwrap();
                     println!("✨ Documentation generated in {}", output);
                 },
-                Err(e) => println!("❌ Error: {}", e),
+                Err(e) => {
+                    println!("❌ Error: {}", e);
+                    std::process::exit(1);
+                }
             }
         }
         Commands::Run { input, args } => {
@@ -70,7 +74,7 @@ fn main() {
 
             if let Err(e) = compile_file(&input, &ir_file) {
                 println!("❌ Aion Compilation Error: {}", e);
-                return;
+                std::process::exit(1);
             }
 
             // Fix: Add PIC relocation model for modern Linux compatibility
@@ -80,7 +84,7 @@ fn main() {
 
             if llc_status.is_err() || !llc_status.unwrap().success() {
                 println!("❌ LLVM Backend Error (llc failed)");
-                return;
+                std::process::exit(1);
             }
 
             let gcc_status = Command::new("gcc")
@@ -89,7 +93,7 @@ fn main() {
 
             if gcc_status.is_err() || !gcc_status.unwrap().success() {
                 println!("❌ Linking Error (gcc failed)");
-                return;
+                std::process::exit(1);
             }
 
             println!("✨ Execution Output:");

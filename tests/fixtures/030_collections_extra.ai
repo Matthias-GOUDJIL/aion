@@ -1,0 +1,63 @@
+use std.collections.map
+use std.collections.set
+use std.io
+
+fn main() {
+    // 1. Test HashMap Remove
+    io.println("Testing HashMap remove...")
+    let mut m = HashMap<i64>.new()
+    m.insert("a", 1)
+    m.insert("b", 2)
+    m.insert("c", 3)
+    
+    io.print("Len before: ")
+    io.println(m.len())
+    
+    m.remove("b")
+    io.print("Len after: ")
+    io.println(m.len())
+    
+    let b_opt = m.get("b")
+    if b_opt.is_some() {
+        io.println("Error: b still exists")
+    } else {
+        io.println("Success: b removed")
+    }
+    
+    // 2. Test HashMap Resize
+    io.println("Testing HashMap resize...")
+    let mut i = 0
+    while i < 20 {
+        // This should trigger at least one resize (cap 16 -> 32)
+        m.insert(std.string.concat("key_", std.string.from_int(i)), i)
+        i = i + 1
+    }
+    io.print("Len after many inserts: ")
+    io.println(m.len())
+    
+    let key5 = m.get("key_5")
+    match key5 {
+        Some(v) => {
+            io.print("key_5 value: ")
+            io.println(v)
+        },
+        None => io.println("Error: key_5 not found")
+    }
+
+    // 3. Test HashSet
+    io.println("Testing HashSet...")
+    let mut s = HashSet::new()
+    s.insert("apple")
+    s.insert("banana")
+    
+    if s.contains("apple") {
+        io.println("Set contains apple")
+    }
+    
+    s.remove("apple")
+    if s.contains("apple") {
+        io.println("Error: apple still in set")
+    } else {
+        io.println("Success: apple removed from set")
+    }
+}

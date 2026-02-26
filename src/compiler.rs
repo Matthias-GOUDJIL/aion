@@ -51,7 +51,9 @@ impl<'ctx> Compiler<'ctx> {
             return self.context.ptr_type(AddressSpace::default()).into();
         }
         match type_name {
-            "i64" => self.context.i64_type().into(),
+            "i64" | "u64" => self.context.i64_type().into(),
+            "i32" | "u32" => self.context.i32_type().into(),
+            "i8" | "u8" => self.context.i8_type().into(),
             "f64" => self.context.f64_type().into(),
             "bool" => self.context.i64_type().into(),
             "String" => self.context.ptr_type(AddressSpace::default()).into(),
@@ -383,7 +385,7 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function("free", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_io_print", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_io_println", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
-        self.module.add_function("strcat", ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
+        self.module.add_function("aion_str_concat", ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
         self.module.add_function("aion_int_to_str", ptr_type.fn_type(&[i64_type.into()], false), None);
         self.module.add_function("aion_float_to_str", ptr_type.fn_type(&[f64_type.into()], false), None);
         self.module.add_function("aion_str_eq", i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
@@ -751,7 +753,10 @@ impl<'ctx> Compiler<'ctx> {
                         let receiver_expr = Expression::Identifier(receiver_name.to_string());
                         return self.get_expr_type_name(&receiver_expr, variables);
                     }
-                    if let Some((_, _, type_name)) = variables.get(receiver_name) {
+                    
+                    let receiver_expr = Expression::Identifier(receiver_name.to_string());
+                    let type_name = self.get_expr_type_name(&receiver_expr, variables);
+                    if type_name != "unknown" {
                          let (base_type_name, type_generic_args) = if type_name.contains('<') {
                              let parts: Vec<&str> = type_name.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
                              (parts[0].to_string(), parts[1..].iter().map(|s| s.trim().to_string()).collect::<Vec<String>>())
@@ -1033,18 +1038,18 @@ impl<'ctx> Compiler<'ctx> {
 
                 if let Some((receiver_name, method_name)) = func_name.rsplit_once('.') {
                      let receiver_expr = Expression::Identifier(receiver_name.to_string());
-                     let receiver_type_name = self.get_expr_type_name(&receiver_expr, variables);
+                     let type_name = self.get_expr_type_name(&receiver_expr, variables);
                      
-                     if receiver_type_name.starts_with('*') && method_name == "offset" && arguments.len() == 1 {
+                     if type_name.starts_with('*') && method_name == "offset" && arguments.len() == 1 {
                          let idx = self.compile_expr(&arguments[0], variables, function)?.into_int_value();
                          let ptr = self.compile_expr(&receiver_expr, variables, function)?.into_pointer_value();
-                         let elem_type_name = &receiver_type_name[1..];
+                         let elem_type_name = &type_name[1..];
                          let elem_type = self.aion_type_to_llvm(elem_type_name);
                          let gep = unsafe { self.builder.build_gep(elem_type, ptr, &[idx], "offset_ptr").unwrap() };
                          return Ok(gep.into());
                      }
 
-                     if let Some((_var_ptr, _var_type, type_name)) = variables.get(receiver_name) {
+                     if type_name != "unknown" {
                          let (base_type_name, type_generic_args) = if type_name.contains('<') {
                              let parts: Vec<&str> = type_name.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
                              (parts[0].to_string(), parts[1..].iter().map(|s| s.trim().to_string()).collect::<Vec<String>>())
@@ -1057,16 +1062,16 @@ impl<'ctx> Compiler<'ctx> {
                              .unwrap_or(base_type_name.clone());
                          let candidate = format!("{}.{}", type_prefix, method_name);
                          
-                         let mut final_candidate = candidate.clone();
-                         let mut found = self.decls.contains_key(&candidate);
+                         let mut final_candidate = self.resolve_fuzzy_name(&self.decls, &candidate).unwrap_or(candidate.clone());
+                         let mut found = self.decls.contains_key(&final_candidate);
                          
                          if !found {
                              if let Some(decl) = self.decls.get(&type_prefix) {
                                  if let Declaration::Struct(s) = decl {
                                      if !s.generic_params.is_empty() {
                                          let generic_candidate = format!("{}<{}>.{}", type_prefix, s.generic_params.join(", "), method_name);
-                                         if self.decls.contains_key(&generic_candidate) {
-                                             final_candidate = generic_candidate;
+                                         if let Some(full_gen_name) = self.resolve_fuzzy_name(&self.decls, &generic_candidate) {
+                                             final_candidate = full_gen_name;
                                              found = true;
                                          }
                                      }
@@ -1075,7 +1080,7 @@ impl<'ctx> Compiler<'ctx> {
                          }
 
                          if found {
-                             actual_args.insert(0, Expression::Identifier(receiver_name.to_string()));
+                             actual_args.insert(0, receiver_expr);
                              if actual_generic_args.is_empty() { actual_generic_args = type_generic_args; }
                              actual_func_name = final_candidate;
                              is_method_call = true;
@@ -1118,7 +1123,7 @@ impl<'ctx> Compiler<'ctx> {
                         if let Some(existing) = self.module.get_function(&gen_name) { existing }
                         else { self.instantiate_function(&full_name, &actual_generic_args)? }
                     } else {
-                        self.module.get_function(&llvm_name).ok_or(format!("Function '{}' not found (LLVM name: {})", actual_func_name, llvm_name))?
+                        self.module.get_function(&llvm_name).ok_or(format!("Function '{}' not found (LLVM name: {}) [Generic args: {:?}]", actual_func_name, llvm_name, actual_generic_args))?
                     }
                 };
 
@@ -1271,20 +1276,35 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 Ok(self.builder.build_load(struct_type, alloca, "structtmp").unwrap())
             },
-            Expression::EnumInst { name, variant, generic_args: _, arguments } => {
-                let full_name = self.resolve_fuzzy_name(&self.enum_types, name).ok_or(format!("Enum '{}' not found", name))?;
-                let enum_type = *self.enum_types.get(&full_name).ok_or(format!("Enum '{}' not found in enum_types", full_name))?;
-                let alloca = self.builder.build_alloca(enum_type, &format!("{}_inst", name)).unwrap();
-                let tag = if variant == "Ok" || variant == "Some" { 0 } else if variant == "Err" || variant == "None" { 1 } else { 0 };
-                let tag_ptr = self.builder.build_struct_gep(enum_type, alloca, 0, "tagptr").unwrap();
-                self.builder.build_store(tag_ptr, self.context.i64_type().const_int(tag, false)).unwrap();
-                if !arguments.is_empty() {
-                    let data_val = self.compile_expr(&arguments[0], variables, function)?;
-                    let data_ptr = self.builder.build_struct_gep(enum_type, alloca, 1, "dataptr").unwrap();
-                    let casted_ptr = self.builder.build_bit_cast(data_ptr, self.context.ptr_type(AddressSpace::default()), "datacast").unwrap();
-                    self.builder.build_store(casted_ptr.into_pointer_value(), data_val).unwrap();
+            Expression::EnumInst { name, variant, generic_args, arguments } => {
+                let full_name = self.resolve_fuzzy_name(&self.enum_types, name).unwrap_or(name.clone());
+                let mut real_variant_tag = None;
+                if let Some(Declaration::Enum(e)) = self.decls.get(&full_name) {
+                    for (idx, v) in e.variants.iter().enumerate() {
+                        if v.name == *variant {
+                            real_variant_tag = Some(idx as u64);
+                            break;
+                        }
+                    }
                 }
-                Ok(self.builder.build_load(enum_type, alloca, "enumtmp").unwrap())
+                
+                if let Some(tag_val) = real_variant_tag {
+                    let enum_type = *self.enum_types.get(&full_name).ok_or(format!("Enum type not found: {}", full_name))?;
+                    let alloca = self.builder.build_alloca(enum_type, &format!("{}_inst", name)).unwrap();
+                    let tag_ptr = self.builder.build_struct_gep(enum_type, alloca, 0, "tagptr").unwrap();
+                    self.builder.build_store(tag_ptr, self.context.i64_type().const_int(tag_val, false)).unwrap();
+                    if !arguments.is_empty() {
+                        let data_val = self.compile_expr(&arguments[0], variables, function)?;
+                        let data_ptr = self.builder.build_struct_gep(enum_type, alloca, 1, "dataptr").unwrap();
+                        let casted_ptr = self.builder.build_bit_cast(data_ptr, self.context.ptr_type(AddressSpace::default()), "datacast").unwrap();
+                        self.builder.build_store(casted_ptr.into_pointer_value(), data_val).unwrap();
+                    }
+                    Ok(self.builder.build_load(enum_type, alloca, "enumtmp").unwrap())
+                } else {
+                    // Fallback to static method call: Type::method()
+                    let func_name = format!("{}.{}", full_name, variant);
+                    self.compile_expr(&Expression::Call { function: func_name, generic_args: generic_args.clone(), arguments: arguments.clone() }, variables, function)
+                }
             },
             Expression::MemberAccess { receiver, member } => {
                 let rec_type_name = self.get_expr_type_name(receiver, variables);
@@ -1336,6 +1356,19 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Cast { expr, target } => {
                 let val = self.compile_expr(expr, variables, function)?;
                 let dest_type = self.aion_type_to_llvm(target);
+                
+                if val.is_int_value() && dest_type.is_int_type() {
+                    let src_width = val.into_int_value().get_type().get_bit_width();
+                    let dest_width = dest_type.into_int_type().get_bit_width();
+                    if src_width < dest_width {
+                        return Ok(self.builder.build_int_z_extend(val.into_int_value(), dest_type.into_int_type(), "cast").unwrap().into());
+                    } else if src_width > dest_width {
+                        return Ok(self.builder.build_int_truncate(val.into_int_value(), dest_type.into_int_type(), "cast").unwrap().into());
+                    } else {
+                        return Ok(val);
+                    }
+                }
+
                 if val.is_pointer_value() && dest_type.is_pointer_type() {
                     Ok(self.builder.build_bit_cast(val.into_pointer_value(), dest_type.into_pointer_type(), "cast").unwrap().into())
                 } else if val.is_int_value() && dest_type.is_pointer_type() {
@@ -1428,7 +1461,7 @@ impl<'ctx> Compiler<'ctx> {
                     let call = self.builder.build_call(strlen, &[arg.into()], "strlentmp").unwrap();
                     match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_int(0, false).into()) }
                 } else if name == "str_concat" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "str_concat")) {
-                    let strcat = self.module.get_function("strcat").ok_or("strcat not found")?;
+                    let strcat = self.module.get_function("aion_str_concat").ok_or("aion_str_concat not found")?;
                     let arg1 = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
                     let arg2 = self.compile_expr(if name == "intrinsic" { &arguments[2] } else { &arguments[1] }, variables, function)?;
                     let call = self.builder.build_call(strcat, &[arg1.into(), arg2.into()], "strcattmp").unwrap();

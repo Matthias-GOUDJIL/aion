@@ -10,7 +10,7 @@ pub struct HashSet {
 impl HashSet {
     pub fn new() -> HashSet {
         HashSet {
-            map: std.collections.map::HashMap::new(),
+            map: HashMap<bool>.new(),
         }
     }
 
@@ -23,12 +23,11 @@ impl HashSet {
     }
 
     pub fn contains(self, value: String) -> bool {
-        std.option::Option::is_some(self.map.get(value))
+        let opt = self.map.get(value);
+        opt.is_some()
     }
 
     pub fn remove(mut self, value: String) -> bool {
-        // HashMap needs a remove method ideally, for now this is partial
-        // self.map.remove(value) 
-        false
+        self.map.remove(value)
     }
 }

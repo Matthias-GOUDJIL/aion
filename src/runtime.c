@@ -42,6 +42,16 @@ void aion_io_println(const char* msg) {
     fflush(stdout);
 }
 
+char* aion_str_concat(const char* s1, const char* s2) {
+    if (!s1 && !s2) return NULL;
+    if (!s1) return strdup(s2);
+    if (!s2) return strdup(s1);
+    char* buf = malloc(strlen(s1) + strlen(s2) + 1);
+    strcpy(buf, s1);
+    strcat(buf, s2);
+    return buf;
+}
+
 char* aion_int_to_str(long long n) {
     char* buf = malloc(32);
     snprintf(buf, 32, "%lld", n);

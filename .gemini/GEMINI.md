@@ -58,9 +58,15 @@ This project uses a multi-role AI development workflow. I will adapt my persona 
 4.  **Block Termination**: Every basic block in `compiler.rs` MUST be terminated. Always check `builder.get_insert_block().unwrap().get_terminator().is_none()` before adding a default return at the end of functions or branches.
 5.  **Inkwell Safety**: Use `ValueKind` matching for call results instead of `inkwell::values::Either` to avoid resolution errors during compiler builds.
 
+## 🐳 Docker-First Environment (CRITICAL)
+1.  **Isolation**: LLVM 15 and its dependencies are NOT installed on the host. They are managed inside a Docker container.
+2.  **No Local Cargo**: NEVER run `cargo build`, `cargo run`, or `cargo test` directly on the host (unless explicitly testing non-LLVM logic). It will fail with an LLVM error.
+3.  **Wrapper Priority**: Always use the `./aion` wrapper or `python3 runner.py`. These scripts automatically handle Docker orchestration, image building, and volume mounting.
+
 ## 🛠️ Essential Commands
-- **Build & Run**: `./aion build <file.ai> && ./output`
-- **Gen Docs**: `./aion doc <file.ai>`
-- **Test Suite**: `python3 runner.py` (Integration) / `cargo test` (Internal)
+- **Compiler (via Docker)**: `./aion build <file.ai> && ./output`
+- **Gen Docs (via Docker)**: `./aion doc <file.ai>`
+- **Test Suite (via Docker)**: `python3 runner.py` (Integration)
+- **Host-Only (Safe)**: `cargo check` (for syntax/types ONLY if it doesn't trigger LLVM link) or `grep_search`.
 - **Reference**: `grep_search` in `../elo` for logic extraction.
 - **System Cleanup**: `docker ps -q --filter "ancestor=aion-compiler" | xargs -r docker stop` (Run if Docker orphans are suspected).

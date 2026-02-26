@@ -12,6 +12,8 @@ WRAPPER_SCRIPT = PROJECT_ROOT / "aion"
 FIXTURES = PROJECT_ROOT / "tests/fixtures"
 EXPECTED = PROJECT_ROOT / "tests/expected"
 
+EXPECTED_FAILURES = ["005_unsafe_check"]
+
 def run():
     if not WRAPPER_SCRIPT.exists():
         print(f"❌ Wrapper script not found: {WRAPPER_SCRIPT}")
@@ -40,7 +42,11 @@ def run():
             continue
             
         if res.returncode != 0:
-            print(f"❌ {name}: Run Fail\n{res.stderr}")
+            if name in EXPECTED_FAILURES:
+                print(f"✅ {name} (Expected Fail)")
+                passed += 1
+                continue
+            print(f"❌ {name}: Run Fail\n{res.stderr}\n{res.stdout}")
             continue
             
         # Parse output to extract the actual program stdout
@@ -50,8 +56,12 @@ def run():
         if match:
             actual = match.group(1).strip()
         else:
-            print(f"⚠️ {name}: Could not parse output format")
-            print(f"Raw Output:\n{full_output}")
+            # If we expected output but didn't find delimiters, it's a fail
+            # (unless it's an intentional compiler error test)
+            if not exp_file.exists() or os.path.getsize(exp_file) > 0:
+                print(f"❌ {name}: Could not parse output format (no delimiters)")
+                print(f"Full Output:\n{full_output}")
+                continue
             actual = ""
 
         # Check

@@ -3,8 +3,8 @@
 # Aion Universal Compiler Wrapper
 IMAGE_NAME="aion-compiler"
 
-# Proactive cleanup of any stale containers before starting
-docker ps -q --filter "ancestor=$IMAGE_NAME" | xargs -r docker stop > /dev/null 2>&1
+# Proactive cleanup (disabled by default for speed, only run if image is missing)
+# docker ps -q --filter "ancestor=$IMAGE_NAME" | xargs -r docker stop > /dev/null 2>&1
 
 # Build image if missing
 if [[ "$(docker images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
@@ -12,8 +12,13 @@ if [[ "$(docker images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
     docker build -t $IMAGE_NAME . > /dev/null
 fi
 
-# Run with isolated target directory inside container to avoid host locks
-# Using /tmp/target inside container ensures clean build environment
-docker run --rm -v "$(pwd)":/workspace -w /workspace \
+# Use Docker volumes for caching to avoid recompiling from scratch every time
+# - aion-target-cache: caches target directory (Rust build artifacts)
+# - aion-cargo-cache: caches cargo registry (dependencies)
+docker run --rm \
+    -v "$(pwd)":/workspace \
+    -v aion-target-cache:/tmp/target \
+    -v aion-cargo-cache:/root/.cargo/registry \
+    -w /workspace \
     $IMAGE_NAME \
     cargo run --quiet --color never --target-dir /tmp/target -- "$@"
