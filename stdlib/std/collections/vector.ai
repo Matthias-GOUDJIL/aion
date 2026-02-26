@@ -44,7 +44,7 @@ impl Vector<T> {
     }
 
     pub fn get(self, index: i64) -> Option<T> {
-        if index >= self.len {
+        if index < 0 || index >= self.len {
             return Option::None;
         }
         unsafe {

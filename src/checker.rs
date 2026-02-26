@@ -294,8 +294,11 @@ impl TypeChecker {
                 Ok(self.resolve_type(target))
             },
             Expression::Deref { expr } => {
-                self.check_expression(expr)?;
-                Ok(Type::Integer)
+                let receiver_type = self.check_expression(expr)?;
+                match receiver_type {
+                    Type::Pointer(t) => Ok(*t),
+                    _ => Ok(Type::Integer),
+                }
             },
             Expression::Block { statements, is_unsafe } => {
                 let was_in_unsafe = self.in_unsafe_context;
@@ -379,8 +382,40 @@ impl TypeChecker {
 
     fn check_compatibility(&self, t1: Type, t2: Type, op: &Token) -> Result<Type, String> {
         match (t1, t2) {
-            (Type::Integer, Type::Integer) => Ok(Type::Integer),
-            (Type::Boolean, Type::Boolean) => Ok(Type::Boolean),
+            (Type::Integer, Type::Integer) => {
+                if matches!(op, Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent) {
+                    Ok(Type::Integer)
+                } else if matches!(op, Token::EqEq | Token::NotEq | Token::Lt | Token::Gt | Token::LtEq | Token::GtEq) {
+                    Ok(Type::Boolean)
+                } else {
+                    Ok(Type::Integer)
+                }
+            },
+            (Type::Float, Type::Float) => {
+                if matches!(op, Token::Plus | Token::Minus | Token::Star | Token::Slash) {
+                    Ok(Type::Float)
+                } else if matches!(op, Token::EqEq | Token::NotEq | Token::Lt | Token::Gt | Token::LtEq | Token::GtEq) {
+                    Ok(Type::Boolean)
+                } else {
+                    Ok(Type::Float)
+                }
+            },
+            (Type::Boolean, Type::Boolean) => {
+                if matches!(op, Token::And | Token::Or) {
+                    Ok(Type::Boolean)
+                } else if matches!(op, Token::EqEq | Token::NotEq) {
+                    Ok(Type::Boolean)
+                } else {
+                    Ok(Type::Boolean)
+                }
+            },
+            (Type::Pointer(_), Type::Pointer(_)) => {
+                if matches!(op, Token::EqEq | Token::NotEq) {
+                    Ok(Type::Boolean)
+                } else {
+                    Ok(Type::Boolean)
+                }
+            },
             (Type::Date, Type::Duration) if *op == Token::Plus => Ok(Type::Date),
             _ => Ok(Type::Unknown),
         }
