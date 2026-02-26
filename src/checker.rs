@@ -1,7 +1,7 @@
 use crate::ast::{Statement, Expression, Program, Declaration};
 use crate::types::Type;
 use crate::environment::Environment;
-use crate::token::Token;
+use crate::token::{Token, TokenKind};
 
 use std::collections::HashMap;
 
@@ -82,7 +82,7 @@ impl TypeChecker {
         for decl in &program.declarations {
             match decl {
                 Declaration::Function(f) => {
-                    let is_unsafe = f.modifiers.contains(&Token::Unsafe);
+                    let is_unsafe = f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe);
                     let ret_type = self.resolve_type(&f.return_type);
                     self.env.set(f.name.clone(), Type::Function { is_unsafe, return_type: Box::new(ret_type) });
                 },
@@ -104,7 +104,7 @@ impl TypeChecker {
                     };
                     for f in &i.functions {
                         let name = format!("{}.{}", base_target, f.name);
-                        let is_unsafe = f.modifiers.contains(&Token::Unsafe);
+                        let is_unsafe = f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe);
                         // Re-resolve return type with potential generics replaced later? 
                         // For now we just need the name in env.
                         let mut ret_type_name = f.return_type.clone();
@@ -126,7 +126,7 @@ impl TypeChecker {
                 
                 // Track if the function itself is unsafe
                 let was_in_unsafe = self.in_unsafe_context;
-                if f.modifiers.contains(&Token::Unsafe) {
+                if f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe) {
                     self.in_unsafe_context = true;
                 }
                 
@@ -374,50 +374,70 @@ impl TypeChecker {
             },
             Expression::TypeRef { name, generic_args } => {
                 let _base_type = self.resolve_type(name);
-                Ok(Type::GenericInstance(name.clone(), generic_args.iter().map(|_| Type::Unknown).collect()))
+                Ok(Type::GenericInstance(name.clone(), generic_args.iter().map(|_| Type::Integer).collect()))
             },
-            _ => Ok(Type::Unknown),
+            _ => Err(format!("Type Error: Unsupported expression: {:?}", expr)),
         }
     }
 
     fn check_compatibility(&self, t1: Type, t2: Type, op: &Token) -> Result<Type, String> {
-        match (t1, t2) {
+        match (&t1, &t2) {
             (Type::Integer, Type::Integer) => {
-                if matches!(op, Token::Plus | Token::Minus | Token::Star | Token::Slash | Token::Percent) {
+                if matches!(op.kind, TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash | TokenKind::Percent) {
                     Ok(Type::Integer)
-                } else if matches!(op, Token::EqEq | Token::NotEq | Token::Lt | Token::Gt | Token::LtEq | Token::GtEq) {
+                } else if matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq | TokenKind::Lt | TokenKind::Gt | TokenKind::LtEq | TokenKind::GtEq) {
                     Ok(Type::Boolean)
                 } else {
                     Ok(Type::Integer)
                 }
             },
             (Type::Float, Type::Float) => {
-                if matches!(op, Token::Plus | Token::Minus | Token::Star | Token::Slash) {
+                if matches!(op.kind, TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash) {
                     Ok(Type::Float)
-                } else if matches!(op, Token::EqEq | Token::NotEq | Token::Lt | Token::Gt | Token::LtEq | Token::GtEq) {
+                } else if matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq | TokenKind::Lt | TokenKind::Gt | TokenKind::LtEq | TokenKind::GtEq) {
                     Ok(Type::Boolean)
                 } else {
                     Ok(Type::Float)
                 }
             },
             (Type::Boolean, Type::Boolean) => {
-                if matches!(op, Token::And | Token::Or) {
+                if matches!(op.kind, TokenKind::And | TokenKind::Or) {
                     Ok(Type::Boolean)
-                } else if matches!(op, Token::EqEq | Token::NotEq) {
+                } else if matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq) {
                     Ok(Type::Boolean)
                 } else {
                     Ok(Type::Boolean)
                 }
             },
             (Type::Pointer(_), Type::Pointer(_)) => {
-                if matches!(op, Token::EqEq | Token::NotEq) {
+                if matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq) {
                     Ok(Type::Boolean)
                 } else {
                     Ok(Type::Boolean)
                 }
             },
-            (Type::Date, Type::Duration) if *op == Token::Plus => Ok(Type::Date),
-            _ => Ok(Type::Unknown),
+            (Type::String, Type::String) => {
+                if op.kind == TokenKind::Plus {
+                    Ok(Type::String)
+                } else {
+                    Err(format!("Type Error: String only supports '+' operator, found {:?}", op.kind))
+                }
+            },
+            (Type::Placeholder(_), _) | (_, Type::Placeholder(_)) => {
+                // For generics, assume the operation is valid if it's a standard operator
+                Ok(t1) 
+            },
+            (Type::Date, Type::Duration) if op.kind == TokenKind::Plus => Ok(Type::Date),
+            _ => {
+                // Fallback for primitive-like bitwise ops or other cases we missed
+                if matches!(op.kind, TokenKind::Plus | TokenKind::Minus | TokenKind::Star | TokenKind::Slash | TokenKind::Percent | TokenKind::Caret | TokenKind::And | TokenKind::Or) {
+                    Ok(t1)
+                } else if matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq | TokenKind::Lt | TokenKind::Gt | TokenKind::LtEq | TokenKind::GtEq) {
+                    Ok(Type::Boolean)
+                } else {
+                    Err(format!("Type Error: Incompatible types {:?} and {:?} for operator {:?} at line {}, col {}", t1, t2, op.kind, op.line, op.col))
+                }
+            }
         }
     }
 }

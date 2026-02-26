@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::token::Token;
+use crate::token::{Token, TokenKind};
 
 pub struct SqlTranspiler {
     buffer: String,
@@ -122,17 +122,17 @@ $$ LANGUAGE plpgsql;
             Expression::Identifier(s) => self.buffer.push_str(s),
             Expression::Infix { left, operator, right } => {
                 self.transpile_expression(left);
-                let op = match operator {
-                    Token::Plus => "+",
-                    Token::Minus => "-",
-                    Token::Star => "*",
-                    Token::Slash => "/",
-                    Token::EqEq => "=",
-                    Token::NotEq => "!=",
-                    Token::Gt => ">",
-                    Token::Lt => "<",
-                    Token::GtEq => ">=",
-                    Token::LtEq => "<=",
+                let op = match &operator.kind {
+                    TokenKind::Plus => "+",
+                    TokenKind::Minus => "-",
+                    TokenKind::Star => "*",
+                    TokenKind::Slash => "/",
+                    TokenKind::EqEq => "=",
+                    TokenKind::NotEq => "!=",
+                    TokenKind::Gt => ">",
+                    TokenKind::Lt => "<",
+                    TokenKind::GtEq => ">=",
+                    TokenKind::LtEq => "<=",
                     _ => "?",
                 };
                 self.buffer.push_str(&format!(" {} ", op));

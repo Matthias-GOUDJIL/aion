@@ -7,7 +7,7 @@ use inkwell::values::{BasicValueEnum, PointerValue, FunctionValue, BasicValue, V
 use inkwell::types::{StructType, BasicTypeEnum, BasicType};
 use inkwell::{AddressSpace, IntPredicate};
 use crate::ast::*;
-use crate::token::Token;
+use crate::token::{Token, TokenKind};
 
 pub struct Compiler<'ctx> {
     pub context: &'ctx Context,
@@ -1138,7 +1138,7 @@ impl<'ctx> Compiler<'ctx> {
                 }
             },
             Expression::Infix { left, operator, right } => {
-                if *operator == Token::And {
+                if operator.kind == TokenKind::And {
                     let lhs = self.compile_expr(left, variables, function)?;
                     let lhs_int = match lhs {
                         BasicValueEnum::IntValue(i) => i,
@@ -1171,7 +1171,7 @@ impl<'ctx> Compiler<'ctx> {
                     return Ok(phi.as_basic_value().into());
                 }
                 
-                if *operator == Token::Or {
+                if operator.kind == TokenKind::Or {
                     let lhs = self.compile_expr(left, variables, function)?;
                     let lhs_int = match lhs {
                         BasicValueEnum::IntValue(i) => i,
@@ -1209,50 +1209,50 @@ impl<'ctx> Compiler<'ctx> {
                 if lhs.is_int_value() && rhs.is_int_value() {
                     let l = lhs.into_int_value();
                     let r = rhs.into_int_value();
-                    match operator {
-                        Token::Plus => Ok(self.builder.build_int_add(l, r, "addtmp").unwrap().into()),
-                        Token::Minus => Ok(self.builder.build_int_sub(l, r, "subtmp").unwrap().into()),
-                        Token::Star => Ok(self.builder.build_int_mul(l, r, "multmp").unwrap().into()),
-                        Token::Slash => Ok(self.builder.build_int_signed_div(l, r, "divtmp").unwrap().into()),
-                        Token::Percent => Ok(self.builder.build_int_signed_rem(l, r, "remtmp").unwrap().into()),
-                        Token::And => Ok(self.builder.build_and(l, r, "andtmp").unwrap().into()),
-                        Token::Or => Ok(self.builder.build_or(l, r, "ortmp").unwrap().into()),
-                        Token::EqEq => {
+                    match &operator.kind {
+                        TokenKind::Plus => Ok(self.builder.build_int_add(l, r, "addtmp").unwrap().into()),
+                        TokenKind::Minus => Ok(self.builder.build_int_sub(l, r, "subtmp").unwrap().into()),
+                        TokenKind::Star => Ok(self.builder.build_int_mul(l, r, "multmp").unwrap().into()),
+                        TokenKind::Slash => Ok(self.builder.build_int_signed_div(l, r, "divtmp").unwrap().into()),
+                        TokenKind::Percent => Ok(self.builder.build_int_signed_rem(l, r, "remtmp").unwrap().into()),
+                        TokenKind::And => Ok(self.builder.build_and(l, r, "andtmp").unwrap().into()),
+                        TokenKind::Or => Ok(self.builder.build_or(l, r, "ortmp").unwrap().into()),
+                        TokenKind::EqEq => {
                             let res = self.builder.build_int_compare(IntPredicate::EQ, l, r, "eqtmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
                         },
-                        Token::NotEq => {
+                        TokenKind::NotEq => {
                             let res = self.builder.build_int_compare(IntPredicate::NE, l, r, "netmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
                         },
-                        Token::Gt => {
+                        TokenKind::Gt => {
                             let res = self.builder.build_int_compare(IntPredicate::SGT, l, r, "gttmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
                         },
-                        Token::Lt => {
+                        TokenKind::Lt => {
                             let res = self.builder.build_int_compare(IntPredicate::SLT, l, r, "lttmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
                         },
-                        Token::GtEq => {
+                        TokenKind::GtEq => {
                             let res = self.builder.build_int_compare(IntPredicate::SGE, l, r, "getmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
                         },
-                        Token::LtEq => {
+                        TokenKind::LtEq => {
                             let res = self.builder.build_int_compare(IntPredicate::SLE, l, r, "letmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
                         },
-                        Token::Caret => Ok(self.builder.build_xor(l, r, "xortmp").unwrap().into()),
+                        TokenKind::Caret => Ok(self.builder.build_xor(l, r, "xortmp").unwrap().into()),
                         _ => Err(format!("Integer operator {:?} not supported", operator)),
                     }
                 } else if lhs.is_float_value() && rhs.is_float_value() {
                     let l = lhs.into_float_value();
                     let r = rhs.into_float_value();
-                    match operator {
-                        Token::Plus => Ok(self.builder.build_float_add(l, r, "faddtmp").unwrap().into()),
-                        Token::Minus => Ok(self.builder.build_float_sub(l, r, "fsubtmp").unwrap().into()),
-                        Token::Star => Ok(self.builder.build_float_mul(l, r, "fmultmp").unwrap().into()),
-                        Token::Slash => Ok(self.builder.build_float_div(l, r, "fdivtmp").unwrap().into()),
-                        Token::Caret => {
+                    match &operator.kind {
+                        TokenKind::Plus => Ok(self.builder.build_float_add(l, r, "faddtmp").unwrap().into()),
+                        TokenKind::Minus => Ok(self.builder.build_float_sub(l, r, "fsubtmp").unwrap().into()),
+                        TokenKind::Star => Ok(self.builder.build_float_mul(l, r, "fmultmp").unwrap().into()),
+                        TokenKind::Slash => Ok(self.builder.build_float_div(l, r, "fdivtmp").unwrap().into()),
+                        TokenKind::Caret => {
                             let pow = self.module.get_function("pow").unwrap();
                             let res = self.builder.build_call(pow, &[l.into(), r.into()], "powtmp").unwrap();
                             match res.try_as_basic_value() {
@@ -1265,16 +1265,16 @@ impl<'ctx> Compiler<'ctx> {
                 } else if lhs.is_pointer_value() && rhs.is_pointer_value() {
                     let l = lhs.into_pointer_value();
                     let r = rhs.into_pointer_value();
-                    match operator {
-                        Token::EqEq => {
+                    match &operator.kind {
+                        TokenKind::EqEq => {
                             let res = self.builder.build_int_compare(IntPredicate::EQ, l, r, "ptreqtmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
                         },
-                        Token::NotEq => {
+                        TokenKind::NotEq => {
                             let res = self.builder.build_int_compare(IntPredicate::NE, l, r, "ptrnetmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
                         },
-                        Token::Plus => {
+                        TokenKind::Plus => {
                             let fn_val = self.module.get_function("aion_str_concat").ok_or("aion_str_concat not found")?;
                             let call = self.builder.build_call(fn_val, &[l.into(), r.into()], "strcattmp").unwrap();
                             match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_zero().into()) }

@@ -1,8 +1,21 @@
 #[derive(Debug, PartialEq, Clone)]
-pub enum Token {
+pub struct Token {
+    pub kind: TokenKind,
+    pub line: usize,
+    pub col: usize,
+}
+
+impl Token {
+    pub fn new(kind: TokenKind, line: usize, col: usize) -> Self {
+        Self { kind, line, col }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum TokenKind {
     // System Keywords
     Fn, Let, Mut, Struct, Enum, Return, If, Else, Match, As, While,
-    Use, Pub, Async, Unsafe, Require,
+    Use, Pub, Async, Unsafe, Require, Extern,
     Interface, Impl, Channel,
     For, In, Type, SelfToken, Spawn,
     

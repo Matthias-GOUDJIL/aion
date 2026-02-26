@@ -1,150 +1,175 @@
-use crate::token::Token;
+use crate::token::{Token, TokenKind};
 use std::iter::Peekable;
 use std::str::Chars;
 
 pub struct Lexer<'a> {
     input: Peekable<Chars<'a>>,
+    line: usize,
+    col: usize,
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        Self { input: input.chars().peekable() }
+        Self { 
+            input: input.chars().peekable(),
+            line: 1,
+            col: 1,
+        }
+    }
+
+    fn read_char(&mut self) -> Option<char> {
+        let ch = self.input.next();
+        if let Some(c) = ch {
+            if c == '\n' {
+                self.line += 1;
+                self.col = 1;
+            } else {
+                self.col += 1;
+            }
+        }
+        ch
     }
 
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
-        match self.input.next() {
+        let line = self.line;
+        let col = self.col;
+
+        let kind = match self.read_char() {
             Some(ch) => match ch {
-                '(' => Token::LParen,
-                ')' => Token::RParen,
-                '{' => Token::LBrace,
-                '}' => Token::RBrace,
-                '[' => Token::LBracket,
-                ']' => Token::RBracket,
-                ',' => Token::Comma,
-                ';' => Token::Semicolon,
-                '*' => Token::Star,
-                '+' => Token::Plus,
-                '%' => Token::Percent,
-                '^' => Token::Caret,
+                '(' => TokenKind::LParen,
+                ')' => TokenKind::RParen,
+                '{' => TokenKind::LBrace,
+                '}' => TokenKind::RBrace,
+                '[' => TokenKind::LBracket,
+                ']' => TokenKind::RBracket,
+                ',' => TokenKind::Comma,
+                ';' => TokenKind::Semicolon,
+                '*' => TokenKind::Star,
+                '+' => TokenKind::Plus,
+                '%' => TokenKind::Percent,
+                '^' => TokenKind::Caret,
                 '/' => {
                     if self.peek_char() == '/' {
-                        self.input.next();
+                        self.read_char(); // consume /
                         self.read_line_comment();
-                        self.next_token()
+                        return self.next_token();
                     } else if self.peek_char() == '*' {
-                        self.input.next();
+                        self.read_char(); // consume *
                         self.read_block_comment();
-                        self.next_token()
+                        return self.next_token();
                     } else {
-                        Token::Slash
+                        TokenKind::Slash
                     }
                 },
-                '?' => Token::Question,
+                '?' => TokenKind::Question,
                 '.' => {
-                    if self.peek_char() == '.' { self.input.next(); Token::Range } 
-                    else { Token::Dot }
+                    if self.peek_char() == '.' { self.read_char(); TokenKind::Range } 
+                    else { TokenKind::Dot }
                 }
                 '-' => {
-                    if self.peek_char() == '>' { self.input.next(); Token::Arrow } 
-                    else { Token::Minus }
+                    if self.peek_char() == '>' { self.read_char(); TokenKind::Arrow } 
+                    else { TokenKind::Minus }
                 }
                 '=' => {
-                    if self.peek_char() == '=' { self.input.next(); Token::EqEq } 
-                    else if self.peek_char() == '>' { self.input.next(); Token::Arrow }
-                    else { Token::Eq }
+                    if self.peek_char() == '=' { self.read_char(); TokenKind::EqEq } 
+                    else if self.peek_char() == '>' { self.read_char(); TokenKind::Arrow }
+                    else { TokenKind::Eq }
                 }
                 '!' => {
-                    if self.peek_char() == '=' { self.input.next(); Token::NotEq } 
-                    else { Token::Bang }
+                    if self.peek_char() == '=' { self.read_char(); TokenKind::NotEq } 
+                    else { TokenKind::Bang }
                 }
                 '&' => {
-                    if self.peek_char() == '&' { self.input.next(); Token::And }
-                    else { Token::Illegal('&') }
+                    if self.peek_char() == '&' { self.read_char(); TokenKind::And }
+                    else { TokenKind::Illegal('&') }
                 },
                 '|' => {
-                    if self.peek_char() == '>' { self.input.next(); Token::Pipeline } 
-                    else if self.peek_char() == '|' { self.input.next(); Token::Or }
-                    else { Token::Illegal('|') }
+                    if self.peek_char() == '>' { self.read_char(); TokenKind::Pipeline } 
+                    else if self.peek_char() == '|' { self.read_char(); TokenKind::Or }
+                    else { TokenKind::Illegal('|') }
                 },
                 '>' => {
-                    if self.peek_char() == '=' { self.input.next(); Token::GtEq } 
-                    else { Token::Gt }
+                    if self.peek_char() == '=' { self.read_char(); TokenKind::GtEq } 
+                    else { TokenKind::Gt }
                 }
                 '<' => {
-                    if self.peek_char() == '=' { self.input.next(); Token::LtEq } 
-                    else if self.peek_char() == '-' { self.input.next(); Token::LArrow }
-                    else { Token::Lt }
+                    if self.peek_char() == '=' { self.read_char(); TokenKind::LtEq } 
+                    else if self.peek_char() == '-' { self.read_char(); TokenKind::LArrow }
+                    else { TokenKind::Lt }
                 }
                 ':' => {
-                    if self.peek_char() == ':' { self.input.next(); Token::DoubleColon } 
-                    else { Token::Colon }
+                    if self.peek_char() == ':' { self.read_char(); TokenKind::DoubleColon } 
+                    else { TokenKind::Colon }
                 }
-                '@' => Token::At,
+                '@' => TokenKind::At,
                 '"' => self.read_string(),
                 c if c.is_alphabetic() || c == '_' => {
                     if c == 'f' && self.peek_char() == '"' {
-                        self.input.next(); 
+                        self.read_char(); 
                         self.read_fstring()
                     } else if c == 'D' && self.peek_char().is_numeric() {
                         self.read_date()
                     } else {
                         let ident = self.read_identifier(c);
                         match ident.as_str() {
-                            "fn" => Token::Fn,
-                            "let" => Token::Let,
-                            "mut" => Token::Mut,
-                            "struct" => Token::Struct,
-                            "enum" => Token::Enum,
-                            "return" => Token::Return,
-                            "if" => Token::If,
-                            "else" => Token::Else,
-                            "while" => Token::While,
-                            "match" => Token::Match,
-                            "as" => Token::As,
-                            "use" => Token::Use,
-                            "pub" => Token::Pub,
-                            "async" => Token::Async,
-                            "unsafe" => Token::Unsafe,
-                            "require" => Token::Require,
-                            "intent" => Token::Intent,
-                            "invariant" => Token::Invariant,
-                            "inside" => Token::Inside,
-                            "interface" => Token::Interface,
-                            "impl" => Token::Impl,
-                            "channel" => Token::Channel,
-                            "for" => Token::For,
-                            "in" => Token::In,
-                            "type" => Token::Type,
-                            "self" => Token::SelfToken,
-                            "spawn" => Token::Spawn,
-                            "true" => Token::True,
-                            "false" => Token::False,
-                            _ => Token::Identifier(ident),
+                            "fn" => TokenKind::Fn,
+                            "let" => TokenKind::Let,
+                            "mut" => TokenKind::Mut,
+                            "struct" => TokenKind::Struct,
+                            "enum" => TokenKind::Enum,
+                            "return" => TokenKind::Return,
+                            "if" => TokenKind::If,
+                            "else" => TokenKind::Else,
+                            "while" => TokenKind::While,
+                            "match" => TokenKind::Match,
+                            "as" => TokenKind::As,
+                            "use" => TokenKind::Use,
+                            "pub" => TokenKind::Pub,
+                            "async" => TokenKind::Async,
+                            "unsafe" => TokenKind::Unsafe,
+                            "extern" => TokenKind::Extern,
+                            "require" => TokenKind::Require,
+                            "intent" => TokenKind::Intent,
+                            "invariant" => TokenKind::Invariant,
+                            "inside" => TokenKind::Inside,
+                            "interface" => TokenKind::Interface,
+                            "impl" => TokenKind::Impl,
+                            "channel" => TokenKind::Channel,
+                            "for" => TokenKind::For,
+                            "in" => TokenKind::In,
+                            "type" => TokenKind::Type,
+                            "self" => TokenKind::SelfToken,
+                            "spawn" => TokenKind::Spawn,
+                            "true" => TokenKind::True,
+                            "false" => TokenKind::False,
+                            _ => TokenKind::Identifier(ident),
                         }
                     }
                 }
                 c if c.is_numeric() => self.read_number(c),
-                _ => Token::Illegal(ch),
+                _ => TokenKind::Illegal(ch),
             },
-            None => Token::EOF,
-        }
+            None => TokenKind::EOF,
+        };
+
+        Token::new(kind, line, col)
     }
 
     fn read_line_comment(&mut self) {
         while let Some(&ch) = self.input.peek() {
             if ch == '\n' { break; }
-            self.input.next();
+            self.read_char();
         }
     }
 
     fn read_block_comment(&mut self) {
-        while let Some(ch) = self.input.next() {
+        while let Some(ch) = self.read_char() {
             if ch == '*' {
                 if let Some(&next) = self.input.peek() {
                     if next == '/' {
-                        self.input.next();
+                        self.read_char();
                         break;
                     }
                 }
@@ -155,7 +180,7 @@ impl<'a> Lexer<'a> {
     fn skip_whitespace(&mut self) {
         while let Some(&ch) = self.input.peek() {
             if !ch.is_whitespace() { break; }
-            self.input.next();
+            self.read_char();
         }
     }
 
@@ -167,34 +192,34 @@ impl<'a> Lexer<'a> {
         let mut ident = String::from(first);
         while let Some(&ch) = self.input.peek() {
             if !ch.is_alphanumeric() && ch != '_' { break; }
-            ident.push(self.input.next().unwrap());
+            ident.push(self.read_char().unwrap());
         }
         ident
     }
 
-    fn read_string(&mut self) -> Token {
+    fn read_string(&mut self) -> TokenKind {
         let mut s = String::new();
         while let Some(&ch) = self.input.peek() {
-            if ch == '"' { self.input.next(); break; }
-            s.push(self.input.next().unwrap());
+            if ch == '"' { self.read_char(); break; }
+            s.push(self.read_char().unwrap());
         }
-        Token::StringLiteral(s)
+        TokenKind::StringLiteral(s)
     }
 
-    fn read_fstring(&mut self) -> Token {
+    fn read_fstring(&mut self) -> TokenKind {
         let mut s = String::new();
         while let Some(&ch) = self.input.peek() {
-            if ch == '"' { self.input.next(); break; }
-            s.push(self.input.next().unwrap());
+            if ch == '"' { self.read_char(); break; }
+            s.push(self.read_char().unwrap());
         }
-        Token::FString(s)
+        TokenKind::FString(s)
     }
 
-    fn read_date(&mut self) -> Token {
+    fn read_date(&mut self) -> TokenKind {
         let mut s = String::new();
         while let Some(&ch) = self.input.peek() {
             if ch.is_numeric() || ch == '-' {
-                s.push(self.input.next().unwrap());
+                s.push(self.read_char().unwrap());
             } else {
                 break;
             }
@@ -226,13 +251,13 @@ impl<'a> Lexer<'a> {
             total_days += d - 1;
             
             let ts = total_days * 86400;
-            Token::DateLiteral(ts)
+            TokenKind::DateLiteral(ts)
         } else {
-            Token::Illegal('D')
+            TokenKind::Illegal('D')
         }
     }
 
-    fn read_number(&mut self, first: char) -> Token {
+    fn read_number(&mut self, first: char) -> TokenKind {
         let mut num_str = String::from(first);
         let mut is_float = false;
         
@@ -245,9 +270,9 @@ impl<'a> Lexer<'a> {
                 }
                 
                 is_float = true;
-                num_str.push(self.input.next().unwrap());
+                num_str.push(self.read_char().unwrap());
             } else if ch.is_numeric() {
-                num_str.push(self.input.next().unwrap());
+                num_str.push(self.read_char().unwrap());
             } else {
                 break;
             }
@@ -256,7 +281,7 @@ impl<'a> Lexer<'a> {
         let mut suffix = String::new();
         while let Some(&ch) = self.input.peek() {
             if ch.is_alphabetic() {
-                suffix.push(self.input.next().unwrap());
+                suffix.push(self.read_char().unwrap());
             } else {
                 break;
             }
@@ -272,15 +297,15 @@ impl<'a> Lexer<'a> {
                 "m" => ((val * 60.0) as u64, 0),
                 "h" => ((val * 3600.0) as u64, 0),
                 "d" => ((val * 86400.0) as u64, 0),
-                _ => return Token::Illegal('?'),
+                _ => return TokenKind::Illegal('?'),
             };
-            return Token::DurationLiteral(secs, nanos);
+            return TokenKind::DurationLiteral(secs, nanos);
         }
 
         if is_float { 
-            Token::FloatLiteral(num_str.parse().unwrap_or(0.0)) 
+            TokenKind::FloatLiteral(num_str.parse().unwrap_or(0.0)) 
         } else { 
-            Token::IntLiteral(num_str.parse().unwrap_or(0)) 
+            TokenKind::IntLiteral(num_str.parse().unwrap_or(0)) 
         }
     }
 }
