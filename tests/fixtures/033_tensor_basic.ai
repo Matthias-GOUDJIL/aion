@@ -1,0 +1,23 @@
+use std.ai.tensor
+use std.collections.vector
+use std.io
+
+fn main() {
+    io.println("Testing AI Tensors...")
+    
+    let mut shape = Vector<i64>.new()
+    shape.push(2)
+    shape.push(3)
+    
+    io.println("Created shape Vector<i64>(2, 3)")
+    
+    let t = Tensor.zeros(shape)
+    io.println("Created Tensor.zeros(shape)")
+    
+    // In a real implementation, we would access data.
+    // For now, we just verify it didn't crash and we can call methods.
+    t.backward()
+    io.println("Called t.backward()")
+    
+    io.println("Success: AI Tensor core initialized!")
+}

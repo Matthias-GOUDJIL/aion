@@ -1,0 +1,17 @@
+use std.collections.vector
+use std.io
+
+fn main() {
+    // Vector<i64>.new() returns a Vector<i64> struct value
+    // .len() is a method on Vector<i64>
+    let length = Vector<i64>.new().len()
+    
+    io.print("Length of new vector: ")
+    io.println(length)
+    
+    if length == 0 {
+        io.println("Success: Method chaining works!")
+    } else {
+        io.println("Error: Unexpected length")
+    }
+}

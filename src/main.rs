@@ -88,7 +88,7 @@ fn main() {
             }
 
             let gcc_status = Command::new("gcc")
-                .args(&[&obj_file, "src/runtime.c", "-o", &bin_file, "-lpthread"])
+                .args(&[&obj_file, "src/runtime.c", "-o", &bin_file, "-lpthread", "-lgc"])
                 .status();
 
             if gcc_status.is_err() || !gcc_status.unwrap().success() {

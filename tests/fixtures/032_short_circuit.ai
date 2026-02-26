@@ -1,0 +1,21 @@
+use std.io
+
+fn main() {
+    let null_ptr = 0 as *i64
+    
+    io.println("Testing short-circuiting...")
+    
+    // This should NOT crash if short-circuiting works
+    if (null_ptr != (0 as *i64)) && (*null_ptr == 1) {
+        io.println("Error: Should not be reached")
+    } else {
+        io.println("Success: (false && crash) did not crash")
+    }
+    
+    let true_val = 1
+    if (true_val == 1) || (*null_ptr == 1) {
+        io.println("Success: (true || crash) did not crash")
+    } else {
+        io.println("Error: Should not be reached")
+    }
+}

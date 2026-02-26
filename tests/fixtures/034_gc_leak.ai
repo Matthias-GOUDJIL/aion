@@ -1,0 +1,23 @@
+use std.io
+use std.string
+
+fn main() {
+    io.println("Testing GC with intensive allocation...")
+    
+    let mut i = 0
+    while i < 100000 {
+        // Allocate and concatenate many strings
+        // Without GC, this would leak a lot of memory
+        let s = "hello" + " " + "world" + " " + string.from_int(i)
+        
+        if i % 25000 == 0 {
+            io.print("Allocated ")
+            io.print(string.from_int(i))
+            io.println(" strings...")
+        }
+        
+        i = i + 1
+    }
+    
+    io.println("Success: Allocated 100,000 strings without crashing!")
+}

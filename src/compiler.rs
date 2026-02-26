@@ -273,6 +273,9 @@ impl<'ctx> Compiler<'ctx> {
                 
                 let mut local_vars = HashMap::new(); 
                 if f.name == "main" {
+                    let gc_init = self.module.get_function("GC_init").unwrap();
+                    self.builder.build_call(gc_init, &[], "").unwrap();
+                    
                     if let Some(argc) = function.get_nth_param(0) {
                         argc.set_name("argc");
                         let argc_val = self.builder.build_int_z_extend(argc.into_int_value(), self.context.i64_type(), "argc_ext").unwrap();
@@ -385,6 +388,7 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function("free", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_io_print", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_io_println", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
+        self.module.add_function("GC_init", self.context.void_type().fn_type(&[], false), None);
         self.module.add_function("aion_str_concat", ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
         self.module.add_function("aion_int_to_str", ptr_type.fn_type(&[i64_type.into()], false), None);
         self.module.add_function("aion_float_to_str", ptr_type.fn_type(&[f64_type.into()], false), None);
@@ -781,14 +785,8 @@ impl<'ctx> Compiler<'ctx> {
                 if name == "string.concat" || name == "fs.read_to_string" || name == "int_to_str" || name == "float_to_str" { return "String".to_string(); }
                 if name == "env.var" { return "Option<String>".to_string(); }
                 
-                let actual_name = if !generic_args.is_empty() {
-                    let decl_name = self.resolve_fuzzy_name(&self.decls, name).unwrap_or(name.clone());
-                    self.get_monomorphized_name(&decl_name, generic_args)
-                } else {
-                    self.resolve_fuzzy_name(&self.decls, name).unwrap_or(name.clone())
-                };
-                
-                if let Some(decl) = self.decls.get(&actual_name) {
+                let decl_name = self.resolve_fuzzy_name(&self.decls, name).unwrap_or(name.clone());
+                if let Some(decl) = self.decls.get(&decl_name) {
                     if let Declaration::Function(f) = decl {
                         let mut ret = f.return_type.clone();
                         for (i, p) in f.generic_params.iter().enumerate() {
@@ -797,8 +795,9 @@ impl<'ctx> Compiler<'ctx> {
                             }
                         }
                         return ret;
-                    } else { "unknown".to_string() }
-                } else { "unknown".to_string() }
+                    }
+                }
+                "unknown".to_string()
             },
             Expression::StructInst { name, generic_args, .. } => {
                 if generic_args.is_empty() { name.clone() }
@@ -1139,6 +1138,72 @@ impl<'ctx> Compiler<'ctx> {
                 }
             },
             Expression::Infix { left, operator, right } => {
+                if *operator == Token::And {
+                    let lhs = self.compile_expr(left, variables, function)?;
+                    let lhs_int = match lhs {
+                        BasicValueEnum::IntValue(i) => i,
+                        _ => return Err(format!("Expected boolean (integer) for && operator, found {:?}", lhs)),
+                    };
+                    
+                    let rhs_bb = self.context.append_basic_block(function, "and_rhs");
+                    let merge_bb = self.context.append_basic_block(function, "and_merge");
+                    
+                    let cond = self.builder.build_int_compare(IntPredicate::NE, lhs_int, i64_type.const_zero(), "and_cond").unwrap();
+                    self.builder.build_conditional_branch(cond, rhs_bb, merge_bb).unwrap();
+                    
+                    let lhs_final_bb = self.builder.get_insert_block().unwrap();
+                    
+                    self.builder.position_at_end(rhs_bb);
+                    let rhs = self.compile_expr(right, variables, function)?;
+                    let rhs_int = match rhs {
+                        BasicValueEnum::IntValue(i) => i,
+                        _ => return Err(format!("Expected boolean (integer) for && operator, found {:?}", rhs)),
+                    };
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    let rhs_final_bb = self.builder.get_insert_block().unwrap();
+                    
+                    self.builder.position_at_end(merge_bb);
+                    let phi = self.builder.build_phi(i64_type, "and_res").unwrap();
+                    phi.add_incoming(&[
+                        (&i64_type.const_zero(), lhs_final_bb),
+                        (&rhs_int, rhs_final_bb),
+                    ]);
+                    return Ok(phi.as_basic_value().into());
+                }
+                
+                if *operator == Token::Or {
+                    let lhs = self.compile_expr(left, variables, function)?;
+                    let lhs_int = match lhs {
+                        BasicValueEnum::IntValue(i) => i,
+                        _ => return Err(format!("Expected boolean (integer) for || operator, found {:?}", lhs)),
+                    };
+                    
+                    let rhs_bb = self.context.append_basic_block(function, "or_rhs");
+                    let merge_bb = self.context.append_basic_block(function, "or_merge");
+                    
+                    let cond = self.builder.build_int_compare(IntPredicate::NE, lhs_int, i64_type.const_zero(), "or_cond").unwrap();
+                    self.builder.build_conditional_branch(cond, merge_bb, rhs_bb).unwrap();
+                    
+                    let lhs_final_bb = self.builder.get_insert_block().unwrap();
+                    
+                    self.builder.position_at_end(rhs_bb);
+                    let rhs = self.compile_expr(right, variables, function)?;
+                    let rhs_int = match rhs {
+                        BasicValueEnum::IntValue(i) => i,
+                        _ => return Err(format!("Expected boolean (integer) for || operator, found {:?}", rhs)),
+                    };
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                    let rhs_final_bb = self.builder.get_insert_block().unwrap();
+                    
+                    self.builder.position_at_end(merge_bb);
+                    let phi = self.builder.build_phi(i64_type, "or_res").unwrap();
+                    phi.add_incoming(&[
+                        (&i64_type.const_int(1, false), lhs_final_bb),
+                        (&rhs_int, rhs_final_bb),
+                    ]);
+                    return Ok(phi.as_basic_value().into());
+                }
+
                 let lhs = self.compile_expr(left, variables, function)?;
                 let rhs = self.compile_expr(right, variables, function)?;
                 if lhs.is_int_value() && rhs.is_int_value() {
@@ -1208,6 +1273,11 @@ impl<'ctx> Compiler<'ctx> {
                         Token::NotEq => {
                             let res = self.builder.build_int_compare(IntPredicate::NE, l, r, "ptrnetmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                        },
+                        Token::Plus => {
+                            let fn_val = self.module.get_function("aion_str_concat").ok_or("aion_str_concat not found")?;
+                            let call = self.builder.build_call(fn_val, &[l.into(), r.into()], "strcattmp").unwrap();
+                            match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_zero().into()) }
                         },
                         _ => Err(format!("Pointer operator {:?} not supported", operator)),
                     }
@@ -1330,15 +1400,20 @@ impl<'ctx> Compiler<'ctx> {
                 Err(format!("Field '{}' not found on type '{}'", member, rec_type_name))
             },
             Expression::MethodCall { receiver, method, generic_args, arguments } => {
+                // 1. Static call handler (e.g. Type<T>::method())
                 if let Expression::TypeRef { name: ref n, generic_args: ref type_gen_args } = **receiver {
                     let mut combined_gen_args = type_gen_args.clone();
                     combined_gen_args.extend(generic_args.clone());
                     let func_name = format!("{}.{}", n, method);
                     return self.compile_expr(&Expression::Call { function: func_name, generic_args: combined_gen_args, arguments: arguments.clone() }, variables, function);
                 }
-                let rec_val = self.compile_expr(receiver, variables, function)?;
+
+                // 2. Get receiver type and handle special cases
                 let rec_type_name = self.get_expr_type_name(receiver, variables);
+                
+                // Pointer offset handler: ptr.offset(idx)
                 if rec_type_name.starts_with('*') && method == "offset" && arguments.len() == 1 {
+                    let rec_val = self.compile_expr(receiver, variables, function)?;
                     let idx = self.compile_expr(&arguments[0], variables, function)?.into_int_value();
                     let ptr = rec_val.into_pointer_value();
                     let elem_type_name = &rec_type_name[1..];
@@ -1346,12 +1421,65 @@ impl<'ctx> Compiler<'ctx> {
                     let gep = unsafe { self.builder.build_gep(elem_type, ptr, &[idx], "offset_ptr").unwrap() };
                     return Ok(gep.into());
                 }
-                if let Expression::Identifier(ref name) = **receiver {
-                    let func_name = format!("{}.{}", name, method);
-                    return self.compile_expr(&Expression::Call { function: func_name, generic_args: generic_args.clone(), arguments: arguments.clone() }, variables, function);
+
+                // 3. Resolve method on receiver type
+                let (base_type_name, type_generic_args) = if rec_type_name.contains('<') {
+                    let parts: Vec<&str> = rec_type_name.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
+                    (parts[0].to_string(), parts[1..].iter().map(|s| s.trim().to_string()).collect::<Vec<String>>())
+                } else { (rec_type_name.clone(), vec![]) };
+                
+                let type_prefix = self.resolve_fuzzy_name(&self.struct_types, &base_type_name)
+                    .or_else(|| self.resolve_fuzzy_name(&self.enum_types, &base_type_name))
+                    .unwrap_or(base_type_name.clone());
+                
+                let candidate = format!("{}.{}", type_prefix, method);
+                let full_method_name = self.resolve_fuzzy_name(&self.decls, &candidate).unwrap_or(candidate);
+                
+                let mut combined_gen_args = type_generic_args;
+                combined_gen_args.extend(generic_args.clone());
+
+                // 4. Prepare and compile arguments
+                let mut compiled_args = Vec::new();
+                
+                // Compile receiver as 'self' (passed by pointer for structs/enums)
+                let rec_val = self.compile_expr(receiver, variables, function)?;
+                let pass_by_ptr = self.struct_types.contains_key(&type_prefix) || self.enum_types.contains_key(&type_prefix);
+                
+                if pass_by_ptr {
+                    if let Ok(ptr) = self.compile_lvalue(receiver, variables, function) {
+                        compiled_args.push(ptr.into());
+                    } else {
+                        let alloca = self.builder.build_alloca(rec_val.get_type(), "temp_method_chain_rec").unwrap();
+                        self.builder.build_store(alloca, rec_val).unwrap();
+                        compiled_args.push(alloca.into());
+                    }
+                } else {
+                    compiled_args.push(rec_val.into());
                 }
-                let _unused_val = rec_val;
-                Err(format!("Method call on complex receiver not yet fully implemented: {}.{}", rec_type_name, method))
+
+                for arg in arguments {
+                    compiled_args.push(self.compile_expr(arg, variables, function)?.into());
+                }
+
+                // 5. Instantiate and call
+                let fn_val = if !combined_gen_args.is_empty() {
+                    let gen_name = format!("{}_{}", full_method_name, combined_gen_args.join("_"));
+                    if let Some(existing) = self.module.get_function(&gen_name) { existing }
+                    else { self.instantiate_function(&full_method_name, &combined_gen_args)? }
+                } else {
+                    self.module.get_function(&full_method_name).ok_or(format!("Method '{}' not found on type '{}'", method, rec_type_name))?
+                };
+
+                let call = if fn_val.get_type().get_return_type().is_none() {
+                    self.builder.build_call(fn_val, &compiled_args, "").unwrap()
+                } else {
+                    self.builder.build_call(fn_val, &compiled_args, "calltmp").unwrap()
+                };
+                
+                Ok(match call.try_as_basic_value() {
+                    ValueKind::Basic(val) => val,
+                    _ => self.context.i64_type().const_zero().into(),
+                })
             },
             Expression::Cast { expr, target } => {
                 let val = self.compile_expr(expr, variables, function)?;
@@ -1505,6 +1633,113 @@ impl<'ctx> Compiler<'ctx> {
                         let eq_zero = self.builder.build_int_compare(IntPredicate::EQ, ptr_int, self.context.i64_type().const_zero(), "isnull").unwrap();
                         Ok(self.builder.build_int_z_extend(eq_zero, self.context.i64_type(), "boolcast").unwrap().into())
                     } else { Ok(i64_type.const_int(0, false).into()) }
+                } else if name == "ai_tensor_zeros" || name == "ai_tensor_ones" || name == "ai_tensor_rand" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "ai_tensor_zeros" || s == "ai_tensor_ones" || s == "ai_tensor_rand")) {
+                    let actual_name = if name == "intrinsic" { match &arguments[0] { Expression::String(s) => s.clone(), _ => "".to_string() } } else { name.clone() };
+                    let shape_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
+                    let shape_val = self.compile_expr(shape_expr, variables, function)?;
+                    
+                    let tensor_type_name = "std.ai.tensor.Tensor";
+                    let full_tensor_type_name = self.resolve_fuzzy_name(&self.struct_types, tensor_type_name).unwrap_or(tensor_type_name.to_string());
+                    let tensor_type = *self.struct_types.get(&full_tensor_type_name).ok_or(format!("Tensor type not found: {}", full_tensor_type_name))?;
+                    
+                    let fn_name = match actual_name.as_str() {
+                        "ai_tensor_zeros" => "aion_ai_tensor_zeros",
+                        "ai_tensor_ones" => "aion_ai_tensor_ones",
+                        _ => "aion_ai_tensor_rand",
+                    };
+                    let fn_val = self.module.get_function(fn_name).unwrap_or_else(|| {
+                        self.module.add_function(fn_name, tensor_type.fn_type(&[self.context.ptr_type(AddressSpace::default()).into()], false), None)
+                    });
+                    
+                    let shape_ptr = if let Ok(ptr) = self.compile_lvalue(shape_expr, variables, function) {
+                        ptr.into()
+                    } else {
+                        let alloca = self.builder.build_alloca(shape_val.get_type(), "temp_tensor_shape").unwrap();
+                        self.builder.build_store(alloca, shape_val).unwrap();
+                        alloca.into()
+                    };
+
+                    let call = self.builder.build_call(fn_val, &[shape_ptr], "tensortmp").unwrap();
+                    Ok(match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => val,
+                        _ => return Err("Tensor intrinsic failed to return a value".to_string()),
+                    })
+                } else if name == "ai_tensor_backward" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "ai_tensor_backward")) {
+                    let tensor_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
+                    let tensor_val = self.compile_expr(tensor_expr, variables, function)?;
+                    
+                    let fn_name = "aion_ai_tensor_backward";
+                    let fn_val = self.module.get_function(fn_name).unwrap_or_else(|| {
+                        self.module.add_function(fn_name, self.context.void_type().fn_type(&[self.context.ptr_type(AddressSpace::default()).into()], false), None)
+                    });
+                    
+                    let tensor_ptr = if let Ok(ptr) = self.compile_lvalue(tensor_expr, variables, function) {
+                        ptr.into()
+                    } else {
+                        let alloca = self.builder.build_alloca(tensor_val.get_type(), "temp_tensor_backward").unwrap();
+                        self.builder.build_store(alloca, tensor_val).unwrap();
+                        alloca.into()
+                    };
+
+                    self.builder.build_call(fn_val, &[tensor_ptr], "").unwrap();
+                    Ok(i64_type.const_zero().into())
+                } else if name == "ai_tensor_move" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "ai_tensor_move")) {
+                    let tensor_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
+                    let device_expr = if name == "intrinsic" { &arguments[2] } else { &arguments[1] };
+                    let tensor_val = self.compile_expr(tensor_expr, variables, function)?;
+                    let device_val = self.compile_expr(device_expr, variables, function)?;
+                    
+                    let fn_name = "aion_ai_tensor_move";
+                    let fn_val = self.module.get_function(fn_name).unwrap_or_else(|| {
+                        self.module.add_function(fn_name, self.context.void_type().fn_type(&[self.context.ptr_type(AddressSpace::default()).into(), self.context.ptr_type(AddressSpace::default()).into()], false), None)
+                    });
+                    
+                    let tensor_ptr = if let Ok(ptr) = self.compile_lvalue(tensor_expr, variables, function) {
+                        ptr.into()
+                    } else {
+                        let alloca = self.builder.build_alloca(tensor_val.get_type(), "temp_tensor_move").unwrap();
+                        self.builder.build_store(alloca, tensor_val).unwrap();
+                        alloca.into()
+                    };
+
+                    self.builder.build_call(fn_val, &[tensor_ptr, device_val.into()], "").unwrap();
+                    Ok(i64_type.const_zero().into())
+                } else if name == "ai_tensor_matmul" || name == "ai_tensor_add" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "ai_tensor_matmul" || s == "ai_tensor_add")) {
+                    let actual_name = if name == "intrinsic" { match &arguments[0] { Expression::String(s) => s.clone(), _ => "".to_string() } } else { name.clone() };
+                    let t1_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
+                    let t2_expr = if name == "intrinsic" { &arguments[2] } else { &arguments[1] };
+                    let t1_val = self.compile_expr(t1_expr, variables, function)?;
+                    let t2_val = self.compile_expr(t2_expr, variables, function)?;
+                    
+                    let tensor_type_name = "std.ai.tensor.Tensor";
+                    let full_tensor_type_name = self.resolve_fuzzy_name(&self.struct_types, tensor_type_name).unwrap_or(tensor_type_name.to_string());
+                    let tensor_type = *self.struct_types.get(&full_tensor_type_name).ok_or(format!("Tensor type not found: {}", full_tensor_type_name))?;
+
+                    let fn_name = if actual_name == "ai_tensor_matmul" { "aion_ai_tensor_matmul" } else { "aion_ai_tensor_add" };
+                    let fn_val = self.module.get_function(fn_name).unwrap_or_else(|| {
+                        self.module.add_function(fn_name, tensor_type.fn_type(&[self.context.ptr_type(AddressSpace::default()).into(), self.context.ptr_type(AddressSpace::default()).into()], false), None)
+                    });
+                    
+                    let t1_ptr = if let Ok(ptr) = self.compile_lvalue(t1_expr, variables, function) {
+                        ptr.into()
+                    } else {
+                        let alloca = self.builder.build_alloca(t1_val.get_type(), "temp_tensor_op_t1").unwrap();
+                        self.builder.build_store(alloca, t1_val).unwrap();
+                        alloca.into()
+                    };
+                    let t2_ptr = if let Ok(ptr) = self.compile_lvalue(t2_expr, variables, function) {
+                        ptr.into()
+                    } else {
+                        let alloca = self.builder.build_alloca(t2_val.get_type(), "temp_tensor_op_t2").unwrap();
+                        self.builder.build_store(alloca, t2_val).unwrap();
+                        alloca.into()
+                    };
+
+                    let call = self.builder.build_call(fn_val, &[t1_ptr, t2_ptr], "tensortmp").unwrap();
+                    Ok(match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => val,
+                        _ => return Err("Tensor operation intrinsic failed to return a value".to_string()),
+                    })
                 } else {
                     let (intrinsic_name, intrinsic_args) = if name == "intrinsic" {
                         if let Expression::String(actual_name) = &arguments[0] { (actual_name.clone(), arguments[1..].to_vec()) } else { (name.clone(), arguments.clone()) }

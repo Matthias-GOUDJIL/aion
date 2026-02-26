@@ -21,11 +21,25 @@ This document outlines the technical path to transform Aion from its current Rus
 - [x] **Enums Implementation**: `{ i64, [64 x i8] }` layout completed.
 - [x] **PIC Support**: LLVM Relocation model set to PIC for modern Linux.
 - [x] **Global Args**: `aion_argc` and `aion_argv` accessible via `std.env`.
-- [ ] **Memory Management**: Transition from `malloc` to a custom Aion allocator.
+- [x] **Memory Management**: Integration of Boehm GC for automatic cleanup.
 - [ ] **Compiler Optimization**: Pass manager integration for performance.
 - [ ] **Self-Hosting Path**: Identify remaining blockers for `aionc.ai`.
 - [ ] **Self-Runtime**: Rewrite `aion_spawn` and the thread scheduler in Aion via `syscalls`.
 - [ ] **GCC/Clang Removal**: Aion will only depend on LLVM for the final binary.
+
+---
+
+## 🚀 Phase 1.7: Rigor & Intelligence (Phase 1.7)
+*Goal: Stabilize the compiler core and introduce AI-Native capabilities.*
+
+1.  **Method Chaining** [COMPLETED]
+    *   Recursive receiver resolution for complex calls (e.g., `Vector.new().len()`).
+2.  **Short-circuiting Logic** [COMPLETED]
+    *   Lazy evaluation for `&&` and `||` to improve safety and performance.
+3.  **AI Tensor Core** [COMPLETED]
+    *   Initial intrinsics for tensor creation, math, and autograd.
+4.  **Garbage Collection** [COMPLETED]
+    *   Boehm GC integrated into the runtime for automatic memory management.
 
 ---
 

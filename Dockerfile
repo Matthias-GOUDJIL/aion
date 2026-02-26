@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     zlib1g-dev \
+    libgc-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Installer LLVM 15 et forcer l'écrasement pour résoudre les conflits de paquets

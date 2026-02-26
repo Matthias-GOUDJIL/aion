@@ -9,6 +9,7 @@
 | `TRACK-002` | [Standard Library Expansion](tracks/stdlib-expansion/index.md) | 🚧 In Progress | Librarian | Vector, Option, Env, and IO implemented. |
 | `TRACK-005` | [Runtime & Entry Point Fixes](tracks/runtime-fixes/index.md) | 📅 Planned | Architect | Fix argc/argv initialization and struct pass-by-pointer. |
 | `TRACK-003` | [Generics Implementation](tracks/generics/index.md) | 📅 Planned | Architect | Monomorphization for Functions and Structs. |
+| `TRACK-006` | [Rigor & Intelligence](tracks/rigor-intelligence/index.md) | 🚧 In Progress | Architect | Stabilize core (Method Chaining, Short-circuiting) and start AI Tensor. |
 
 ## Backlog
 
