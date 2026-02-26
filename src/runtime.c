@@ -87,6 +87,14 @@ int aion_write_file(const char* path, const char* content) {
     return res;
 }
 
+int aion_append_file(const char* path, const char* content) {
+    FILE* f = fopen(path, "a");
+    if (!f) return -1;
+    int res = fprintf(f, "%s", content);
+    fclose(f);
+    return res;
+}
+
 long long aion_fs_exists(const char* path) {
     return access(path, F_OK) == 0;
 }
@@ -164,6 +172,30 @@ struct AionTensor aion_ai_tensor_add(struct AionTensor* t1, struct AionTensor* t
 
 void aion_ai_tensor_move(struct AionTensor* t, const char* device) {
     t->device = GC_strdup(device);
+}
+
+char* aion_char_to_str(long long c) {
+    char* buf = GC_malloc_atomic(2);
+    buf[0] = (char)c;
+    buf[1] = 0;
+    return buf;
+}
+
+long long aion_str_at(const char* s, long long i) {
+    if (!s || i < 0 || i >= strlen(s)) return 0;
+    return (unsigned char)s[i];
+}
+
+char* aion_str_substr(const char* s, long long start, long long len) {
+    if (!s || start < 0 || len < 0) return NULL;
+    size_t s_len = strlen(s);
+    if (start >= s_len) return GC_strdup("");
+    if (start + len > s_len) len = s_len - start;
+    
+    char* buf = GC_malloc_atomic(len + 1);
+    strncpy(buf, s + start, len);
+    buf[len] = 0;
+    return buf;
 }
 
 char* aion_get_argv_index(char** argv, long long index) {

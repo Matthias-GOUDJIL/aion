@@ -389,6 +389,7 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function("aion_io_print", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_io_println", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("GC_init", self.context.void_type().fn_type(&[], false), None);
+        self.module.add_function("aion_str_eq", i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
         self.module.add_function("aion_str_concat", ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
         self.module.add_function("aion_int_to_str", ptr_type.fn_type(&[i64_type.into()], false), None);
         self.module.add_function("aion_float_to_str", ptr_type.fn_type(&[f64_type.into()], false), None);
@@ -1267,12 +1268,30 @@ impl<'ctx> Compiler<'ctx> {
                     let r = rhs.into_pointer_value();
                     match &operator.kind {
                         TokenKind::EqEq => {
-                            let res = self.builder.build_int_compare(IntPredicate::EQ, l, r, "ptreqtmp").unwrap();
-                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                            if let Some(fn_val) = self.module.get_function("aion_str_eq") {
+                                let call = self.builder.build_call(fn_val, &[l.into(), r.into()], "streqtmp").unwrap();
+                                Ok(match call.try_as_basic_value() {
+                                    ValueKind::Basic(val) => val,
+                                    _ => self.context.i64_type().const_zero().into(),
+                                })
+                            } else {
+                                let res = self.builder.build_int_compare(IntPredicate::EQ, l, r, "ptreqtmp").unwrap();
+                                Ok(self.builder.build_int_z_extend(res, self.context.i64_type(), "boolcast").unwrap().into())
+                            }
                         },
                         TokenKind::NotEq => {
-                            let res = self.builder.build_int_compare(IntPredicate::NE, l, r, "ptrnetmp").unwrap();
-                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                            if let Some(fn_val) = self.module.get_function("aion_str_eq") {
+                                let call = self.builder.build_call(fn_val, &[l.into(), r.into()], "streqtmp").unwrap();
+                                let eq_res = match call.try_as_basic_value() {
+                                    ValueKind::Basic(val) => val.into_int_value(),
+                                    _ => self.context.i64_type().const_zero(),
+                                };
+                                let ne_res = self.builder.build_int_compare(IntPredicate::EQ, eq_res, self.context.i64_type().const_zero(), "ptrnetmp").unwrap();
+                                Ok(self.builder.build_int_z_extend(ne_res, self.context.i64_type(), "boolcast").unwrap().into())
+                            } else {
+                                let res = self.builder.build_int_compare(IntPredicate::NE, l, r, "ptrnetmp").unwrap();
+                                Ok(self.builder.build_int_z_extend(res, self.context.i64_type(), "boolcast").unwrap().into())
+                            }
                         },
                         TokenKind::Plus => {
                             let fn_val = self.module.get_function("aion_str_concat").ok_or("aion_str_concat not found")?;
@@ -1564,6 +1583,34 @@ impl<'ctx> Compiler<'ctx> {
                         let tag_ptr = self.builder.build_struct_gep(ev.get_type(), alloca, 0, "tagptr").unwrap();
                         Ok(self.builder.build_load(self.context.i64_type(), tag_ptr, "tag").unwrap())
                     } else { Ok(i64_type.const_int(999, false).into()) }
+                } else if name == "char_to_str" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "char_to_str")) {
+                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let i64_type = self.context.i64_type();
+                    let fn_val = self.module.get_function("aion_char_to_str").unwrap_or_else(|| {
+                        self.module.add_function("aion_char_to_str", ptr_type.fn_type(&[i64_type.into()], false), None)
+                    });
+                    let arg = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let call = self.builder.build_call(fn_val, &[arg.into()], "charstrtmp").unwrap();
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(ptr_type.const_null().into()) }
+                } else if name == "str_at" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "str_at")) {
+                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                    let i64_type = self.context.i64_type();
+                    let fn_val = self.module.get_function("aion_str_at").unwrap_or_else(|| {
+                        self.module.add_function("aion_str_at", i64_type.fn_type(&[ptr_type.into(), i64_type.into()], false), None)
+                    });
+                    let arg1 = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let arg2 = self.compile_expr(if name == "intrinsic" { &arguments[2] } else { &arguments[1] }, variables, function)?;
+                    let call = self.builder.build_call(fn_val, &[arg1.into(), arg2.into()], "strat").unwrap();
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_zero().into()) }
+                } else if name == "str_substr" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "str_substr")) {
+                    let fn_val = self.module.get_function("aion_str_substr").unwrap_or_else(|| {
+                        self.module.add_function("aion_str_substr", self.context.ptr_type(AddressSpace::default()).fn_type(&[self.context.ptr_type(AddressSpace::default()).into(), self.context.i64_type().into(), self.context.i64_type().into()], false), None)
+                    });
+                    let arg1 = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let arg2 = self.compile_expr(if name == "intrinsic" { &arguments[2] } else { &arguments[1] }, variables, function)?;
+                    let arg3 = self.compile_expr(if name == "intrinsic" { &arguments[3] } else { &arguments[2] }, variables, function)?;
+                    let call = self.builder.build_call(fn_val, &[arg1.into(), arg2.into(), arg3.into()], "substrtmp").unwrap();
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(self.context.ptr_type(AddressSpace::default()).const_null().into()) }
                 } else if name == "str_ptr" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "str_ptr")) {
                     let arg = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
                     Ok(arg)
@@ -1610,7 +1657,22 @@ impl<'ctx> Compiler<'ctx> {
                                 Ok(self.builder.build_int_s_extend(val.into_int_value(), self.context.i64_type(), "i32toi64").unwrap().into())
                             } else { Ok(val) }
                         },
-                        _ => Ok(i64_type.const_int(0, false).into())
+                        _ => Ok(self.context.i64_type().const_int(0, false).into())
+                    }
+                } else if name == "fs_append" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "fs_append")) {
+                    let append_fn = self.module.get_function("aion_append_file").unwrap_or_else(|| {
+                        self.module.add_function("aion_append_file", self.context.i32_type().fn_type(&[self.context.ptr_type(AddressSpace::default()).into(), self.context.ptr_type(AddressSpace::default()).into()], false), None)
+                    });
+                    let arg1 = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let arg2 = self.compile_expr(if name == "intrinsic" { &arguments[2] } else { &arguments[1] }, variables, function)?;
+                    let call = self.builder.build_call(append_fn, &[arg1.into(), arg2.into()], "appendtmp").unwrap();
+                    match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => {
+                            if val.is_int_value() && val.into_int_value().get_type().get_bit_width() == 32 {
+                                Ok(self.builder.build_int_s_extend(val.into_int_value(), self.context.i64_type(), "i32toi64").unwrap().into())
+                            } else { Ok(val) }
+                        },
+                        _ => Ok(self.context.i64_type().const_int(0, false).into())
                     }
                 } else if name == "fs_exists" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "fs_exists")) {
                     let exists_fn = self.module.get_function("aion_fs_exists").ok_or("aion_fs_exists not found")?;

@@ -48,14 +48,12 @@ impl<'a> Parser<'a> {
                 },
                 TokenKind::Use => imports.push(self.parse_import()),
                 TokenKind::DoubleColon => {
-                    if self.peek_at(0).kind == TokenKind::Intent {
-                        self.next_token(); // ::
-                        self.next_token(); // intent
+                    self.next_token(); // consume ::
+                    if self.current_token.kind == TokenKind::Intent {
+                        self.next_token(); // consume intent
                         if let TokenKind::StringLiteral(_) = self.current_token.kind {
                             self.next_token();
                         }
-                    } else {
-                        self.next_token();
                     }
                 },
                 _ => {
@@ -788,6 +786,9 @@ impl<'a> Parser<'a> {
                     } else { break; }
                 },
                 TokenKind::LBrace => {
+                    let is_type_like = matches!(expr, Expression::Identifier(_) | Expression::TypeRef { .. });
+                    if !is_type_like { break; }
+
                     let next_tok = self.peek_at(0);
                     let is_struct = if next_tok.kind == TokenKind::RBrace { true } 
                         else if let TokenKind::Identifier(_) = next_tok.kind {
@@ -834,5 +835,55 @@ impl<'a> Parser<'a> {
 
     fn parse_fstring(&mut self, s: String) -> Expression {
         Expression::String(s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lexer::Lexer;
+
+    #[test]
+    fn test_parse_expression() {
+        let input = "1 + 2 * 3";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let expr = parser.parse_expression();
+        
+        if let Expression::Infix { left: _, operator, right } = expr {
+            assert_eq!(operator.kind, TokenKind::Plus);
+            if let Expression::Infix { operator: op2, .. } = *right {
+                assert_eq!(op2.kind, TokenKind::Star);
+            } else { panic!("Expected right to be an infix expression (*)"); }
+        } else { panic!("Expected infix expression (+)"); }
+    }
+
+    #[test]
+    fn test_parse_method_call() {
+        // Use Vector.new().len() to force MethodCall
+        let input = "Vector.new().len()";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let expr = parser.parse_expression();
+        
+        if let Expression::MethodCall { method, arguments, .. } = expr {
+            assert_eq!(method, "len");
+            assert_eq!(arguments.len(), 0);
+        } else { panic!("Expected method call, found {:?}", expr); }
+    }
+
+    #[test]
+    fn test_parse_function() {
+        let input = "fn add(a: i64, b: i64) -> i64 { return a + b; }";
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+        
+        assert_eq!(program.declarations.len(), 1);
+        if let Declaration::Function(f) = &program.declarations[0] {
+            assert_eq!(f.name, "add");
+            assert_eq!(f.params.len(), 2);
+            assert_eq!(f.return_type, "i64");
+        } else { panic!("Expected function declaration"); }
     }
 }

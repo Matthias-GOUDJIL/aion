@@ -417,10 +417,11 @@ impl TypeChecker {
                 }
             },
             (Type::String, Type::String) => {
-                if op.kind == TokenKind::Plus {
-                    Ok(Type::String)
+                if matches!(op.kind, TokenKind::Plus | TokenKind::EqEq | TokenKind::NotEq) {
+                    if op.kind == TokenKind::Plus { Ok(Type::String) }
+                    else { Ok(Type::Boolean) }
                 } else {
-                    Err(format!("Type Error: String only supports '+' operator, found {:?}", op.kind))
+                    Err(format!("Type Error: String only supports '+', '==', and '!=' operators, found {:?}", op.kind))
                 }
             },
             (Type::Placeholder(_), _) | (_, Type::Placeholder(_)) => {

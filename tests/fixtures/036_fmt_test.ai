@@ -1,0 +1,22 @@
+use std.fmt
+use std.collections.vector
+use std.io
+
+fn main() {
+    io.println("Testing std.fmt.format...")
+    
+    let mut args = Vector<String>.new()
+    args.push("Aion")
+    args.push("stable")
+    
+    let template = "Hello, {}! This language is becoming {}."
+    let result = fmt.format(template, args)
+    
+    io.println(result)
+    
+    if result == "Hello, Aion! This language is becoming stable." {
+        io.println("Success: Formatting works!")
+    } else {
+        io.println("Error: Formatting mismatch")
+    }
+}

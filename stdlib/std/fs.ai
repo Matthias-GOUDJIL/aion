@@ -12,5 +12,10 @@ pub fn write(path: String, content: String) -> i64 {
 
 pub fn exists(path: String) -> bool {
     ::intent "Checks if a file exists at the given path"
-    @intrinsic("fs_exists", path)
+    return @intrinsic("fs_exists", path);
+}
+
+pub fn append(path: String, content: String) -> i64 {
+    ::intent "Appends content to a file. Returns bytes written."
+    return @intrinsic("fs_append", path, content) as i64;
 }

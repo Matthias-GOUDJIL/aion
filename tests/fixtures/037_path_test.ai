@@ -1,0 +1,27 @@
+use std.path
+use std.io
+
+fn main() {
+    io.println("Testing std.path...")
+    
+    let p = Path.new("/home/user/test.ai")
+    
+    io.print("Path: ")
+    io.println(p.to_string())
+    
+    io.print("Filename: ")
+    io.println(p.filename())
+    
+    io.print("Extension: ")
+    io.println(p.extension())
+    
+    let p2 = p.join("subdir")
+    io.print("Joined: ")
+    io.println(p2.to_string())
+    
+    if (p.filename() == "test.ai") && (p.extension() == "ai") {
+        io.println("Success: Path manipulation works!")
+    } else {
+        io.println("Error: Path mismatch")
+    }
+}

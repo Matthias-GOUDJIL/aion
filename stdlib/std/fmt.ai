@@ -1,5 +1,8 @@
 module std.fmt
 
+use std.collections.vector
+use std.string
+
 pub interface Display {
     fn to_string(self) -> String;
 }
@@ -8,10 +11,38 @@ pub interface Debug {
     fn debug_fmt(self) -> String;
 }
 
-// Helper to format a string using placeholders (Simplified)
+// Helper to format a string using placeholders '{}'
 pub fn format(template: String, args: Vector<String>) -> String {
-    // In a real implementation, this would scan 'template' for '{}'
-    // and replace them with values from 'args'.
-    // For now, it just returns the template.
-    template
+    let mut result = ""
+    let mut i = 0
+    let mut arg_idx = 0
+    let template_len = string.len(template)
+    
+    while i < template_len {
+        let c = @intrinsic("str_at", template, i)
+        let mut consumed = false
+        
+        // Check for '{}'
+        if c == 123 { // '{'
+            if i + 1 < template_len {
+                let next_c = @intrinsic("str_at", template, i + 1)
+                if next_c == 125 { // '}'
+                    if arg_idx < args.len() {
+                        let arg_val = args.get(arg_idx).unwrap()
+                        result = result + arg_val
+                        arg_idx = arg_idx + 1
+                        i = i + 2
+                        consumed = true
+                    }
+                }
+            }
+        }
+        
+        if consumed == false {
+            result = result + @intrinsic("char_to_str", c)
+            i = i + 1
+        }
+    }
+    
+    return result
 }

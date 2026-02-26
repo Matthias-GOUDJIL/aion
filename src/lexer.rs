@@ -309,3 +309,85 @@ impl<'a> Lexer<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::token::TokenKind;
+
+    #[test]
+    fn test_basic_tokens() {
+        let input = "fn main() { let x = 10; }";
+        let mut lexer = Lexer::new(input);
+        
+        let expected = vec![
+            (TokenKind::Fn, 1, 1),
+            (TokenKind::Identifier("main".into()), 1, 4),
+            (TokenKind::LParen, 1, 8),
+            (TokenKind::RParen, 1, 9),
+            (TokenKind::LBrace, 1, 11),
+            (TokenKind::Let, 1, 13),
+            (TokenKind::Identifier("x".into()), 1, 17),
+            (TokenKind::Eq, 1, 19),
+            (TokenKind::IntLiteral(10), 1, 21),
+            (TokenKind::Semicolon, 1, 23),
+            (TokenKind::RBrace, 1, 25),
+        ];
+
+        for (kind, line, col) in expected {
+            let tok = lexer.next_token();
+            assert_eq!(tok.kind, kind);
+            assert_eq!(tok.line, line);
+            assert_eq!(tok.col, col);
+        }
+    }
+
+    #[test]
+    fn test_durations() {
+        let input = "10s 500ms 1.5ms";
+        let mut lexer = Lexer::new(input);
+        
+        let tok1 = lexer.next_token();
+        assert_eq!(tok1.kind, TokenKind::DurationLiteral(10, 0));
+        
+        let tok2 = lexer.next_token();
+        assert_eq!(tok2.kind, TokenKind::DurationLiteral(0, 500_000_000));
+        
+        let tok3 = lexer.next_token();
+        assert_eq!(tok3.kind, TokenKind::DurationLiteral(0, 1_500_000));
+    }
+
+    #[test]
+    fn test_multiline_position() {
+        let input = "let a = 1\nlet b = 2";
+        let mut lexer = Lexer::new(input);
+        
+        lexer.next_token(); // let
+        lexer.next_token(); // a
+        lexer.next_token(); // =
+        lexer.next_token(); // 1
+        
+        let tok = lexer.next_token(); // second 'let'
+        assert_eq!(tok.kind, TokenKind::Let);
+        assert_eq!(tok.line, 2);
+        assert_eq!(tok.col, 1);
+    }
+
+    #[test]
+    fn test_comments() {
+        let input = "// line comment\nlet x = 1 /* block\ncomment */ let y = 2";
+        let mut lexer = Lexer::new(input);
+        
+        let tok1 = lexer.next_token();
+        assert_eq!(tok1.kind, TokenKind::Let);
+        assert_eq!(tok1.line, 2);
+        
+        lexer.next_token(); // x
+        lexer.next_token(); // =
+        lexer.next_token(); // 1
+        
+        let tok2 = lexer.next_token(); // y 'let'
+        assert_eq!(tok2.kind, TokenKind::Let);
+        assert_eq!(tok2.line, 3);
+    }
+}
