@@ -43,7 +43,7 @@ This project uses a multi-role AI development workflow. I will adapt my persona 
 **Expertise:** Edge Case Analysis, Fuzzing, Performance Profiling.
 **Mandate:**
 1.  **Regression Testing**: Ensure new features don't break existing `hello.ai` or `v05_test.ai`.
-2.  **Atomic-Change Protocol**: You MUST run `python3 tests/runner.py` after any compiler change and BEFORE committing. No commit is allowed if tests fail.
+2.  **Atomic-Change Protocol**: You MUST run `python3 runner.py` after any compiler change and BEFORE committing. No commit is allowed if tests fail.
 3.  **Benchmark**: Measure compilation time and runtime performance.
 4.  **Parser Robustness**: Beware of ambiguous grammar (e.g. `If` vs `StructInst`). Prefer parenthesized expressions in ambiguous contexts.
 
@@ -61,6 +61,6 @@ This project uses a multi-role AI development workflow. I will adapt my persona 
 ## 🛠️ Essential Commands
 - **Build & Run**: `./aion build <file.ai> && ./output`
 - **Gen Docs**: `./aion doc <file.ai>`
-- **Test Suite**: `python3 tests/runner.py` (Integration) / `cargo test` (Internal)
+- **Test Suite**: `python3 runner.py` (Integration) / `cargo test` (Internal)
 - **Reference**: `grep_search` in `../elo` for logic extraction.
 - **System Cleanup**: `docker ps -q --filter "ancestor=aion-compiler" | xargs -r docker stop` (Run if Docker orphans are suspected).

@@ -8,10 +8,10 @@ pub fn concat(s1: String, s2: String) -> String {
     @intrinsic("str_concat", s1, s2)
 }
 
-pub fn equals(s1: String, s2: String) -> bool {
-    let len1 = len(s1);
-    let len2 = len(s2);
-    if len1 != len2 { return false; }
+    pub fn equals(s1: String, s2: String) -> bool {
+        let len1 = std.string.len(s1);
+        let len2 = std.string.len(s2);
+        if len1 != len2 { return false; }
     @intrinsic("str_eq", s1, s2)
 }
 

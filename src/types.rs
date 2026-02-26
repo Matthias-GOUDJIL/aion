@@ -12,5 +12,6 @@ pub enum Type {
     Struct { name: String },
     Placeholder(String), // Placeholder like 'T'
     GenericInstance(String, Vec<Type>), // Concrete like 'Vector<i64>'
+    Pointer(Box<Type>),
     Unknown,
 }

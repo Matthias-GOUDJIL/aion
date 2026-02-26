@@ -9,7 +9,7 @@
 - [x] `VectorString` implementation (Manual monomorphization).
 - [x] `Option<T>` enum support.
 - [ ] `HashMap<K, V>` implementation.
-- [ ] Transition `VectorString` to generic `Vector<T>`.
+- [x] Transition `VectorString` to generic `Vector<T>`.
 
 ## 3. Environment (`std.env`)
 - [x] `var(key: String) -> Option<String>`
@@ -18,5 +18,5 @@
 ## 4. IO (`std.io`)
 - [x] `print(msg: String)` (via intrinsic).
 - [x] `println(msg: String)` (via intrinsic).
-- [ ] `read_line() -> String`.
+- [x] `read_line() -> String`.
 

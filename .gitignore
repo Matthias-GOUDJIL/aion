@@ -13,6 +13,8 @@ aion_app_*
 output
 test_file.txt
 tests/test_file.txt
+tests/tmp/
+test_fs_output.txt
 
 # Existing
 /target

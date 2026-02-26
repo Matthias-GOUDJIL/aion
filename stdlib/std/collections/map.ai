@@ -33,7 +33,7 @@ impl HashMap<V> {
             i = i + 1;
         }
         
-        HashMap {
+        HashMap<V> {
             buckets: buckets,
             len: 0,
             cap: cap,

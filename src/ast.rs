@@ -122,4 +122,18 @@ pub enum Expression {
         generic_args: Vec<String>,
         arguments: Vec<Expression> 
     },
+    MemberAccess {
+        receiver: Box<Expression>,
+        member: String,
+    },
+    MethodCall {
+        receiver: Box<Expression>,
+        method: String,
+        generic_args: Vec<String>,
+        arguments: Vec<Expression>,
+    },
+    TypeRef {
+        name: String,
+        generic_args: Vec<String>,
+    },
 }

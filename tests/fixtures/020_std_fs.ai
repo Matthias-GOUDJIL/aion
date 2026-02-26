@@ -3,7 +3,7 @@ use std.io
 
 fn main() {
     // 1. Write a file
-    let path = "test_fs_output.txt"
+    let path = "tests/tmp/test_fs_output.txt"
     let content = "Hello Aion FS!"
     let bytes = fs.write(path, content)
     

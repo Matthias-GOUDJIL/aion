@@ -1,0 +1,35 @@
+use std.collections.map
+use std.io
+
+fn main() {
+    let mut m = HashMap<String>.new()
+    m.insert("hello", "world")
+    m.insert("foo", "bar")
+    
+    let v1 = m.get("hello")
+    match v1 {
+        Some(s) => {
+            io.print("hello: ")
+            io.println(s)
+        },
+        None => io.println("hello not found")
+    }
+
+    let v2 = m.get("foo")
+    match v2 {
+        Some(s) => {
+            io.print("foo: ")
+            io.println(s)
+        },
+        None => io.println("foo not found")
+    }
+
+    let v3 = m.get("missing")
+    match v3 {
+        Some(s) => {
+            io.print("missing: ")
+            io.println(s)
+        },
+        None => io.println("missing not found")
+    }
+}

@@ -27,7 +27,12 @@ impl TypeChecker {
             return t.clone();
         }
         
-        match name {
+        let trimmed = name.trim();
+        if trimmed.starts_with('*') {
+            return Type::Pointer(Box::new(self.resolve_type(trimmed[1..].trim())));
+        }
+
+        match trimmed {
             "i64" => Type::Integer,
             "f64" => Type::Float,
             "bool" => Type::Boolean,
@@ -226,21 +231,34 @@ impl TypeChecker {
             Expression::Identifier(name) => {
                 self.env.get(name).ok_or(format!("Error: Variable '{}' not defined.", name))
             },
-            Expression::Call { function, arguments, .. } => {
+            Expression::Call { function, arguments, generic_args: _ } => {
                 let func_type = if let Some(ft) = self.env.get(function) {
+                    if let Type::Struct { ref name } = ft {
+                        if arguments.is_empty() {
+                            return Ok(Type::GenericInstance(name.clone(), vec![Type::Unknown]));
+                        }
+                    }
                     ft
                 } else if let Some((var_name, method_name)) = function.split_once('.') {
                     if let Some(var_type) = self.env.get(var_name) {
                         let type_name = match var_type {
-                            Type::GenericInstance(name, _) => name,
-                            Type::Enum { name } => name,
-                            Type::Struct { name } => name,
-                            Type::Placeholder(name) => name,
+                            Type::GenericInstance(ref name, _) => name.clone(),
+                            Type::Enum { ref name } => name.clone(),
+                            Type::Struct { ref name } => name.clone(),
+                            Type::Placeholder(ref name) => name.clone(),
+                            Type::Pointer(_) => "*".to_string(),
                             Type::String => "String".to_string(),
                             _ => "Unknown".to_string(),
                         };
                         let candidate = format!("{}.{}", type_name, method_name);
-                        self.env.get(&candidate).ok_or(format!("Error: Method '{}' not defined for type '{}'.", method_name, type_name))?
+                        if type_name == "*" && method_name == "offset" {
+                            Type::Function { is_unsafe: true, return_type: Box::new(var_type.clone()) }
+                        } else {
+                            self.env.get(&candidate).ok_or_else(|| {
+                                let keys: Vec<_> = self.env.store.keys().collect();
+                                format!("Error: Method '{}' not defined for type '{}'. Available in env: {:?}", method_name, type_name, keys)
+                            })?
+                        }
                     } else {
                          return Err(format!("Error: Variable '{}' not defined.", var_name));
                     }
@@ -294,7 +312,8 @@ impl TypeChecker {
             Expression::Intrinsic { name, arguments } => {
                 for arg in arguments { self.check_expression(arg)?; }
                 if name == "str_len" || name == "fs_exists" { Ok(Type::Integer) }
-                else if name == "str_concat" || name == "fs_read_to_string" { Ok(Type::String) }
+                else if name == "str_concat" || name == "fs_read_to_string" || name == "int_to_str" || name == "float_to_str" { Ok(Type::String) }
+                else if name == "str_ptr" { Ok(Type::Pointer(Box::new(Type::Integer))) }
                 else { Ok(Type::Integer) }
             },
             Expression::StructInst { name, fields, .. } => {
@@ -305,6 +324,54 @@ impl TypeChecker {
                 let enum_type = self.env.get(name).ok_or(format!("Error: Enum '{}' not defined.", name))?;
                 for arg in arguments { self.check_expression(arg)?; }
                 Ok(enum_type)
+            },
+            Expression::MemberAccess { receiver, member } => {
+                let rec_type = self.check_expression(receiver)?;
+                let type_name = match rec_type {
+                    Type::GenericInstance(ref name, _) => name.clone(),
+                    Type::Struct { ref name } => name.clone(),
+                    Type::Placeholder(ref name) => name.clone(),
+                    _ => {
+                        if rec_type == Type::String { "String".to_string() }
+                        else { return Err(format!("Error: Member access on non-struct type {:?}", rec_type)); }
+                    }
+                };
+                
+                let candidate = format!("{}.{}", type_name, member);
+                self.env.get(&candidate).ok_or(format!("Error: Field '{}' not defined for type '{}'.", member, type_name))
+            },
+            Expression::MethodCall { receiver, method, generic_args: _, arguments } => {
+                let rec_type = self.check_expression(receiver)?;
+                let type_name = match rec_type {
+                    Type::GenericInstance(ref name, _) => name.clone(),
+                    Type::Struct { ref name } => name.clone(),
+                    Type::Enum { ref name } => name.clone(),
+                    Type::Placeholder(ref name) => name.clone(),
+                    Type::Pointer(_) => "*".to_string(), // Mark as pointer
+                    Type::String => "String".to_string(),
+                    _ => "Unknown".to_string(),
+                };
+                
+                let candidate = format!("{}.{}", type_name, method);
+                let func_type = if type_name == "*" && method == "offset" {
+                    Type::Function { is_unsafe: true, return_type: Box::new(rec_type.clone()) }
+                } else {
+                    self.env.get(&candidate).ok_or(format!("Error: Method '{}' not defined for type '{}'.", method, type_name))?
+                };
+
+                if let Type::Function { is_unsafe, return_type } = func_type {
+                    if is_unsafe && !self.in_unsafe_context {
+                        return Err(format!("Security Error: Call to unsafe method '{}' requires an unsafe block.", method));
+                    }
+                    for arg in arguments { self.check_expression(arg)?; }
+                    Ok(*return_type.clone())
+                } else {
+                    Err(format!("Error: '{}' is not a function.", candidate))
+                }
+            },
+            Expression::TypeRef { name, generic_args } => {
+                let _base_type = self.resolve_type(name);
+                Ok(Type::GenericInstance(name.clone(), generic_args.iter().map(|_| Type::Unknown).collect()))
             },
             _ => Ok(Type::Unknown),
         }

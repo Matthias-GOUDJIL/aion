@@ -8,16 +8,22 @@ This document outlines the technical path to transform Aion from its current Rus
 *Goal: Make Aion capable of writing complex programs and data manipulators.*
 
 ### **v0.4: Advanced Type System**
-- [ ] **Enums & Pattern Matching**: Essential for compiler logic (AST ready, Codegen partial).
-- [ ] **Generics**: Introduction of `Type<T>` for reusable data structures.
+- [x] **Enums & Pattern Matching**: Essential for compiler logic (AST ready, Codegen partial).
+- [x] **Generics**: Introduction of `Type<T>` for reusable data structures.
 - [x] **First-Class Strings**: Initial string support with correct LLVM typing.
 
 ### **v0.5: Extended Standard Library**
-- [ ] **`std.fs`**: File read/write capabilities.
-- [ ] **`std.collections`**: Direct Aion implementation of `Vec<T>` and `HashMap<K,V>`.
-- [ ] **`std.env`**: Command-line argument management.
+- [x] **`std.fs`**: File read/write capabilities.
+- [x] **`std.collections`**: Direct Aion implementation of `Vec<T>` and `HashMap<K,V>`.
+- [x] **`std.env`**: Command-line argument management.
 
 ### **v0.6: Native Runtime (End of C Runtime)**
+- [x] **Enums Implementation**: `{ i64, [64 x i8] }` layout completed.
+- [x] **PIC Support**: LLVM Relocation model set to PIC for modern Linux.
+- [x] **Global Args**: `aion_argc` and `aion_argv` accessible via `std.env`.
+- [ ] **Memory Management**: Transition from `malloc` to a custom Aion allocator.
+- [ ] **Compiler Optimization**: Pass manager integration for performance.
+- [ ] **Self-Hosting Path**: Identify remaining blockers for `aionc.ai`.
 - [ ] **Self-Runtime**: Rewrite `aion_spawn` and the thread scheduler in Aion via `syscalls`.
 - [ ] **GCC/Clang Removal**: Aion will only depend on LLVM for the final binary.
 

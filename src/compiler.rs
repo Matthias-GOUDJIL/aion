@@ -8,7 +8,6 @@ use inkwell::types::{StructType, BasicTypeEnum, BasicType};
 use inkwell::{AddressSpace, IntPredicate};
 use crate::ast::*;
 use crate::token::Token;
-use crate::checker::TypeChecker;
 
 pub struct Compiler<'ctx> {
     pub context: &'ctx Context,
@@ -177,7 +176,64 @@ impl<'ctx> Compiler<'ctx> {
                     *name = name.replace(&placeholders[i], &concrete[i]);
                 }
             },
+            Expression::MemberAccess { receiver, .. } => self.substitute_types_in_expr(receiver, placeholders, concrete),
+            Expression::MethodCall { receiver, generic_args, arguments, .. } => {
+                self.substitute_types_in_expr(receiver, placeholders, concrete);
+                for arg in generic_args {
+                    for i in 0..placeholders.len() {
+                        *arg = arg.replace(&placeholders[i], &concrete[i]);
+                    }
+                }
+                for arg in arguments {
+                    self.substitute_types_in_expr(arg, placeholders, concrete);
+                }
+            },
+            Expression::TypeRef { name, generic_args } => {
+                for i in 0..placeholders.len() {
+                    *name = name.replace(&placeholders[i], &concrete[i]);
+                }
+                for arg in generic_args {
+                    for i in 0..placeholders.len() {
+                        *arg = arg.replace(&placeholders[i], &concrete[i]);
+                    }
+                }
+            },
             _ => {}
+        }
+    }
+
+    fn instantiate_function(&mut self, base_name: &str, generic_args: &[String]) -> Result<FunctionValue<'ctx>, String> {
+        let decl = self.decls.get(base_name).cloned().ok_or(format!("Generic function '{}' not found", base_name))?;
+        if let Declaration::Function(mut f) = decl {
+            let placeholders = f.generic_params.clone();
+            let new_name = format!("{}_{}", base_name, generic_args.join("_"));
+            
+            if let Some(existing) = self.module.get_function(&new_name) {
+                return Ok(existing);
+            }
+
+            f.name = new_name.clone();
+            f.generic_params = vec![];
+            
+            for i in 0..placeholders.len() {
+                let p = &placeholders[i];
+                let c = &generic_args[i];
+                for (_, pt) in f.params.iter_mut() {
+                    *pt = pt.replace(p, c);
+                }
+                f.return_type = f.return_type.replace(p, c);
+            }
+            
+            if let Some(body) = &mut f.body {
+                self.substitute_types_in_body(body, &placeholders, generic_args);
+            }
+            
+            self.decls.insert(new_name.clone(), Declaration::Function(f.clone()));
+            self.compiled_instances.insert(new_name.clone());
+            
+            self.compile_function(&Declaration::Function(f))
+        } else {
+            Err(format!("'{}' is not a function", base_name))
         }
     }
 
@@ -187,7 +243,6 @@ impl<'ctx> Compiler<'ctx> {
                 if existing.get_first_basic_block().is_some() { return Ok(existing); }
                 existing
             } else {
-                // This branch should ideally not be hit after Pass 1
                 let mut param_types = Vec::new();
                 if f.name == "main" {
                     param_types.push(self.context.i32_type().into());
@@ -197,7 +252,7 @@ impl<'ctx> Compiler<'ctx> {
                         let mut llvm_p_type = self.aion_type_to_llvm(p_type);
                         if p_name == "self" {
                             let base_type_name = if p_type.contains('<') { p_type.split('<').next().unwrap() } else { p_type };
-                            if self.struct_types.contains_key(base_type_name) {
+                            if self.struct_types.contains_key(base_type_name) || self.enum_types.contains_key(base_type_name) {
                                 llvm_p_type = self.context.ptr_type(AddressSpace::default()).into();
                             }
                         }
@@ -223,7 +278,6 @@ impl<'ctx> Compiler<'ctx> {
                         self.builder.build_store(alloca, argc_val).unwrap();
                         local_vars.insert("argc".to_string(), (alloca, self.context.i64_type().into(), "i64".to_string()));
                         
-                        // Store to global aion_argc
                         if let Some(global) = self.module.get_global("aion_argc") {
                              self.builder.build_store(global.as_pointer_value(), argc_val).unwrap();
                         }
@@ -234,7 +288,6 @@ impl<'ctx> Compiler<'ctx> {
                         self.builder.build_store(alloca, argv).unwrap();
                         local_vars.insert("argv".to_string(), (alloca, self.context.ptr_type(AddressSpace::default()).into(), "ptr".to_string()));
 
-                        // Store to global aion_argv
                         if let Some(global) = self.module.get_global("aion_argv") {
                              self.builder.build_store(global.as_pointer_value(), argv).unwrap();
                         }
@@ -247,8 +300,14 @@ impl<'ctx> Compiler<'ctx> {
                             arg.set_name(arg_name);
 
                             let base_type_name = if arg_type_name.contains('<') { arg_type_name.split('<').next().unwrap() } else { arg_type_name };
-                            if arg_name == "self" && self.struct_types.contains_key(base_type_name) {
-                                let struct_type = *self.struct_types.get(base_type_name).unwrap();
+                            let resolved_base_name = self.resolve_fuzzy_name(&self.struct_types, base_type_name)
+                                .or_else(|| self.resolve_fuzzy_name(&self.enum_types, base_type_name));
+                            
+                            if arg_name == "self" && resolved_base_name.is_some() {
+                                let full_type_name = resolved_base_name.unwrap();
+                                let struct_type = self.struct_types.get(&full_type_name)
+                                    .or_else(|| self.enum_types.get(&full_type_name))
+                                    .unwrap();
                                 local_vars.insert(arg_name.clone(), (arg.into_pointer_value(), struct_type.as_basic_type_enum(), arg_type_name.clone()));
                             } else {
                                 let alloca = self.builder.build_alloca(arg.get_type(), arg_name).unwrap();
@@ -313,26 +372,28 @@ impl<'ctx> Compiler<'ctx> {
             }
         }
 
-        let mut checker = TypeChecker::new();
-        if let Err(e) = checker.check_program(program) {
-            return Err(format!("Type/Safety Error: {}", e));
-        }
-
         let ptr_type = self.context.ptr_type(AddressSpace::default());
+        let i64_type = self.context.i64_type();
+        let f64_type = self.context.f64_type();
         self.module.add_function("printf", self.context.i32_type().fn_type(&[ptr_type.into()], true), None);
         self.module.add_function("strlen", self.context.i64_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("exit", self.context.void_type().fn_type(&[self.context.i32_type().into()], false), None);
         self.module.add_function("malloc", ptr_type.fn_type(&[self.context.i64_type().into()], false), None);
         self.module.add_function("realloc", ptr_type.fn_type(&[ptr_type.into(), self.context.i64_type().into()], false), None);
         self.module.add_function("free", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
+        self.module.add_function("aion_io_print", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
+        self.module.add_function("aion_io_println", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("strcat", ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
+        self.module.add_function("aion_int_to_str", ptr_type.fn_type(&[i64_type.into()], false), None);
+        self.module.add_function("aion_float_to_str", ptr_type.fn_type(&[f64_type.into()], false), None);
+        self.module.add_function("aion_str_eq", i64_type.fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
         self.module.add_function("aion_spawn", self.context.void_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("pow", self.context.f64_type().fn_type(&[self.context.f64_type().into(), self.context.f64_type().into()], false), None);
         self.module.add_function("aion_read_file", ptr_type.fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_write_file", self.context.i32_type().fn_type(&[ptr_type.into(), ptr_type.into()], false), None);
         self.module.add_function("aion_fs_exists", self.context.i64_type().fn_type(&[ptr_type.into()], false), None);
         self.module.add_function("aion_getenv", ptr_type.fn_type(&[ptr_type.into()], false), None);
-        self.module.add_function("aion_get_argv_index", ptr_type.fn_type(&[ptr_type.into(), self.context.i32_type().into()], false), None);
+        self.module.add_function("aion_get_argv_index", ptr_type.fn_type(&[ptr_type.into(), i64_type.into()], false), None);
         
         let argc_global = self.module.add_global(self.context.i64_type(), Some(AddressSpace::default()), "aion_argc");
         argc_global.set_initializer(&self.context.i64_type().const_zero());
@@ -390,7 +451,7 @@ impl<'ctx> Compiler<'ctx> {
                             let mut llvm_p_type = self.aion_type_to_llvm(p_type);
                             if p_name == "self" {
                                 let base_type_name = if p_type.contains('<') { p_type.split('<').next().unwrap() } else { p_type };
-                                if self.struct_types.contains_key(base_type_name) {
+                                if self.struct_types.contains_key(base_type_name) || self.enum_types.contains_key(base_type_name) {
                                     llvm_p_type = self.context.ptr_type(AddressSpace::default()).into();
                                 }
                             }
@@ -442,37 +503,7 @@ impl<'ctx> Compiler<'ctx> {
                     last_val = None;
                 },
                 Statement::Assignment { target, value } => {
-                    let ptr = match target {
-                        Expression::Identifier(name) => {
-                            if let Some((var_name, field_name)) = name.split_once('.') {
-                                if let Some((var_ptr, var_type, type_name)) = variables.get(var_name) {
-                                    let base_type_name = if type_name.contains('<') { type_name.split('<').next().unwrap() } else { type_name };
-                                    let full_type_name = self.resolve_fuzzy_name(&self.struct_fields, base_type_name).unwrap_or(base_type_name.to_string());
-                                    if let Some(fields) = self.struct_fields.get(&full_type_name) {
-                                        if let Some(&idx) = fields.get(field_name) {
-                                            self.builder.build_struct_gep(*var_type, *var_ptr, idx, "fieldptr").unwrap()
-                                        } else { return Err(format!("Field '{}' not found on type '{}'", field_name, full_type_name)); }
-                                    } else { return Err(format!("Type '{}' is not a known struct with fields", full_type_name)); }
-                                } else { return Err(format!("Variable '{}' not defined", var_name)); }
-                            } else {
-                                if let Some((alloca, _, _)) = variables.get(name) {
-                                    *alloca
-                                } else {
-                                    return Err(format!("Assignment to undefined variable '{}'", name));
-                                }
-                            }
-                        },
-                        Expression::Deref { expr } => {
-                            let val = self.compile_expr(expr, variables, function)?;
-                            if val.is_pointer_value() {
-                                val.into_pointer_value()
-                            } else {
-                                return Err("Assignment to non-pointer dereference".to_string());
-                            }
-                        },
-                        _ => return Err("Invalid assignment target".to_string()),
-                    };
-                    
+                    let ptr = self.compile_lvalue(target, variables, function)?;
                     let val = self.compile_expr(value, variables, function)?;
                     self.builder.build_store(ptr, val).unwrap();
                     last_val = None;
@@ -490,26 +521,59 @@ impl<'ctx> Compiler<'ctx> {
                     let merge_bb = self.context.append_basic_block(function, "ifcont");
                     self.builder.build_conditional_branch(comparison, then_bb, else_bb).unwrap();
                     
-                    let mut reachable = false;
+                    let mut phi_entries: Vec<(Option<BasicValueEnum<'ctx>>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
+                    
                     self.builder.position_at_end(then_bb);
-                    let then_val = self.compile_block(then_branch, variables, function)?;
-                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                    let mut then_vars = variables.clone();
+                    let then_val = self.compile_block(then_branch, &mut then_vars, function)?;
+                    let then_block_final = self.builder.get_insert_block().unwrap();
+                    if then_block_final.get_terminator().is_none() {
+                        phi_entries.push((then_val, then_block_final));
                         self.builder.build_unconditional_branch(merge_bb).unwrap();
-                        reachable = true;
                     }
                     
                     self.builder.position_at_end(else_bb);
+                    let mut else_vars = variables.clone();
                     let else_val = if let Some(eb) = else_branch { 
-                        self.compile_block(eb, variables, function)?
+                        self.compile_block(eb, &mut else_vars, function)?
                     } else { None };
-                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                    let else_block_final = self.builder.get_insert_block().unwrap();
+                    if else_block_final.get_terminator().is_none() {
+                        phi_entries.push((else_val, else_block_final));
                         self.builder.build_unconditional_branch(merge_bb).unwrap();
-                        reachable = true;
                     }
                     
-                    if reachable { self.builder.position_at_end(merge_bb); }
-                    else { unsafe { merge_bb.delete().unwrap(); } }
-                    last_val = then_val.or(else_val);
+                    if merge_bb.get_first_use().is_some() || true {
+                        self.builder.position_at_end(merge_bb);
+                        
+                        let active_entries: Vec<(BasicValueEnum<'ctx>, _)> = phi_entries.iter()
+                            .filter_map(|(v, bb)| v.map(|val| (val, *bb)))
+                            .collect();
+
+                        if !active_entries.is_empty() {
+                            let first_val = active_entries[0].0;
+                            let all_same = phi_entries.iter().all(|(v, _)| v.map_or(true, |val| val.get_type() == first_val.get_type()));
+                            if all_same {
+                                let phi = self.builder.build_phi(first_val.get_type(), "ifres").unwrap();
+                                for (v, bb) in phi_entries {
+                                    let val = v.unwrap_or_else(|| {
+                                        if first_val.is_pointer_value() {
+                                            self.context.ptr_type(AddressSpace::default()).const_null().into()
+                                        } else if first_val.is_float_value() {
+                                            self.context.f64_type().const_zero().into()
+                                        } else {
+                                            self.context.i64_type().const_zero().into()
+                                        }
+                                    });
+                                    phi.add_incoming(&[(&val, bb)]);
+                                }
+                                last_val = Some(phi.as_basic_value());
+                            } else { last_val = None; }
+                        } else { last_val = None; }
+                    } else {
+                        unsafe { merge_bb.delete().unwrap(); }
+                        last_val = None;
+                    }
                 },
                 Statement::While { condition, body } => {
                     let cond_bb = self.context.append_basic_block(function, "while_cond");
@@ -524,7 +588,8 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.build_conditional_branch(comparison, body_bb, exit_bb).unwrap();
                     
                     self.builder.position_at_end(body_bb);
-                    self.compile_block(body, variables, function)?;
+                    let mut body_vars = variables.clone();
+                    self.compile_block(body, &mut body_vars, function)?;
                     if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
                         self.builder.build_unconditional_branch(cond_bb).unwrap();
                     }
@@ -534,8 +599,8 @@ impl<'ctx> Compiler<'ctx> {
                 },
                 Statement::Match { condition, arms } => {
                     let cond_val = self.compile_expr(condition, variables, function)?;
-                    
                     let exit_bb = self.context.append_basic_block(function, "matchexit");
+                    let mut phi_entries: Vec<(Option<BasicValueEnum<'ctx>>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
                     
                     if cond_val.is_struct_value() {
                         let enum_val = cond_val.into_struct_value();
@@ -543,18 +608,14 @@ impl<'ctx> Compiler<'ctx> {
                         self.builder.build_store(alloca, enum_val).unwrap();
                         let tag_ptr = self.builder.build_struct_gep(enum_val.get_type(), alloca, 0, "tagptr").unwrap();
                         let tag = self.builder.build_load(self.context.i64_type(), tag_ptr, "tag").unwrap().into_int_value();
-                        
                         let cond_type_name = self.get_expr_type_name(condition, variables);
 
                         for (i, arm) in arms.iter().enumerate() {
-                            let arm_bb_name = format!("arm_{}_{}", arm.pattern, i);
-                            let arm_bb = self.context.append_basic_block(function, &arm_bb_name);
+                            let arm_bb = self.context.append_basic_block(function, &format!("arm_{}_{}", arm.pattern, i));
                             let next_bb = self.context.append_basic_block(function, "match_next");
-                            
-                            let arm_tag = if arm.pattern == "Some" || arm.pattern == "Ok" { 0 } 
-                                     else if arm.pattern == "None" || arm.pattern == "Err" { 1 } 
+                            let arm_tag = if arm.pattern == "Some" || arm.pattern == "Ok" || arm.pattern.ends_with("::Some") || arm.pattern.ends_with(".Some") { 0 } 
+                                     else if arm.pattern == "None" || arm.pattern == "Err" || arm.pattern.ends_with("::None") || arm.pattern.ends_with(".None") { 1 } 
                                      else { i as u64 };
-                                     
                             let is_arm = self.builder.build_int_compare(IntPredicate::EQ, tag, self.context.i64_type().const_int(arm_tag, false), "is_arm").unwrap();
                             self.builder.build_conditional_branch(is_arm, arm_bb, next_bb).unwrap();
                             
@@ -563,45 +624,76 @@ impl<'ctx> Compiler<'ctx> {
                             if !arm.params.is_empty() {
                                 let data_ptr = self.builder.build_struct_gep(enum_val.get_type(), alloca, 1, "arm_dataptr").unwrap();
                                 let param_name = &arm.params[0];
-                                
                                 let payload_type_name = if cond_type_name.contains('<') {
                                     let parts: Vec<&str> = cond_type_name.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
-                                    if arm.pattern == "Some" || arm.pattern == "Ok" {
-                                        parts[1].trim().to_string()
-                                    } else {
-                                        parts.get(2).unwrap_or(&parts[1]).trim().to_string()
-                                    }
+                                    if arm.pattern == "Some" || arm.pattern == "Ok" { parts[1].trim().to_string() }
+                                    else { parts.get(2).unwrap_or(&parts[1]).trim().to_string() }
                                 } else { "i64".to_string() };
-
                                 let load_type = self.aion_type_to_llvm(&payload_type_name);
-                                let cast_type = self.context.ptr_type(AddressSpace::default());
-
-                                let casted_ptr = self.builder.build_bit_cast(data_ptr, cast_type, "arm_datacast").unwrap();
+                                let casted_ptr = self.builder.build_bit_cast(data_ptr, self.context.ptr_type(AddressSpace::default()), "arm_datacast").unwrap();
                                 let loaded_val = self.builder.build_load(load_type, casted_ptr.into_pointer_value(), param_name).unwrap();
                                 let param_alloca = self.builder.build_alloca(load_type, param_name).unwrap();
                                 self.builder.build_store(param_alloca, loaded_val).unwrap();
-                                
                                 arm_vars.insert(param_name.clone(), (param_alloca, load_type, payload_type_name));
                             }
-                            self.compile_block(&arm.body, &mut arm_vars, function)?;
-                            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                            let arm_val = self.compile_block(&arm.body, &mut arm_vars, function)?;
+                            let arm_block_final = self.builder.get_insert_block().unwrap();
+                            if arm_block_final.get_terminator().is_none() {
+                                phi_entries.push((arm_val, arm_block_final));
                                 self.builder.build_unconditional_branch(exit_bb).unwrap();
                             }
                             self.builder.position_at_end(next_bb);
                         }
-                        self.builder.build_unconditional_branch(exit_bb).unwrap();
+                        let final_fallback_bb = self.builder.get_insert_block().unwrap();
+                        if final_fallback_bb.get_terminator().is_none() {
+                            phi_entries.push((None, final_fallback_bb));
+                            self.builder.build_unconditional_branch(exit_bb).unwrap();
+                        }
                     } else {
                         for arm in arms {
                             let arm_bb = self.context.append_basic_block(function, &format!("arm_{}", arm.pattern));
                             self.builder.position_at_end(arm_bb);
-                            self.compile_block(&arm.body, variables, function)?;
-                            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                            let mut arm_vars = variables.clone();
+                            let arm_val = self.compile_block(&arm.body, &mut arm_vars, function)?;
+                            let arm_block_final = self.builder.get_insert_block().unwrap();
+                            if arm_block_final.get_terminator().is_none() {
+                                phi_entries.push((arm_val, arm_block_final));
                                 self.builder.build_unconditional_branch(exit_bb).unwrap();
                             }
                         }
+                        let final_fallback_bb = self.builder.get_insert_block().unwrap();
+                        if final_fallback_bb.get_terminator().is_none() {
+                            phi_entries.push((None, final_fallback_bb));
+                            self.builder.build_unconditional_branch(exit_bb).unwrap();
+                        }
                     }
+                    
                     self.builder.position_at_end(exit_bb);
-                    last_val = None;
+                    // Filter phi_entries to get only those with values
+                    let active_entries: Vec<(BasicValueEnum<'ctx>, _)> = phi_entries.iter()
+                        .filter_map(|(v, bb)| v.map(|val| (val, *bb)))
+                        .collect();
+
+                    if !active_entries.is_empty() {
+                        let first_val = active_entries[0].0;
+                        let phi = self.builder.build_phi(first_val.get_type(), "matchres").unwrap();
+                        for (v, bb) in phi_entries {
+                            let val = v.unwrap_or_else(|| {
+                                // Provide a zero value of the correct type
+                                if first_val.is_pointer_value() {
+                                    self.context.ptr_type(AddressSpace::default()).const_null().into()
+                                } else if first_val.is_float_value() {
+                                    self.context.f64_type().const_zero().into()
+                                } else {
+                                    self.context.i64_type().const_zero().into()
+                                }
+                            });
+                            phi.add_incoming(&[(&val, bb)]);
+                        }
+                        last_val = Some(phi.as_basic_value());
+                    } else {
+                        last_val = None;
+                    }
                 },
                 Statement::ExpressionStmt(expr) => { last_val = Some(self.compile_expr(expr, variables, function)?); },
                 Statement::UnsafeBlock(body) => { last_val = self.compile_block(body, variables, function)?; },
@@ -624,13 +716,12 @@ impl<'ctx> Compiler<'ctx> {
                 if let Some((var_name, field_name)) = name.split_once('.') {
                     if let Some((_, _, var_type_name)) = variables.get(var_name) {
                         let base_var_type_name = if var_type_name.contains('<') { var_type_name.split('<').next().unwrap() } else { var_type_name };
-                        let full_type_name = self.resolve_fuzzy_name(&self.decls, base_var_type_name).unwrap_or(base_var_type_name.to_string());
+                        let full_type_name = self.resolve_fuzzy_name(&self.struct_types, base_var_type_name).unwrap_or(base_var_type_name.to_string());
                         if let Some(decl) = self.decls.get(&full_type_name) {
                             if let Declaration::Struct(s) = decl {
                                 for (f_name, f_type) in &s.fields {
                                     if f_name == field_name { 
                                         let mut ret = f_type.clone();
-                                        // Handle generic substitution in field type if needed
                                         if var_type_name.contains('<') {
                                             let parts: Vec<&str> = var_type_name.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
                                             let concrete = &parts[1..];
@@ -655,43 +746,49 @@ impl<'ctx> Compiler<'ctx> {
                 }
             },
             Expression::Call { function: name, generic_args, .. } => {
-                if name == "string.len" || name == "fs.write" || name == "fs.exists" { return "i64".to_string(); }
-                if name == "string.concat" || name == "fs.read_to_string" { return "String".to_string(); }
-                if name == "env.var" { return "Option<String>".to_string(); }
-                
-                let (resolved_name, resolved_generic_args) = if let Some((var_name, method_name)) = name.split_once('.') {
-                    if let Some((_, _, type_name)) = variables.get(var_name) {
-                        let (base_type_name, type_generic_args) = if type_name.contains('<') {
+                if let Some((receiver_name, method_name)) = name.rsplit_once('.') {
+                    if method_name == "offset" {
+                        let receiver_expr = Expression::Identifier(receiver_name.to_string());
+                        return self.get_expr_type_name(&receiver_expr, variables);
+                    }
+                    if let Some((_, _, type_name)) = variables.get(receiver_name) {
+                         let (base_type_name, type_generic_args) = if type_name.contains('<') {
                              let parts: Vec<&str> = type_name.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
                              (parts[0].to_string(), parts[1..].iter().map(|s| s.trim().to_string()).collect::<Vec<String>>())
-                         } else {
-                             (type_name.clone(), vec![])
-                         };
-                         let type_prefix = self.resolve_fuzzy_name(&self.struct_types, &base_type_name)
-                             .or_else(|| self.resolve_fuzzy_name(&self.enum_types, &base_type_name))
-                             .unwrap_or(base_type_name.clone());
+                         } else { (type_name.clone(), vec![]) };
+                         let type_prefix = self.resolve_fuzzy_name(&self.decls, &base_type_name).unwrap_or(base_type_name.clone());
                          let candidate = format!("{}.{}", type_prefix, method_name);
-                         let mut new_generic_args = generic_args.clone();
-                         if new_generic_args.is_empty() {
-                             new_generic_args = type_generic_args;
+                         if let Some(Declaration::Function(f)) = self.decls.get(&candidate) {
+                             let mut ret = f.return_type.clone();
+                             if let Some(Declaration::Struct(s)) = self.decls.get(&type_prefix) {
+                                 for (i, p) in s.generic_params.iter().enumerate() {
+                                     if i < type_generic_args.len() { ret = ret.replace(p, &type_generic_args[i]); }
+                                 }
+                             }
+                             for (i, p) in f.generic_params.iter().enumerate() {
+                                 if i < generic_args.len() { ret = ret.replace(p, &generic_args[i]); }
+                             }
+                             return ret;
                          }
-                         (candidate, new_generic_args)
-                    } else { (name.clone(), generic_args.clone()) }
-                } else { (name.clone(), generic_args.clone()) };
-
-                let actual_name = if !resolved_generic_args.is_empty() {
-                    let decl_name = self.resolve_fuzzy_name(&self.decls, &resolved_name).unwrap_or(resolved_name.clone());
-                    self.get_monomorphized_name(&decl_name, &resolved_generic_args)
+                    }
+                }
+                if name == "string.len" || name == "fs.write" || name == "fs.exists" { return "i64".to_string(); }
+                if name == "string.concat" || name == "fs.read_to_string" || name == "int_to_str" || name == "float_to_str" { return "String".to_string(); }
+                if name == "env.var" { return "Option<String>".to_string(); }
+                
+                let actual_name = if !generic_args.is_empty() {
+                    let decl_name = self.resolve_fuzzy_name(&self.decls, name).unwrap_or(name.clone());
+                    self.get_monomorphized_name(&decl_name, generic_args)
                 } else {
-                    self.resolve_fuzzy_name(&self.decls, &resolved_name).unwrap_or(resolved_name.clone())
+                    self.resolve_fuzzy_name(&self.decls, name).unwrap_or(name.clone())
                 };
                 
                 if let Some(decl) = self.decls.get(&actual_name) {
                     if let Declaration::Function(f) = decl {
                         let mut ret = f.return_type.clone();
                         for (i, p) in f.generic_params.iter().enumerate() {
-                            if i < resolved_generic_args.len() {
-                                ret = ret.replace(p, &resolved_generic_args[i]);
+                            if i < generic_args.len() {
+                                ret = ret.replace(p, &generic_args[i]);
                             }
                         }
                         return ret;
@@ -706,16 +803,112 @@ impl<'ctx> Compiler<'ctx> {
                 if generic_args.is_empty() { name.clone() }
                 else { format!("{}<{}>", name, generic_args.join(", ")) }
             },
-            Expression::If { .. } => "unknown".to_string(),
             Expression::Cast { target, .. } => target.clone(),
-            Expression::Deref { .. } => "unknown".to_string(),
+            Expression::TypeRef { name, generic_args } => {
+                if generic_args.is_empty() { name.clone() }
+                else { format!("{}<{}>", name, generic_args.join(", ")) }
+            },
+            Expression::Deref { expr } => {
+                let t = self.get_expr_type_name(expr, variables);
+                if t.starts_with('*') { t[1..].to_string() }
+                else { "unknown".to_string() }
+            },
             Expression::Intrinsic { name, .. } => {
-                 if name == "str_len" { "i64".to_string() }
-                 else if name == "str_concat" { "String".to_string() }
-                 else if name == "fs_read_to_string" { "String".to_string() }
+                 if name == "str_len" || name == "fs_exists" { "i64".to_string() }
+                 else if name == "str_concat" || name == "fs_read_to_string" || name == "int_to_str" || name == "float_to_str" { "String".to_string() }
+                 else if name == "str_ptr" { "*u8".to_string() }
                  else { "i64".to_string() } 
             },
+            Expression::Block { statements, .. } => {
+                if let Some(Statement::ExpressionStmt(expr)) = statements.last() {
+                    self.get_expr_type_name(expr, variables)
+                } else { "void".to_string() }
+            },
+            Expression::MemberAccess { receiver, member } => {
+                let rec_type = self.get_expr_type_name(receiver, variables);
+                let (base_type, type_gen_args) = if rec_type.contains('<') {
+                    let parts: Vec<&str> = rec_type.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
+                    (parts[0].to_string(), parts[1..].iter().map(|s| s.trim().to_string()).collect::<Vec<String>>())
+                } else { (rec_type.clone(), vec![]) };
+                let full_type = self.resolve_fuzzy_name(&self.decls, &base_type).unwrap_or(base_type);
+                if let Some(Declaration::Struct(s)) = self.decls.get(&full_type) {
+                    for (f_name, f_type) in &s.fields {
+                        if f_name == member { 
+                            let mut ret = f_type.clone();
+                            for (i, p) in s.generic_params.iter().enumerate() {
+                                if i < type_gen_args.len() { ret = ret.replace(p, &type_gen_args[i]); }
+                            }
+                            return ret; 
+                        }
+                    }
+                }
+                "unknown".to_string()
+            },
+            Expression::MethodCall { receiver, method, generic_args, arguments: _ } => {
+                if method == "offset" { return self.get_expr_type_name(receiver, variables); }
+                let rec_type = self.get_expr_type_name(receiver, variables);
+                let (base_type, type_gen_args) = if rec_type.contains('<') {
+                    let parts: Vec<&str> = rec_type.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
+                    (parts[0].to_string(), parts[1..].iter().map(|s| s.trim().to_string()).collect::<Vec<String>>())
+                } else { (rec_type.clone(), vec![]) };
+                let full_type = self.resolve_fuzzy_name(&self.decls, &base_type).unwrap_or(base_type);
+                let candidate = format!("{}.{}", full_type, method);
+                if let Some(Declaration::Function(f)) = self.decls.get(&candidate) {
+                    let mut ret = f.return_type.clone();
+                    if let Some(Declaration::Struct(s)) = self.decls.get(&full_type) {
+                        for (i, p) in s.generic_params.iter().enumerate() {
+                            if i < type_gen_args.len() { ret = ret.replace(p, &type_gen_args[i]); }
+                        }
+                    }
+                    for (i, p) in f.generic_params.iter().enumerate() {
+                        if i < generic_args.len() { ret = ret.replace(p, &generic_args[i]); }
+                    }
+                    return ret;
+                }
+                "unknown".to_string()
+            },
             _ => "unknown".to_string(),
+        }
+    }
+
+    fn compile_lvalue(
+        &mut self,
+        expr: &Expression,
+        variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>,
+        function: FunctionValue<'ctx>
+    ) -> Result<PointerValue<'ctx>, String> {
+        match expr {
+            Expression::Identifier(name) => {
+                if let Some((var_name, field_name)) = name.split_once('.') {
+                    if let Some((var_ptr, var_type, type_name)) = variables.get(var_name) {
+                        let base_type_name = if type_name.contains('<') { type_name.split('<').next().unwrap() } else { type_name };
+                        let full_type_name = self.resolve_fuzzy_name(&self.struct_types, base_type_name).unwrap_or(base_type_name.to_string());
+                        if let Some(fields) = self.struct_fields.get(&full_type_name) {
+                            if let Some(&idx) = fields.get(field_name) {
+                                return Ok(self.builder.build_struct_gep(*var_type, *var_ptr, idx, "fieldptr").unwrap());
+                            }
+                        }
+                    }
+                }
+                let var = variables.get(name).ok_or(format!("Variable '{}' not defined", name))?;
+                Ok(var.0)
+            },
+            Expression::Deref { expr } => {
+                let ptr_val = self.compile_expr(expr, variables, function)?;
+                if ptr_val.is_pointer_value() { Ok(ptr_val.into_pointer_value()) }
+                else { Err("Cannot get l-value of non-pointer dereference".to_string()) }
+            },
+            Expression::MemberAccess { receiver, member } => {
+                let rec_ptr = self.compile_lvalue(receiver, variables, function)?;
+                let rec_type_name = self.get_expr_type_name(receiver, variables);
+                let base_type = if rec_type_name.contains('<') { rec_type_name.split('<').next().unwrap() } else { &rec_type_name };
+                let full_type = self.resolve_fuzzy_name(&self.struct_types, base_type).ok_or(format!("Struct '{}' not found", base_type))?;
+                let struct_type = *self.struct_types.get(&full_type).unwrap();
+                let fields = self.struct_fields.get(&full_type).unwrap();
+                let idx = fields.get(member).ok_or(format!("Field '{}' not found on type '{}'", member, full_type))?;
+                Ok(self.builder.build_struct_gep(struct_type, rec_ptr, *idx, "memberptr").unwrap())
+            },
+            _ => Err(format!("Expression {:?} is not an l-value", expr)),
         }
     }
 
@@ -748,33 +941,31 @@ impl<'ctx> Compiler<'ctx> {
                 if let Some((var_name, field_name)) = name.split_once('.') {
                     if let Some((var_ptr, var_type, type_name)) = variables.get(var_name) {
                         let base_type_name = if type_name.contains('<') { type_name.split('<').next().unwrap() } else { type_name };
-                        let full_type_name = self.resolve_fuzzy_name(&self.struct_fields, base_type_name).unwrap_or(base_type_name.to_string());
+                        let full_type_name = self.resolve_fuzzy_name(&self.struct_types, base_type_name).unwrap_or(base_type_name.to_string());
                         if let Some(fields) = self.struct_fields.get(&full_type_name) {
                             if let Some(&idx) = fields.get(field_name) {
-                                let field_ptr = self.builder.build_struct_gep(*var_type, *var_ptr, idx, "fieldptr").unwrap();
-                                let field_type = var_type.into_struct_type().get_field_type_at_index(idx).unwrap();
-                                Ok(self.builder.build_load(field_type, field_ptr, field_name).unwrap())
-                            } else { Err(format!("Field '{}' not found on type '{}'", field_name, full_type_name)) }
-                        } else { Err(format!("Type '{}' not struct", full_type_name)) }
-                    } else { 
-                        Err(format!("Variable '{}' not defined", var_name)) 
-                    }
-                } else {
-                    let var = variables.get(name);
-                    if let Some((ptr, var_type, _)) = var {
-                        Ok(self.builder.build_load(*var_type, *ptr, name).unwrap())
-                    } else {
-                        if name == "argc" {
-                            if let Some(global) = self.module.get_global("aion_argc") {
-                                return Ok(self.builder.build_load(self.context.i64_type(), global.as_pointer_value(), "argc_load").unwrap());
-                            }
-                        } else if name == "argv" {
-                            if let Some(global) = self.module.get_global("aion_argv") {
-                                return Ok(self.builder.build_load(self.context.ptr_type(AddressSpace::default()), global.as_pointer_value(), "argv_load").unwrap());
+                                let field_ptr = self.builder.build_struct_gep(*var_type, *var_ptr, idx, field_name).unwrap();
+                                let field_type_name = self.get_expr_type_name(expr, variables);
+                                let llvm_field_type = self.aion_type_to_llvm(&field_type_name);
+                                return Ok(self.builder.build_load(llvm_field_type, field_ptr, field_name).unwrap());
                             }
                         }
-                        Err(format!("Var '{}' not found", name))
                     }
+                }
+                let var = variables.get(name);
+                if let Some((ptr, var_type, _)) = var {
+                    Ok(self.builder.build_load(*var_type, *ptr, name).unwrap())
+                } else {
+                    if name == "argc" {
+                        if let Some(global) = self.module.get_global("aion_argc") {
+                            return Ok(self.builder.build_load(self.context.i64_type(), global.as_pointer_value(), "argc_load").unwrap());
+                        }
+                    } else if name == "argv" {
+                        if let Some(global) = self.module.get_global("aion_argv") {
+                            return Ok(self.builder.build_load(self.context.ptr_type(AddressSpace::default()), global.as_pointer_value(), "argv_load").unwrap());
+                        }
+                    }
+                    Err(format!("Var '{}' not found", name))
                 }
             },
             Expression::Call { function: func_name, generic_args, arguments } => {
@@ -784,7 +975,6 @@ impl<'ctx> Compiler<'ctx> {
                 if func_name == "io.print" {
                     return self.compile_expr(&Expression::Intrinsic { name: "io_print".to_string(), arguments: arguments.clone() }, variables, function);
                 }
-                // New additions for stdlib functions mapped to intrinsics
                 if func_name == "string.len" {
                     return self.compile_expr(&Expression::Intrinsic { name: "str_len".to_string(), arguments: arguments.clone() }, variables, function);
                 }
@@ -808,29 +998,23 @@ impl<'ctx> Compiler<'ctx> {
                     let getenv_fn = self.module.get_function("aion_getenv").ok_or("aion_getenv not found")?;
                     let arg = self.compile_expr(&arguments[0], variables, function)?;
                     let call = self.builder.build_call(getenv_fn, &[arg.into()], "getenv_call").unwrap();
-                    
                     let ptr_val = match call.try_as_basic_value() {
                         ValueKind::Basic(val) => val,
                         ValueKind::Instruction(_) => return Err("getenv returned no value".to_string()),
                     };
-                    
                     let full_option_name = self.resolve_fuzzy_name(&self.enum_types, "Option").ok_or("Option type not found")?;
                     let option_type = *self.enum_types.get(&full_option_name).ok_or("Option type not found in enum_types")?;
                     let alloca = self.builder.build_alloca(option_type, "env_var_res").unwrap();
-                    
                     let ptr_int = self.builder.build_ptr_to_int(ptr_val.into_pointer_value(), self.context.i64_type(), "ptrtoint").unwrap();
                     let is_null = self.builder.build_int_compare(IntPredicate::EQ, ptr_int, self.context.i64_type().const_zero(), "isnull").unwrap();
-                    
                     let then_bb = self.context.append_basic_block(function, "is_null");
                     let else_bb = self.context.append_basic_block(function, "not_null");
                     let merge_bb = self.context.append_basic_block(function, "merge");
                     self.builder.build_conditional_branch(is_null, then_bb, else_bb).unwrap();
-                    
                     self.builder.position_at_end(then_bb);
                     let tag_ptr = self.builder.build_struct_gep(option_type, alloca, 0, "tagptr_none").unwrap();
                     self.builder.build_store(tag_ptr, self.context.i64_type().const_int(1, false)).unwrap();
                     self.builder.build_unconditional_branch(merge_bb).unwrap();
-                    
                     self.builder.position_at_end(else_bb);
                     let tag_ptr = self.builder.build_struct_gep(option_type, alloca, 0, "tagptr_some").unwrap();
                     self.builder.build_store(tag_ptr, self.context.i64_type().const_int(0, false)).unwrap();
@@ -838,29 +1022,36 @@ impl<'ctx> Compiler<'ctx> {
                     let casted_ptr_ptr = self.builder.build_bit_cast(data_ptr, self.context.ptr_type(AddressSpace::default()), "cast_to_ptrptr").unwrap();
                     self.builder.build_store(casted_ptr_ptr.into_pointer_value(), ptr_val).unwrap();
                     self.builder.build_unconditional_branch(merge_bb).unwrap();
-                    
                     self.builder.position_at_end(merge_bb);
                     return Ok(self.builder.build_load(option_type, alloca, "option_res").unwrap());
                 }
                 
-                let (resolved_func_name, resolved_generic_args, resolved_args) = if let Some((var_name, method_name)) = func_name.split_once('.') {
-                     if let Some((var_ptr, var_type, type_name)) = variables.get(var_name) {
-                         if type_name.starts_with('*') && method_name == "offset" && arguments.len() == 1 {
-                             let idx = self.compile_expr(&arguments[0], variables, function)?.into_int_value();
-                             let ptr = self.builder.build_load(*var_type, *var_ptr, "ptr").unwrap().into_pointer_value();
-                             let elem_type_name = &type_name[1..];
-                             let elem_type = self.aion_type_to_llvm(elem_type_name);
-                             let gep = unsafe { self.builder.build_gep(elem_type, ptr, &[idx], "offset_ptr").unwrap() };
-                             return Ok(gep.into());
-                         }
+                let mut actual_func_name = func_name.clone();
+                let mut actual_generic_args = generic_args.clone();
+                let mut actual_args = arguments.clone();
+                let mut is_method_call = false;
 
+                if let Some((receiver_name, method_name)) = func_name.rsplit_once('.') {
+                     let receiver_expr = Expression::Identifier(receiver_name.to_string());
+                     let receiver_type_name = self.get_expr_type_name(&receiver_expr, variables);
+                     
+                     if receiver_type_name.starts_with('*') && method_name == "offset" && arguments.len() == 1 {
+                         let idx = self.compile_expr(&arguments[0], variables, function)?.into_int_value();
+                         let ptr = self.compile_expr(&receiver_expr, variables, function)?.into_pointer_value();
+                         let elem_type_name = &receiver_type_name[1..];
+                         let elem_type = self.aion_type_to_llvm(elem_type_name);
+                         let gep = unsafe { self.builder.build_gep(elem_type, ptr, &[idx], "offset_ptr").unwrap() };
+                         return Ok(gep.into());
+                     }
+
+                     if let Some((_var_ptr, _var_type, type_name)) = variables.get(receiver_name) {
                          let (base_type_name, type_generic_args) = if type_name.contains('<') {
                              let parts: Vec<&str> = type_name.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
                              (parts[0].to_string(), parts[1..].iter().map(|s| s.trim().to_string()).collect::<Vec<String>>())
                          } else {
                              (type_name.clone(), vec![])
                          };
-
+                         
                          let type_prefix = self.resolve_fuzzy_name(&self.struct_types, &base_type_name)
                              .or_else(|| self.resolve_fuzzy_name(&self.enum_types, &base_type_name))
                              .unwrap_or(base_type_name.clone());
@@ -870,7 +1061,6 @@ impl<'ctx> Compiler<'ctx> {
                          let mut found = self.decls.contains_key(&candidate);
                          
                          if !found {
-                             // Try to find generic impl: Type<T>.method
                              if let Some(decl) = self.decls.get(&type_prefix) {
                                  if let Declaration::Struct(s) = decl {
                                      if !s.generic_params.is_empty() {
@@ -885,52 +1075,29 @@ impl<'ctx> Compiler<'ctx> {
                          }
 
                          if found {
-                             let mut new_args = arguments.clone();
-                             new_args.insert(0, Expression::Identifier(var_name.to_string()));
-                             let mut new_generic_args = generic_args.clone();
-                             if new_generic_args.is_empty() {
-                                 new_generic_args = type_generic_args;
-                             }
-                             (final_candidate, new_generic_args, new_args)
-                         } else {
-                             (func_name.clone(), generic_args.clone(), arguments.clone())
+                             actual_args.insert(0, Expression::Identifier(receiver_name.to_string()));
+                             if actual_generic_args.is_empty() { actual_generic_args = type_generic_args; }
+                             actual_func_name = final_candidate;
+                             is_method_call = true;
                          }
-                     } else { 
-                         (func_name.clone(), generic_args.clone(), arguments.clone()) 
                      }
-                } else { (func_name.clone(), generic_args.clone(), arguments.clone()) };
+                }
 
-                let func_name = &resolved_func_name;
-                let generic_args = &resolved_generic_args;
-                let arguments = &resolved_args;
-
-                let actual_func_name = if !generic_args.is_empty() {
-                    let decl_name = self.resolve_fuzzy_name(&self.decls, func_name).ok_or(format!("Generic function '{}' not found", func_name))?;
-                    let name = self.get_monomorphized_name(&decl_name, generic_args);
-                    if !self.compiled_instances.contains(&name) { 
-                        let decl = self.decls.get(&decl_name).cloned().unwrap();
-                        if let Declaration::Function(mut f) = decl {
-                            self.compiled_instances.insert(name.clone());
-                            let placeholders = f.generic_params.clone();
-                            for i in 0..placeholders.len() {
-                                let p = &placeholders[i];
-                                let c = &generic_args[i];
-                                for (_, pt) in f.params.iter_mut() {
-                                    *pt = pt.replace(p, c);
-                                }
-                                f.return_type = f.return_type.replace(p, c);
-                            }
-                            if let Some(body) = &mut f.body { self.substitute_types_in_body(body, &placeholders, generic_args); }
-                            f.name = name.clone();
-                            self.decls.insert(name.clone(), Declaration::Function(f.clone()));
-                            self.compile_function(&Declaration::Function(f))?;
-                        }
-                    }
-                    name
-                } else { 
-                    self.resolve_fuzzy_name(&self.decls, func_name).unwrap_or(func_name.clone())
-                };
-                eprintln!("Calling function: actual={}, llvm_name=?", actual_func_name);
+                let mut compiled_args = Vec::new();
+                for (i, arg) in actual_args.iter().enumerate() {
+                    let val = if i == 0 && is_method_call {
+                        self.compile_lvalue(arg, variables, function).map(|p| p.into())
+                            .unwrap_or_else(|_| {
+                                let v = self.compile_expr(arg, variables, function).unwrap();
+                                let alloca = self.builder.build_alloca(v.get_type(), "temp_method_rec").unwrap();
+                                self.builder.build_store(alloca, v).unwrap();
+                                alloca.into()
+                            })
+                    } else {
+                        self.compile_expr(arg, variables, function)?
+                    };
+                    compiled_args.push(val.into());
+                }
 
                 let fn_val = {
                     let full_name = self.resolve_fuzzy_name(&self.decls, &actual_func_name).unwrap_or(actual_func_name.clone());
@@ -945,179 +1112,25 @@ impl<'ctx> Compiler<'ctx> {
                             }
                         }
                     }
-                    self.module.get_function(&llvm_name).ok_or(format!("Function '{}' not found (LLVM name: {})", actual_func_name, llvm_name))?
+                    
+                    if !actual_generic_args.is_empty() {
+                        let gen_name = format!("{}_{}", full_name, actual_generic_args.join("_"));
+                        if let Some(existing) = self.module.get_function(&gen_name) { existing }
+                        else { self.instantiate_function(&full_name, &actual_generic_args)? }
+                    } else {
+                        self.module.get_function(&llvm_name).ok_or(format!("Function '{}' not found (LLVM name: {})", actual_func_name, llvm_name))?
+                    }
                 };
 
-                let mut compiled_args = Vec::new();
-                let full_name = self.resolve_fuzzy_name(&self.decls, &actual_func_name).unwrap_or(actual_func_name.clone());
-                let decl = self.decls.get(&full_name).cloned();
-                
-                for (i, arg_expr) in arguments.iter().enumerate() {
-                    let mut passed_by_pointer = false;
-                    if let Some(Declaration::Function(f)) = &decl {
-                        if i < f.params.len() {
-                            let (p_name, p_type) = &f.params[i];
-                            let base_type_name = if p_type.contains('<') { p_type.split('<').next().unwrap() } else { p_type };
-                            if p_name == "self" && self.struct_types.contains_key(base_type_name) {
-                                if let Expression::Identifier(var_name) = arg_expr {
-                                    if let Some((ptr, _, _)) = variables.get(var_name) {
-                                        compiled_args.push((*ptr).into());
-                                        passed_by_pointer = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    if !passed_by_pointer {
-                        compiled_args.push(self.compile_expr(arg_expr, variables, function)?.into());
-                    }
-                }
-                
-                let call = self.builder.build_call(fn_val, &compiled_args, "calltmp").unwrap();
-                match call.try_as_basic_value() {
-                    ValueKind::Basic(val) => {
-                        if func_name == "aion_write_file" || func_name == "aion_fs_exists" {
-                            if val.is_int_value() && val.into_int_value().get_type().get_bit_width() == 32 {
-                                return Ok(self.builder.build_int_s_extend(val.into_int_value(), self.context.i64_type(), "i32toi64").unwrap().into());
-                            }
-                        }
-                        Ok(val)
-                    },
-                    ValueKind::Instruction(_) => {
-                        let ret_type = fn_val.get_type().get_return_type();
-                        if let Some(t) = ret_type { Ok(t.const_zero()) } else { Ok(i64_type.const_int(0, false).into()) }
-                    }
-                }
-            },
-            Expression::Intrinsic { name, arguments } => {
-                if name == "io_println" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "io_println")) {
-                    let printf = self.module.get_function("printf").ok_or("printf not found")?;
-                    let arg_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
-                    let arg = self.compile_expr(arg_expr, variables, function)?;
-                    
-                    let fmt = if arg.get_type().is_pointer_type() {
-                        "%s\n\0"
-                    } else {
-                        "%lld\n\0"
-                    };
-                    
-                    let fmt_str = self.builder.build_global_string_ptr(fmt, "println_fmt").unwrap();
-                    self.builder.build_call(printf, &[fmt_str.as_basic_value_enum().into(), arg.into()], "printftmp").unwrap();
-                    Ok(i64_type.const_int(0, false).into())
-                } else if name == "io_print" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "io_print")) {
-                    let printf = self.module.get_function("printf").ok_or("printf not found")?;
-                    let arg_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
-                    let arg = self.compile_expr(arg_expr, variables, function)?;
-                    
-                    let fmt = if arg.get_type().is_pointer_type() {
-                        "%s\0"
-                    } else {
-                        "%lld\0"
-                    };
-                    
-                    let fmt_str = self.builder.build_global_string_ptr(fmt, "print_fmt").unwrap();
-                    self.builder.build_call(printf, &[fmt_str.as_basic_value_enum().into(), arg.into()], "printtmp").unwrap();
-                    Ok(i64_type.const_int(0, false).into())
-                } else if name == "io_read_line" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "io_read_line")) {
-                    Ok(self.context.ptr_type(AddressSpace::default()).const_null().into())
-                } else if name == "sizeof" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "sizeof")) {
-                    let type_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
-                    if let Expression::Identifier(type_name) = type_expr {
-                        let llvm_type = self.aion_type_to_llvm(type_name);
-                        let size = llvm_type.size_of().ok_or(format!("Could not determine size of '{}'", type_name))?;
-                        Ok(size.into())
-                    } else { Err("sizeof requires type identifier".to_string()) }
-                } else if name == "str_len" {
-                    let strlen = self.module.get_function("strlen").ok_or("strlen not found")?;
-                    let arg = self.compile_expr(&arguments[0], variables, function)?;
-                    let call = self.builder.build_call(strlen, &[arg.into()], "strlentmp").unwrap();
-                    match call.try_as_basic_value() {
-                        ValueKind::Basic(val) => Ok(val),
-                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
-                    }
-                } else if name == "str_concat" {
-                    let strcat = self.module.get_function("strcat").ok_or("strcat not found")?;
-                    let arg1 = self.compile_expr(&arguments[0], variables, function)?;
-                    let arg2 = self.compile_expr(&arguments[1], variables, function)?;
-                    let call = self.builder.build_call(strcat, &[arg1.into(), arg2.into()], "strcattmp").unwrap();
-                    match call.try_as_basic_value() {
-                        ValueKind::Basic(val) => Ok(val),
-                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
-                    }
-                } else if name == "fs_read_to_string" {
-                    let read_fn = self.module.get_function("aion_read_file").ok_or("aion_read_file not found")?;
-                    let arg = self.compile_expr(&arguments[0], variables, function)?;
-                    let call = self.builder.build_call(read_fn, &[arg.into()], "readtmp").unwrap();
-                    match call.try_as_basic_value() {
-                        ValueKind::Basic(val) => Ok(val),
-                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
-                    }
-                } else if name == "fs_write" {
-                    let write_fn = self.module.get_function("aion_write_file").ok_or("aion_write_file not found")?;
-                    let arg1 = self.compile_expr(&arguments[0], variables, function)?;
-                    let arg2 = self.compile_expr(&arguments[1], variables, function)?;
-                    let call = self.builder.build_call(write_fn, &[arg1.into(), arg2.into()], "writetmp").unwrap();
-                    match call.try_as_basic_value() {
-                        ValueKind::Basic(val) => {
-                            if val.is_int_value() && val.into_int_value().get_type().get_bit_width() == 32 {
-                                Ok(self.builder.build_int_s_extend(val.into_int_value(), self.context.i64_type(), "i32toi64").unwrap().into())
-                            } else { Ok(val) }
-                        },
-                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
-                    }
-                } else if name == "fs_exists" {
-                    let exists_fn = self.module.get_function("aion_fs_exists").ok_or("aion_fs_exists not found")?;
-                    let arg = self.compile_expr(&arguments[0], variables, function)?;
-                    let call = self.builder.build_call(exists_fn, &[arg.into()], "existstmp").unwrap();
-                    match call.try_as_basic_value() {
-                        ValueKind::Basic(val) => {
-                            if val.is_int_value() && val.into_int_value().get_type().get_bit_width() == 32 {
-                                Ok(self.builder.build_int_z_extend(val.into_int_value(), self.context.i64_type(), "boolcast").unwrap().into())
-                            } else { Ok(val) }
-                        },
-                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
-                    }
-                } else if name == "env_var" {
-                    let getenv_fn = self.module.get_function("aion_getenv").ok_or("aion_getenv not found")?;
-                    let arg = self.compile_expr(&arguments[0], variables, function)?;
-                    let call = self.builder.build_call(getenv_fn, &[arg.into()], "getenvtmp").unwrap();
-                    match call.try_as_basic_value() {
-                        ValueKind::Basic(val) => Ok(val),
-                        ValueKind::Instruction(_) => Ok(self.context.ptr_type(AddressSpace::default()).const_null().into()),
-                    }
-                } else if name == "mem_is_null" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "mem_is_null")) {
-                    let ptr_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
-                    let arg = self.compile_expr(ptr_expr, variables, function)?;
-                    if arg.is_pointer_value() {
-                        let ptr = arg.into_pointer_value();
-                        let ptr_int = self.builder.build_ptr_to_int(ptr, self.context.i64_type(), "ptrtoint").unwrap();
-                        let eq_zero = self.builder.build_int_compare(IntPredicate::EQ, ptr_int, self.context.i64_type().const_zero(), "isnull").unwrap();
-                        Ok(self.builder.build_int_z_extend(eq_zero, self.context.i64_type(), "boolcast").unwrap().into())
-                    } else {
-                        Ok(i64_type.const_int(0, false).into())
-                    }
+                let call = if fn_val.get_type().get_return_type().is_none() {
+                    self.builder.build_call(fn_val, &compiled_args, "").unwrap()
                 } else {
-                    let (intrinsic_name, intrinsic_args) = if name == "intrinsic" {
-                        if let Expression::String(actual_name) = &arguments[0] {
-                            (actual_name.clone(), arguments[1..].to_vec())
-                        } else { (name.clone(), arguments.clone()) }
-                    } else { (name.clone(), arguments.clone()) };
-
-                    let fn_val = self.module.get_function(&intrinsic_name).ok_or(format!("Intrinsic '{}' not found", intrinsic_name))?;
-                    let mut compiled_args = Vec::new();
-                    for arg in &intrinsic_args { compiled_args.push(self.compile_expr(arg, variables, function)?.into()); }
-                    
-                    let call = if fn_val.get_type().get_return_type().is_none() {
-                        self.builder.build_call(fn_val, &compiled_args, "").unwrap()
-                    } else {
-                        self.builder.build_call(fn_val, &compiled_args, "intrinsictmp").unwrap()
-                    };
-                    
-                    match call.try_as_basic_value() {
-                        ValueKind::Basic(val) => Ok(val),
-                        ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
-                    }
+                    self.builder.build_call(fn_val, &compiled_args, "calltmp").unwrap()
+                };
+                
+                match call.try_as_basic_value() {
+                    ValueKind::Basic(val) => Ok(val),
+                    ValueKind::Instruction(_) => Ok(i64_type.const_int(0, false).into()),
                 }
             },
             Expression::Infix { left, operator, right } => {
@@ -1134,7 +1147,6 @@ impl<'ctx> Compiler<'ctx> {
                         Token::Percent => Ok(self.builder.build_int_signed_rem(l, r, "remtmp").unwrap().into()),
                         Token::And => Ok(self.builder.build_and(l, r, "andtmp").unwrap().into()),
                         Token::Or => Ok(self.builder.build_or(l, r, "ortmp").unwrap().into()),
-                        Token::Bang => Ok(self.builder.build_xor(r, i64_type.const_int(1, false), "nottmp").unwrap().into()),
                         Token::EqEq => {
                             let res = self.builder.build_int_compare(IntPredicate::EQ, l, r, "eqtmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
@@ -1159,6 +1171,7 @@ impl<'ctx> Compiler<'ctx> {
                             let res = self.builder.build_int_compare(IntPredicate::SLE, l, r, "letmp").unwrap();
                             Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
                         },
+                        Token::Caret => Ok(self.builder.build_xor(l, r, "xortmp").unwrap().into()),
                         _ => Err(format!("Integer operator {:?} not supported", operator)),
                     }
                 } else if lhs.is_float_value() && rhs.is_float_value() {
@@ -1179,7 +1192,66 @@ impl<'ctx> Compiler<'ctx> {
                         },
                         _ => Err(format!("Float operator {:?} not supported", operator)),
                     }
-                } else { Err(format!("Mismatched types for operator {:?}", operator)) }
+                } else if lhs.is_pointer_value() && rhs.is_pointer_value() {
+                    let l = lhs.into_pointer_value();
+                    let r = rhs.into_pointer_value();
+                    match operator {
+                        Token::EqEq => {
+                            let res = self.builder.build_int_compare(IntPredicate::EQ, l, r, "ptreqtmp").unwrap();
+                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                        },
+                        Token::NotEq => {
+                            let res = self.builder.build_int_compare(IntPredicate::NE, l, r, "ptrnetmp").unwrap();
+                            Ok(self.builder.build_int_z_extend(res, i64_type, "boolcast").unwrap().into())
+                        },
+                        _ => Err(format!("Pointer operator {:?} not supported", operator)),
+                    }
+                } else {
+                    Err(format!("Mismatched types for operator {:?}", operator))
+                }
+            },
+            Expression::If { condition, then_branch, else_branch } => {
+                let cond_val = self.compile_expr(condition, variables, function)?.into_int_value();
+                let comparison = self.builder.build_int_compare(IntPredicate::NE, cond_val, self.context.i64_type().const_int(0, false), "ifcond").unwrap();
+                let then_bb = self.context.append_basic_block(function, "then");
+                let else_bb = self.context.append_basic_block(function, "else");
+                let merge_bb = self.context.append_basic_block(function, "ifcont");
+                self.builder.build_conditional_branch(comparison, then_bb, else_bb).unwrap();
+                
+                let mut phi_entries = Vec::new();
+                self.builder.position_at_end(then_bb);
+                let mut then_vars = variables.clone();
+                let then_val = self.compile_block(then_branch, &mut then_vars, function)?;
+                if let Some(val) = then_val {
+                    phi_entries.push((val, self.builder.get_insert_block().unwrap()));
+                }
+                if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                }
+                
+                self.builder.position_at_end(else_bb);
+                let mut else_vars = variables.clone();
+                let else_val = if let Some(eb) = else_branch { 
+                    self.compile_block(eb, &mut else_vars, function)?
+                } else { None };
+                if let Some(val) = else_val {
+                    phi_entries.push((val, self.builder.get_insert_block().unwrap()));
+                }
+                if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                    self.builder.build_unconditional_branch(merge_bb).unwrap();
+                }
+                
+                self.builder.position_at_end(merge_bb);
+                if !phi_entries.is_empty() {
+                    let first_val = phi_entries[0].0;
+                    let phi = self.builder.build_phi(first_val.get_type(), "ifres").unwrap();
+                    for (val, bb) in phi_entries {
+                        phi.add_incoming(&[(&val, bb)]);
+                    }
+                    Ok(phi.as_basic_value())
+                } else {
+                    Ok(i64_type.const_int(0, false).into())
+                }
             },
             Expression::Block { statements, .. } => {
                 let mut local_vars = variables.clone();
@@ -1190,16 +1262,13 @@ impl<'ctx> Compiler<'ctx> {
                 let full_name = self.resolve_fuzzy_name(&self.struct_types, name).ok_or(format!("Struct '{}' not found", name))?;
                 let struct_type = *self.struct_types.get(&full_name).ok_or(format!("Struct '{}' not found in struct_types", full_name))?;
                 let alloca = self.builder.build_alloca(struct_type, &format!("{}_inst", name)).unwrap();
-                
                 let field_map = self.struct_fields.get(&full_name).ok_or(format!("Field map for struct '{}' not found", full_name))?.clone();
-                
                 for (f_name, f_expr) in fields {
                     let f_val = self.compile_expr(f_expr, variables, function)?;
                     let f_idx = *field_map.get(f_name).ok_or(format!("Field '{}' not found in struct '{}'", f_name, full_name))?;
                     let f_ptr = self.builder.build_struct_gep(struct_type, alloca, f_idx, &format!("field_{}", f_name)).unwrap();
                     self.builder.build_store(f_ptr, f_val).unwrap();
                 }
-                
                 Ok(self.builder.build_load(struct_type, alloca, "structtmp").unwrap())
             },
             Expression::EnumInst { name, variant, generic_args: _, arguments } => {
@@ -1217,10 +1286,56 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 Ok(self.builder.build_load(enum_type, alloca, "enumtmp").unwrap())
             },
+            Expression::MemberAccess { receiver, member } => {
+                let rec_type_name = self.get_expr_type_name(receiver, variables);
+                let base_type = if rec_type_name.contains('<') { rec_type_name.split('<').next().unwrap() } else { &rec_type_name };
+                let full_type = self.resolve_fuzzy_name(&self.struct_types, base_type).unwrap_or(base_type.to_string());
+                let rec_ptr = if let Ok(ptr) = self.compile_lvalue(receiver, variables, function) { ptr } else {
+                    let rec_val = self.compile_expr(receiver, variables, function)?;
+                    let alloca = self.builder.build_alloca(rec_val.get_type(), "temp_member_rec").unwrap();
+                    self.builder.build_store(alloca, rec_val).unwrap();
+                    alloca
+                };
+                if let Some(Declaration::Struct(s)) = self.decls.get(&full_type) {
+                    let mut idx = 0;
+                    for (f_name, f_type_name) in &s.fields {
+                        if f_name == member {
+                            let field_ptr = self.builder.build_struct_gep(*self.struct_types.get(&full_type).ok_or(format!("Struct type not found: {}", full_type))?, rec_ptr, idx as u32, member).unwrap();
+                            let llvm_field_type = self.aion_type_to_llvm(f_type_name);
+                            return Ok(self.builder.build_load(llvm_field_type, field_ptr, member).unwrap());
+                        }
+                        idx += 1;
+                    }
+                }
+                Err(format!("Field '{}' not found on type '{}'", member, rec_type_name))
+            },
+            Expression::MethodCall { receiver, method, generic_args, arguments } => {
+                if let Expression::TypeRef { name: ref n, generic_args: ref type_gen_args } = **receiver {
+                    let mut combined_gen_args = type_gen_args.clone();
+                    combined_gen_args.extend(generic_args.clone());
+                    let func_name = format!("{}.{}", n, method);
+                    return self.compile_expr(&Expression::Call { function: func_name, generic_args: combined_gen_args, arguments: arguments.clone() }, variables, function);
+                }
+                let rec_val = self.compile_expr(receiver, variables, function)?;
+                let rec_type_name = self.get_expr_type_name(receiver, variables);
+                if rec_type_name.starts_with('*') && method == "offset" && arguments.len() == 1 {
+                    let idx = self.compile_expr(&arguments[0], variables, function)?.into_int_value();
+                    let ptr = rec_val.into_pointer_value();
+                    let elem_type_name = &rec_type_name[1..];
+                    let elem_type = self.aion_type_to_llvm(elem_type_name);
+                    let gep = unsafe { self.builder.build_gep(elem_type, ptr, &[idx], "offset_ptr").unwrap() };
+                    return Ok(gep.into());
+                }
+                if let Expression::Identifier(ref name) = **receiver {
+                    let func_name = format!("{}.{}", name, method);
+                    return self.compile_expr(&Expression::Call { function: func_name, generic_args: generic_args.clone(), arguments: arguments.clone() }, variables, function);
+                }
+                let _unused_val = rec_val;
+                Err(format!("Method call on complex receiver not yet fully implemented: {}.{}", rec_type_name, method))
+            },
             Expression::Cast { expr, target } => {
                 let val = self.compile_expr(expr, variables, function)?;
                 let dest_type = self.aion_type_to_llvm(target);
-                
                 if val.is_pointer_value() && dest_type.is_pointer_type() {
                     Ok(self.builder.build_bit_cast(val.into_pointer_value(), dest_type.into_pointer_type(), "cast").unwrap().into())
                 } else if val.is_int_value() && dest_type.is_pointer_type() {
@@ -1231,20 +1346,145 @@ impl<'ctx> Compiler<'ctx> {
                     Ok(self.builder.build_bit_cast(val, dest_type, "cast").unwrap())
                 }
             },
+            Expression::TypeRef { .. } => Ok(i64_type.const_zero().into()),
             Expression::Deref { expr } => {
                 let val = self.compile_expr(expr, variables, function)?;
                 let type_name = self.get_expr_type_name(expr, variables);
                 let elem_type_name = if type_name.starts_with('*') { &type_name[1..] } else { "i64" };
                 let llvm_elem_type = self.aion_type_to_llvm(elem_type_name);
-                
                 if val.is_pointer_value() {
                     let ptr = val.into_pointer_value();
                     Ok(self.builder.build_load(llvm_elem_type, ptr, "deref").unwrap())
+                } else { Err("Dereference of non-pointer".to_string()) }
+            },
+            Expression::Intrinsic { name, arguments } => {
+                if name == "io_println" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "io_println")) {
+                    let fn_val = self.module.get_function("aion_io_println").ok_or("aion_io_println not found")?;
+                    let arg_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
+                    let mut arg = self.compile_expr(arg_expr, variables, function)?;
+                    if !arg.get_type().is_pointer_type() {
+                        let int_to_str = self.module.get_function("aion_int_to_str").unwrap();
+                        let call = self.builder.build_call(int_to_str, &[arg.into()], "strtmp").unwrap();
+                        arg = match call.try_as_basic_value() { ValueKind::Basic(val) => val, _ => return Err("int_to_str failed".to_string()) };
+                    }
+                    self.builder.build_call(fn_val, &[arg.into()], "").unwrap();
+                    Ok(i64_type.const_int(0, false).into())
+                } else if name == "io_print" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "io_print")) {
+                    let fn_val = self.module.get_function("aion_io_print").ok_or("aion_io_print not found")?;
+                    let arg_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
+                    let mut arg = self.compile_expr(arg_expr, variables, function)?;
+                    if !arg.get_type().is_pointer_type() {
+                        let int_to_str = self.module.get_function("aion_int_to_str").unwrap();
+                        let call = self.builder.build_call(int_to_str, &[arg.into()], "strtmp").unwrap();
+                        arg = match call.try_as_basic_value() { ValueKind::Basic(val) => val, _ => return Err("int_to_str failed".to_string()) };
+                    }
+                    self.builder.build_call(fn_val, &[arg.into()], "").unwrap();
+                    Ok(i64_type.const_int(0, false).into())
+                } else if name == "io_read_line" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "io_read_line")) {
+                    Ok(self.context.ptr_type(AddressSpace::default()).const_null().into())
+                } else if name == "sizeof" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "sizeof")) {
+                    let type_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
+                    let type_name = if let Expression::Identifier(n) = type_expr { n.clone() }
+                        else if let Expression::TypeRef { name, generic_args } = type_expr {
+                            if generic_args.is_empty() { name.clone() }
+                            else { format!("{}<{}>", name, generic_args.join(", ")) }
+                        }
+                        else { return Err("sizeof requires type identifier".to_string()); };
+                    let llvm_type = self.aion_type_to_llvm(&type_name);
+                    let size = llvm_type.size_of().ok_or(format!("Could not determine size of '{}'", type_name))?;
+                    Ok(size.into())
+                } else if name == "extract_tag" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "extract_tag")) {
+                    let enum_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
+                    let enum_val = self.compile_expr(enum_expr, variables, function)?;
+                    if enum_val.is_struct_value() {
+                        let ev = enum_val.into_struct_value();
+                        let alloca = self.builder.build_alloca(ev.get_type(), "temp_enum_tag").unwrap();
+                        self.builder.build_store(alloca, ev).unwrap();
+                        let tag_ptr = self.builder.build_struct_gep(ev.get_type(), alloca, 0, "tagptr").unwrap();
+                        Ok(self.builder.build_load(self.context.i64_type(), tag_ptr, "tag").unwrap())
+                    } else { Ok(i64_type.const_int(999, false).into()) }
+                } else if name == "str_ptr" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "str_ptr")) {
+                    let arg = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    Ok(arg)
+                } else if name == "int_to_str" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "int_to_str")) {
+                    let fn_val = self.module.get_function("aion_int_to_str").ok_or("aion_int_to_str not found")?;
+                    let arg = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let call = self.builder.build_call(fn_val, &[arg.into()], "intstrtmp").unwrap();
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_int(0, false).into()) }
+                } else if name == "float_to_str" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "float_to_str")) {
+                    let fn_val = self.module.get_function("aion_float_to_str").ok_or("aion_float_to_str not found")?;
+                    let arg = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let call = self.builder.build_call(fn_val, &[arg.into()], "floatstrtmp").unwrap();
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_int(0, false).into()) }
+                } else if name == "str_eq" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "str_eq")) {
+                    let fn_val = self.module.get_function("aion_str_eq").ok_or("aion_str_eq not found")?;
+                    let arg1 = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let arg2 = self.compile_expr(if name == "intrinsic" { &arguments[2] } else { &arguments[1] }, variables, function)?;
+                    let call = self.builder.build_call(fn_val, &[arg1.into(), arg2.into()], "streqtmp").unwrap();
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_int(0, false).into()) }
+                } else if name == "str_len" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "str_len")) {
+                    let strlen = self.module.get_function("strlen").ok_or("strlen not found")?;
+                    let arg = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let call = self.builder.build_call(strlen, &[arg.into()], "strlentmp").unwrap();
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_int(0, false).into()) }
+                } else if name == "str_concat" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "str_concat")) {
+                    let strcat = self.module.get_function("strcat").ok_or("strcat not found")?;
+                    let arg1 = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let arg2 = self.compile_expr(if name == "intrinsic" { &arguments[2] } else { &arguments[1] }, variables, function)?;
+                    let call = self.builder.build_call(strcat, &[arg1.into(), arg2.into()], "strcattmp").unwrap();
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_int(0, false).into()) }
+                } else if name == "fs_read_to_string" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "fs_read_to_string")) {
+                    let read_fn = self.module.get_function("aion_read_file").ok_or("aion_read_file not found")?;
+                    let arg = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let call = self.builder.build_call(read_fn, &[arg.into()], "readtmp").unwrap();
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_int(0, false).into()) }
+                } else if name == "fs_write" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "fs_write")) {
+                    let write_fn = self.module.get_function("aion_write_file").ok_or("aion_write_file not found")?;
+                    let arg1 = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let arg2 = self.compile_expr(if name == "intrinsic" { &arguments[2] } else { &arguments[1] }, variables, function)?;
+                    let call = self.builder.build_call(write_fn, &[arg1.into(), arg2.into()], "writetmp").unwrap();
+                    match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => {
+                            if val.is_int_value() && val.into_int_value().get_type().get_bit_width() == 32 {
+                                Ok(self.builder.build_int_s_extend(val.into_int_value(), self.context.i64_type(), "i32toi64").unwrap().into())
+                            } else { Ok(val) }
+                        },
+                        _ => Ok(i64_type.const_int(0, false).into())
+                    }
+                } else if name == "fs_exists" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "fs_exists")) {
+                    let exists_fn = self.module.get_function("aion_fs_exists").ok_or("aion_fs_exists not found")?;
+                    let arg = self.compile_expr(if name == "intrinsic" { &arguments[1] } else { &arguments[0] }, variables, function)?;
+                    let call = self.builder.build_call(exists_fn, &[arg.into()], "existstmp").unwrap();
+                    match call.try_as_basic_value() {
+                        ValueKind::Basic(val) => {
+                            if val.is_int_value() && val.into_int_value().get_type().get_bit_width() == 32 {
+                                Ok(self.builder.build_int_z_extend(val.into_int_value(), self.context.i64_type(), "boolcast").unwrap().into())
+                            } else { Ok(val) }
+                        },
+                        _ => Ok(i64_type.const_int(0, false).into())
+                    }
+                } else if name == "mem_is_null" || (name == "intrinsic" && matches!(&arguments[0], Expression::String(s) if s == "mem_is_null")) {
+                    let ptr_expr = if name == "intrinsic" { &arguments[1] } else { &arguments[0] };
+                    let arg = self.compile_expr(ptr_expr, variables, function)?;
+                    if arg.is_pointer_value() {
+                        let ptr = arg.into_pointer_value();
+                        let ptr_int = self.builder.build_ptr_to_int(ptr, self.context.i64_type(), "ptrtoint").unwrap();
+                        let eq_zero = self.builder.build_int_compare(IntPredicate::EQ, ptr_int, self.context.i64_type().const_zero(), "isnull").unwrap();
+                        Ok(self.builder.build_int_z_extend(eq_zero, self.context.i64_type(), "boolcast").unwrap().into())
+                    } else { Ok(i64_type.const_int(0, false).into()) }
                 } else {
-                    Err("Dereference of non-pointer".to_string())
+                    let (intrinsic_name, intrinsic_args) = if name == "intrinsic" {
+                        if let Expression::String(actual_name) = &arguments[0] { (actual_name.clone(), arguments[1..].to_vec()) } else { (name.clone(), arguments.clone()) }
+                    } else { (name.clone(), arguments.clone()) };
+                    let fn_val = self.module.get_function(&intrinsic_name).ok_or(format!("Intrinsic '{}' not found", intrinsic_name))?;
+                    let mut compiled_args = Vec::new();
+                    for arg in &intrinsic_args { compiled_args.push(self.compile_expr(arg, variables, function)?.into()); }
+                    let call = if fn_val.get_type().get_return_type().is_none() { self.builder.build_call(fn_val, &compiled_args, "").unwrap() }
+                        else { self.builder.build_call(fn_val, &compiled_args, "intrinsictmp").unwrap() };
+                    match call.try_as_basic_value() { ValueKind::Basic(val) => Ok(val), _ => Ok(i64_type.const_int(0, false).into()) }
                 }
             },
-            _ => Ok(i64_type.const_int(0, false).into()),
+            Expression::Range { start, .. } => { self.compile_expr(start, variables, function) },
         }
     }
 

@@ -2,24 +2,15 @@ module std.fs
 
 pub fn read_to_string(path: String) -> String {
     ::intent "Reads the entire contents of a file into a string"
-    let content = unsafe {
-        aion_read_file(path)
-    }
-    return content
+    @intrinsic("fs_read_to_string", path)
 }
 
 pub fn write(path: String, content: String) -> i64 {
     ::intent "Writes a string slice into a file. Returns bytes written."
-    let bytes_written = unsafe {
-        aion_write_file(path, content)
-    }
-    return bytes_written
+    @intrinsic("fs_write", path, content)
 }
 
 pub fn exists(path: String) -> bool {
     ::intent "Checks if a file exists at the given path"
-    let res = unsafe {
-        aion_fs_exists(path)
-    }
-    return res
+    @intrinsic("fs_exists", path)
 }

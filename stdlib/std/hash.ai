@@ -6,8 +6,8 @@ pub interface Hashable {
 
 pub fn hash_string(s: String) -> u64 {
     // FNV-1a 64-bit hash
-    let mut hash: u64 = 14695981039346656037;
-    let prime: u64 = 1099511628211;
+    let mut hash = 14695981039346656037;
+    let prime = 1099511628211;
     
     let len = @intrinsic("str_len", s);
     let ptr = @intrinsic("str_ptr", s) as *u8;
@@ -27,7 +27,7 @@ pub fn hash_string(s: String) -> u64 {
 pub fn hash_int(i: i64) -> u64 {
     // Simple integer mixer
     let mut x = i as u64;
-    x = (x ^ (x >> 30)) * 13787848793156543929; // bf58476d1ce4e5b9
-    x = (x ^ (x >> 27)) * 10723151780598845931; // 94d049bb133111eb
-    x ^ (x >> 31)
+    x = (x ^ (x / 1073741824)) * 13787848793156543929;
+    x = (x ^ (x / 134217728)) * 10723151780598845931;
+    x ^ (x / 2147483648)
 }

@@ -338,6 +338,10 @@ impl<'a> Parser<'a> {
         let mut stmts = Vec::new();
         if self.current_token == Token::LBrace { self.next_token(); }
         while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+            if self.current_token == Token::Semicolon {
+                self.next_token();
+                continue;
+            }
             if let Some(s) = self.parse_statement() { 
                 stmts.push(s); 
             } else {
@@ -371,13 +375,20 @@ impl<'a> Parser<'a> {
                 if self.current_token == Token::Eq { 
                     self.next_token(); 
                     let value = self.parse_expression(); 
+                    if self.current_token == Token::Semicolon { self.next_token(); }
                     Some(Statement::Let { name, value, intent: None, is_mut }) 
                 } else { None }
             },
             Token::Return => { 
                 self.next_token(); 
-                let value = self.parse_expression(); 
-                Some(Statement::Return { value, intent: None }) 
+                let value = if self.current_token == Token::Semicolon || self.current_token == Token::RBrace {
+                    Expression::Integer(0) // Return 0/void
+                } else {
+                    self.parse_expression()
+                };
+                if self.current_token == Token::Semicolon { self.next_token(); }
+                let stmt = Statement::Return { value, intent: None };
+                Some(stmt)
             },
             Token::If => {
                 self.next_token();
@@ -403,8 +414,22 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 let mut arms = Vec::new();
                 while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+                    let mut pattern = String::new();
                     if let Token::Identifier(p) = &self.current_token {
-                        let pattern = p.clone(); self.next_token();
+                        pattern = p.clone(); 
+                        self.next_token();
+                        while self.current_token == Token::DoubleColon || self.current_token == Token::Dot {
+                            let op = if self.current_token == Token::DoubleColon { "::" } else { "." };
+                            self.next_token();
+                            if let Token::Identifier(sub) = &self.current_token {
+                                pattern.push_str(op);
+                                pattern.push_str(sub);
+                                self.next_token();
+                            }
+                        }
+                    }
+
+                    if !pattern.is_empty() {
                         let mut params = Vec::new();
                         
                         if self.current_token == Token::LParen {
@@ -497,6 +522,7 @@ impl<'a> Parser<'a> {
             Token::Star | Token::Slash | Token::Percent => 8,
             Token::As => 7,
             Token::Plus | Token::Minus => 6,
+            Token::Caret => 5,
             Token::Gt | Token::Lt | Token::GtEq | Token::LtEq | Token::EqEq | Token::NotEq | Token::Inside => 4,
             Token::And => 3,
             Token::Or => 2,
@@ -505,9 +531,27 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn is_generic_args_ahead(&mut self) -> bool {
+        if self.current_token != Token::Lt { return false; }
+        let mut i = 0;
+        let mut angle_count = 1;
+        while angle_count > 0 {
+            let tok = self.peek_at(i);
+            match tok {
+                Token::EOF | Token::LBrace | Token::Semicolon | Token::Eq => return false,
+                Token::Lt => angle_count += 1,
+                Token::Gt => angle_count -= 1,
+                _ => {}
+            }
+            i += 1;
+            if i > 50 { return false; } 
+        }
+        true
+    }
+
     fn parse_generic_args(&mut self) -> Vec<String> {
         let mut args = Vec::new();
-        if self.current_token == Token::Lt {
+        if self.is_generic_args_ahead() {
             self.next_token();
             while self.current_token != Token::Gt && self.current_token != Token::EOF {
                 if let Token::Identifier(id) = &self.current_token { 
@@ -524,7 +568,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_primary(&mut self) -> Expression {
-        match self.current_token.clone() {
+        let mut expr = match self.current_token.clone() {
             Token::If => {
                 self.next_token();
                 let condition = self.parse_expression();
@@ -540,29 +584,8 @@ impl<'a> Parser<'a> {
                 Expression::Block { statements: self.parse_block(), is_unsafe: false }
             },
             Token::SelfToken => {
-                let mut full_name = "self".to_string();
                 self.next_token();
-                while self.current_token == Token::Dot {
-                    self.next_token();
-                    if let Token::Identifier(sub) = &self.current_token { 
-                        full_name.push('.'); full_name.push_str(sub); self.next_token(); 
-                    } else {
-                        break;
-                    }
-                }
-                
-                if self.current_token == Token::LParen {
-                    self.next_token();
-                    let mut args = Vec::new();
-                    while self.current_token != Token::RParen && self.current_token != Token::EOF {
-                        args.push(self.parse_expression());
-                        if self.current_token == Token::Comma { self.next_token(); }
-                    }
-                    if self.current_token == Token::RParen { self.next_token(); }
-                    Expression::Call { function: full_name, generic_args: vec![], arguments: args }
-                } else {
-                    Expression::Identifier(full_name)
-                }
+                Expression::Identifier("self".to_string())
             },
             Token::Star => {
                 self.next_token();
@@ -570,20 +593,18 @@ impl<'a> Parser<'a> {
             },
             Token::Bang => {
                 self.next_token();
-                let expr = self.parse_primary();
+                let inner = self.parse_primary();
                 Expression::Infix { 
-                    left: Box::new(Expression::Boolean(false)),
-                    operator: Token::Bang, 
-                    right: Box::new(expr) 
+                    left: Box::new(inner),
+                    operator: Token::EqEq, 
+                    right: Box::new(Expression::Boolean(false)) 
                 }
             },
             Token::LParen => {
                 self.next_token();
-                let expr = self.parse_expression();
-                if self.current_token == Token::RParen {
-                    self.next_token();
-                }
-                expr
+                let e = self.parse_expression();
+                if self.current_token == Token::RParen { self.next_token(); }
+                e
             },
             Token::True => { self.next_token(); Expression::Boolean(true) },
             Token::False => { self.next_token(); Expression::Boolean(false) },
@@ -622,74 +643,86 @@ impl<'a> Parser<'a> {
                 }
             },
             Token::Identifier(n) => {
-                let mut full_name = n;
                 self.next_token();
+                let mut full_name = n;
                 while self.current_token == Token::Dot {
-                    self.next_token();
-                    if let Token::Identifier(sub) = &self.current_token { 
-                        full_name.push('.'); full_name.push_str(sub); self.next_token(); 
-                    } else {
-                        break;
-                    }
+                    if let Token::Identifier(sub) = self.peek_at(0) {
+                        if self.peek_at(1) != Token::LParen {
+                            self.next_token(); 
+                            full_name.push('.');
+                            full_name.push_str(&sub);
+                            self.next_token(); 
+                        } else { break; }
+                    } else { break; }
                 }
-
                 let generic_args = self.parse_generic_args();
-                
-                if self.current_token == Token::Dot {
-                    self.next_token();
-                    if let Token::Identifier(sub) = &self.current_token {
-                        full_name.push('.');
-                        full_name.push_str(sub);
-                        self.next_token();
-                    }
+                if generic_args.is_empty() {
+                    Expression::Identifier(full_name)
+                } else {
+                    Expression::TypeRef { name: full_name, generic_args }
                 }
+            },
+            _ => { 
+                let tok = self.current_token.clone();
+                self.next_token(); 
+                Expression::Identifier(format!("invalid_token_{:?}", tok)) 
+            },
+        };
 
-                if self.current_token == Token::LParen {
+        loop {
+            match self.current_token {
+                Token::Dot => {
                     self.next_token();
-                    let mut args = Vec::new();
-                    while self.current_token != Token::RParen && self.current_token != Token::EOF {
-                        args.push(self.parse_expression());
-                        if self.current_token == Token::Comma { self.next_token(); }
-                    }
-                    if self.current_token == Token::RParen { self.next_token(); }
-                    Expression::Call { function: full_name, generic_args, arguments: args }
-                } else if self.current_token == Token::LBrace {
-                    let next_tok = self.peek_at(0);
-                    let is_struct = if next_tok == Token::RBrace {
-                        true 
-                    } else if let Token::Identifier(_) = next_tok {
-                        let next_next = self.peek_at(1);
-                        matches!(next_next, Token::Colon | Token::Eq)
-                    } else {
-                        false 
-                    };
-
-                    if is_struct {
-                        self.next_token(); 
-                        let mut fields = Vec::new();
-                        while self.current_token != Token::RBrace && self.current_token != Token::EOF {
-                            if let Token::Identifier(f_name) = &self.current_token {
-                                let f_name = f_name.clone(); self.next_token();
-                                if self.current_token == Token::Colon || self.current_token == Token::Eq { 
-                                    self.next_token(); 
-                                    let val = self.parse_expression(); 
-                                    fields.push((f_name, val)); 
-                                }
-                            } else if self.current_token == Token::Comma { 
-                                self.next_token(); 
+                    if let Token::Identifier(member) = self.current_token.clone() {
+                        let member_name = member;
+                        self.next_token();
+                        let m_generic_args = self.parse_generic_args();
+                        if self.current_token == Token::LParen {
+                            self.next_token();
+                            let mut args = Vec::new();
+                            while self.current_token != Token::RParen && self.current_token != Token::EOF {
+                                args.push(self.parse_expression());
+                                if self.current_token == Token::Comma { self.next_token(); }
+                            }
+                            if self.current_token == Token::RParen { self.next_token(); }
+                            
+                            if let Expression::Identifier(ref name) = expr {
+                                let func_name = format!("{}.{}", name, member_name);
+                                expr = Expression::Call { 
+                                    function: func_name, 
+                                    generic_args: if m_generic_args.is_empty() { vec![] } else { m_generic_args }, 
+                                    arguments: args 
+                                };
+                            } else if let Expression::TypeRef { ref name, ref generic_args } = expr {
+                                let func_name = format!("{}.{}", name, member_name);
+                                expr = Expression::Call { 
+                                    function: func_name, 
+                                    generic_args: generic_args.clone(), 
+                                    arguments: args 
+                                };
                             } else {
-                                self.next_token();
+                                expr = Expression::MethodCall { 
+                                    receiver: Box::new(expr.clone()), 
+                                    method: member_name, 
+                                    generic_args: m_generic_args, 
+                                    arguments: args 
+                                };
+                            }
+                        } else {
+                            if let Expression::Identifier(ref name) = expr {
+                                expr = Expression::Identifier(format!("{}.{}", name, member_name));
+                            } else if let Expression::TypeRef { ref name, .. } = expr {
+                                expr = Expression::Identifier(format!("{}.{}", name, member_name));
+                            } else {
+                                expr = Expression::MemberAccess { receiver: Box::new(expr.clone()), member: member_name };
                             }
                         }
-                        if self.current_token == Token::RBrace { self.next_token(); }
-                        Expression::StructInst { name: full_name, generic_args, fields }
-                    } else {
-                        Expression::Identifier(full_name)
-                    }
-                } else if self.current_token == Token::DoubleColon {
+                    } else { break; }
+                },
+                Token::DoubleColon => {
                     self.next_token();
-                    if let Token::Identifier(variant) = &self.current_token {
-                        let variant_name = variant.clone();
+                    if let Token::Identifier(variant) = self.current_token.clone() {
+                        let variant_name = variant;
                         self.next_token();
                         let mut args = Vec::new();
                         if self.current_token == Token::LParen {
@@ -700,20 +733,72 @@ impl<'a> Parser<'a> {
                             }
                             if self.current_token == Token::RParen { self.next_token(); }
                         }
-                        Expression::EnumInst { name: full_name, variant: variant_name, generic_args, arguments: args }
-                    } else {
-                        Expression::Identifier(full_name)
+                        let name = match expr {
+                            Expression::Identifier(ref n) => n.clone(),
+                            Expression::TypeRef { ref name, .. } => name.clone(),
+                            _ => "unknown_enum".to_string(),
+                        };
+                        expr = Expression::EnumInst { name, variant: variant_name, generic_args: vec![], arguments: args };
+                    } else { break; }
+                },
+                Token::LParen => {
+                    self.next_token();
+                    let mut args = Vec::new();
+                    while self.current_token != Token::RParen && self.current_token != Token::EOF {
+                        args.push(self.parse_expression());
+                        if self.current_token == Token::Comma { self.next_token(); }
                     }
-                } else {
-                    Expression::Identifier(full_name)
-                }
-            },
-            _ => { 
-                let tok = self.current_token.clone();
-                self.next_token(); 
-                Expression::Identifier(format!("invalid_token_{:?}", tok)) 
-            },
+                    if self.current_token == Token::RParen { self.next_token(); }
+                    
+                    if let Expression::Identifier(ref name) = expr {
+                        expr = Expression::Call { function: name.clone(), generic_args: vec![], arguments: args };
+                    } else if let Expression::TypeRef { ref name, ref generic_args } = expr {
+                        expr = Expression::Call { function: name.clone(), generic_args: generic_args.clone(), arguments: args };
+                    } else { break; }
+                },
+                Token::LBrace => {
+                    let next_tok = self.peek_at(0);
+                    let is_struct = if next_tok == Token::RBrace { true } 
+                        else if let Token::Identifier(_) = next_tok {
+                            let next_next = self.peek_at(1);
+                            matches!(next_next, Token::Colon | Token::Eq)
+                        } else { false };
+                    
+                    if is_struct {
+                        self.next_token();
+                        let mut fields = Vec::new();
+                        while self.current_token != Token::RBrace && self.current_token != Token::EOF {
+                            if let Token::Identifier(f_name) = self.current_token.clone() {
+                                self.next_token();
+                                if self.current_token == Token::Colon || self.current_token == Token::Eq {
+                                    self.next_token();
+                                    fields.push((f_name, self.parse_expression()));
+                                }
+                            }
+                            if self.current_token == Token::Comma { self.next_token(); }
+                        }
+                        if self.current_token == Token::RBrace { self.next_token(); }
+                        let (name, generic_args) = match expr {
+                            Expression::Identifier(ref n) => (n.clone(), vec![]),
+                            Expression::TypeRef { ref name, ref generic_args } => (name.clone(), generic_args.clone()),
+                            _ => ("unknown_struct".to_string(), vec![]),
+                        };
+                        expr = Expression::StructInst { name, generic_args, fields };
+                    } else { break; }
+                },
+                Token::Lt => {
+                    if let Expression::Identifier(ref name) = expr {
+                        let n = name.clone();
+                        let generic_args = self.parse_generic_args();
+                        if !generic_args.is_empty() {
+                            expr = Expression::TypeRef { name: n, generic_args };
+                        } else { break; }
+                    } else { break; }
+                },
+                _ => break,
+            }
         }
+        expr
     }
 
     fn parse_fstring(&mut self, s: String) -> Expression {
