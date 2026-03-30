@@ -1,0 +1,3 @@
+Calling extern puts...
+Hello from extern C puts!
+Done.

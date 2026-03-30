@@ -1,0 +1,17 @@
+use std.data.dataframe
+use std.data.series
+use std.io
+
+fn main() {
+    io.println("Step 1: Create Series")
+    let mut s = Series.new_int("id")
+    s.push_int(1)
+    
+    io.println("Step 2: Create DataFrame")
+    let mut df = DataFrame.new()
+    
+    io.println("Step 3: Add Column")
+    df.add_column(s)
+    
+    io.println("Step 4: Done")
+}

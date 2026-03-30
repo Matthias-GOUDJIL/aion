@@ -1,11 +1,12 @@
 use std.env
 use std.collections.vector
 use std.io
+use std.string
 
 fn main() {
     let args = std.env.args()
     io.print("Args count: ")
-    io.println(args.len())
+    io.println(string.from_int(args.len()))
     
     let first = args.get(0)
     match first {

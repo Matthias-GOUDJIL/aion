@@ -1,5 +1,6 @@
 use std.collections.vector
 use std.io
+use std.string
 
 fn main() {
     // Vector<i64>.new() returns a Vector<i64> struct value
@@ -7,7 +8,7 @@ fn main() {
     let length = Vector<i64>.new().len()
     
     io.print("Length of new vector: ")
-    io.println(length)
+    io.println(string.from_int(length))
     
     if length == 0 {
         io.println("Success: Method chaining works!")

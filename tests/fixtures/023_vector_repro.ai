@@ -1,3 +1,6 @@
+use std.io
+use std.string
+
 struct Box<T> {
     value: T
 }
@@ -10,5 +13,5 @@ impl Box<T> {
 
 fn main() {
     let b = Box<i64> { value: 10 }
-    io.println(b.get())
+    io.println(string.from_int(b.get()))
 }

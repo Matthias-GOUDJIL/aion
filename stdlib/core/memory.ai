@@ -2,4 +2,4 @@ module core.memory
 
 ::intent "Direct LLVM intrinsic for memory copy"
 @intrinsic("libc.memcpy")
-pub unsafe fn copy(dest: *u8, src: *u8, len: i64)
+pub unsafe fn copy(dest: *u8, src: *u8, len: i64);

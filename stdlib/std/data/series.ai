@@ -1,0 +1,77 @@
+module std.data.series
+
+use std.collections.vector
+use std.string
+
+pub enum SeriesData {
+    Int(Vector<i64>),
+    Float(Vector<f64>),
+    Str(Vector<String>),
+}
+
+pub struct Series {
+    name: String,
+    data: SeriesData,
+}
+
+impl Series {
+    pub fn new_int(name: String) -> Series {
+        Series {
+            name: name,
+            data: SeriesData::Int(Vector<i64>.new()),
+        }
+    }
+
+    pub fn new_float(name: String) -> Series {
+        Series {
+            name: name,
+            data: SeriesData::Float(Vector<f64>.new()),
+        }
+    }
+
+    pub fn new_str(name: String) -> Series {
+        Series {
+            name: name,
+            data: SeriesData::Str(Vector<String>.new()),
+        }
+    }
+
+    pub fn len(self) -> i64 {
+        match self.data {
+            SeriesData::Int(v) => return v.len(),
+            SeriesData::Float(v) => return v.len(),
+            SeriesData::Str(v) => return v.len(),
+        }
+    }
+
+    pub fn name(self) -> String {
+        return self.name;
+    }
+
+    pub fn push_int(mut self, val: i64) {
+        match self.data {
+            SeriesData::Int(v) => v.push(val),
+            _ => {
+                @intrinsic("io_println", "Error: Type mismatch in Series.push_int")
+            }
+        }
+    }
+
+    pub fn push_float(mut self, val: f64) {
+        match self.data {
+            SeriesData::Float(v) => v.push(val),
+            _ => {
+                @intrinsic("io_println", "Error: Type mismatch in Series.push_float")
+            }
+        }
+    }
+
+    pub fn push_str(mut self, val: String) {
+        match self.data {
+            SeriesData::Str(v) => v.push(val),
+            _ => {
+                @intrinsic("io_println", "Error: Type mismatch in Series.push_str")
+            }
+        }
+    }
+}

@@ -7,14 +7,14 @@ use std.hash
 use std.option
 use std.string
 
-struct Entry<V> {
+pub struct Entry<V> {
     key: String,
     value: V,
-    next: *Entry<V>,
+    next: Entry<V>,
 }
 
 pub struct HashMap<V> {
-    buckets: * *Entry<V>,
+    buckets: *Entry<V>,
     len: i64,
     cap: i64,
 }
@@ -22,13 +22,13 @@ pub struct HashMap<V> {
 impl HashMap<V> {
     pub fn new() -> HashMap<V> {
         let cap = 16;
-        let buckets = unsafe { core.heap.alloc(cap * 8) as * *Entry<V> };
+        let buckets = unsafe { core.heap.alloc(cap * 8) as *Entry<V> };
         // Initialize buckets to null
         let mut i = 0;
         while i < cap {
             unsafe {
                 let p = buckets.offset(i);
-                *p = core.heap.null() as *Entry<V>;
+                *p = unsafe { @intrinsic("mem_zero") };
             }
             i = i + 1;
         }
@@ -53,19 +53,19 @@ impl HashMap<V> {
             let mut current = *bucket_ptr;
             
             // Update existing
-            while current != (core.heap.null() as *Entry<V>) {
-                if std.string.equals((*current).key, key) {
-                    (*current).value = value;
+            while unsafe { @intrinsic("mem_is_null", current) } == false {
+                if std.string.equals(current.key, key) {
+                    current.value = value;
                     return;
                 }
-                current = (*current).next;
+                current = current.next;
             }
             
             // Insert new
-            let new_entry = core.heap.alloc(@sizeof(Entry<V>)) as *Entry<V>;
-            (*new_entry).key = key;
-            (*new_entry).value = value;
-            (*new_entry).next = *bucket_ptr;
+            let new_entry = core.heap.alloc(@sizeof(Entry<V>)) as Entry<V>;
+            new_entry.key = key;
+            new_entry.value = value;
+            new_entry.next = *bucket_ptr;
             *bucket_ptr = new_entry;
         }
         self.len = self.len + 1;
@@ -77,11 +77,11 @@ impl HashMap<V> {
         
         unsafe {
             let mut current = *self.buckets.offset(idx);
-            while current != (core.heap.null() as *Entry<V>) {
-                if std.string.equals((*current).key, key) {
-                    return Option::Some((*current).value);
+            while unsafe { @intrinsic("mem_is_null", current) } == false {
+                if std.string.equals(current.key, key) {
+                    return Option::Some(current.value);
                 }
-                current = (*current).next;
+                current = current.next;
             }
         }
         Option::None
@@ -98,21 +98,21 @@ impl HashMap<V> {
         unsafe {
             let bucket_ptr = self.buckets.offset(idx);
             let mut current = *bucket_ptr;
-            let mut prev = core.heap.null() as *Entry<V>;
+            let mut prev = unsafe { @intrinsic("mem_zero") } as Entry<V>;
             
-            while current != (core.heap.null() as *Entry<V>) {
-                if std.string.equals((*current).key, key) {
-                    if prev == (core.heap.null() as *Entry<V>) {
-                        *bucket_ptr = (*current).next;
+            while unsafe { @intrinsic("mem_is_null", current) } == false {
+                if std.string.equals(current.key, key) {
+                    if unsafe { @intrinsic("mem_is_null", prev) } {
+                        *bucket_ptr = current.next;
                     } else {
-                        (*prev).next = (*current).next;
+                        prev.next = current.next;
                     }
                     core.heap.dealloc(current as *u8);
                     self.len = self.len - 1;
                     return true;
                 }
                 prev = current;
-                current = (*current).next;
+                current = current.next;
             }
         }
         false
@@ -123,12 +123,12 @@ impl HashMap<V> {
         let new_cap = old_cap * 2;
         let old_buckets = self.buckets;
         
-        let new_buckets = unsafe { core.heap.alloc(new_cap * 8) as * *Entry<V> };
+        let new_buckets = unsafe { core.heap.alloc(new_cap * 8) as *Entry<V> };
         let mut i = 0;
         while i < new_cap {
             unsafe {
                 let p = new_buckets.offset(i);
-                *p = core.heap.null() as *Entry<V>;
+                *p = unsafe { @intrinsic("mem_zero") };
             }
             i = i + 1;
         }
@@ -138,16 +138,16 @@ impl HashMap<V> {
         while i < old_cap {
             unsafe {
                 let mut current = *old_buckets.offset(i);
-                while current != (core.heap.null() as *Entry<V>) {
-                    let next = (*current).next;
+                while unsafe { @intrinsic("mem_is_null", current) } == false {
+                    let next = current.next;
                     
                     // Find new bucket
-                    let h = std.hash.hash_string((*current).key);
+                    let h = std.hash.hash_string(current.key);
                     let new_idx = (h % (new_cap as u64)) as i64;
                     let new_bucket_ptr = new_buckets.offset(new_idx);
                     
                     // Insert into new bucket
-                    (*current).next = *new_bucket_ptr;
+                    current.next = *new_bucket_ptr;
                     *new_bucket_ptr = current;
                     
                     current = next;

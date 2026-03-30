@@ -1,10 +1,14 @@
 use std.collections.vector
 use std.io
+use std.string
 
 fn main() {
-    io.println("Hello")
     let mut v = Vector<i64>.new()
-    io.println("Vector created")
-    v.push(42)
-    io.println("Pushed 42")
+    v.push(10)
+    v.push(20)
+
+    if v.len() == 2 {
+        io.println("Simple vector works")
+    }
 }
+

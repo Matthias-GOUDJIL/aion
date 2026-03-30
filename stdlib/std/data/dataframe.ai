@@ -3,38 +3,60 @@ module std.data.dataframe
 use std.string
 use std.collections.vector
 use std.collections.map
+use std.data.series
 use std.option
+use std.io
 
-pub struct Series {
-    name: String,
-    data: Vector<f64>, // Simplified, should be generic or Enum
+pub struct Shape {
+    rows: i64,
+    cols: i64,
 }
 
 pub struct DataFrame {
     columns: HashMap<Series>,
-    index: Vector<String>,
+    column_names: Vector<String>, // Keep track of order
 }
 
 impl DataFrame {
     pub fn new() -> DataFrame {
         DataFrame {
-            columns: HashMap::new(),
-            index: Vector::new(),
+            columns: HashMap<Series>.new(),
+            column_names: Vector<String>.new(),
         }
     }
 
-    pub fn read_csv(path: String) -> DataFrame {
-        // High performance CSV reader intrinsic
-        @intrinsic("data_read_csv", path)
+    pub fn add_column(mut self, s: Series) {
+        let name = s.name();
+        self.column_names.push(name);
+        self.columns.insert(name, s);
     }
 
-    pub fn select(self, columns: Vector<String>) -> DataFrame {
-        // Projection logic
-        DataFrame::new()
+    pub fn get_column(self, name: String) -> Option<Series> {
+        return self.columns.get(name);
     }
 
-    pub fn filter(self, predicate: fn(row: HashMap<f64>) -> bool) -> DataFrame {
-        // Selection logic
-        DataFrame::new()
+    pub fn shape(self) -> Shape {
+        let cols = self.column_names.len();
+        if cols == 0 {
+            return Shape { rows: 0, cols: 0 };
+        }
+        
+        let first_col_name = self.column_names.get(0).unwrap();
+        let first_col = self.columns.get(first_col_name).unwrap();
+        return Shape { rows: first_col.len(), cols: cols };
+    }
+
+    pub fn describe(self) {
+        io.println("DataFrame Summary:");
+        let s = self.shape();
+        io.print("Rows: "); io.println(s.rows);
+        io.print("Cols: "); io.println(s.cols);
+        
+        let mut i = 0;
+        while i < s.cols {
+            let name = self.column_names.get(i).unwrap();
+            io.print("- "); io.println(name);
+            i = i + 1;
+        }
     }
 }

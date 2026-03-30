@@ -29,17 +29,27 @@ This document outlines the technical path to transform Aion from its current Rus
 
 ---
 
-## 🚀 Phase 1.7: Rigor & Intelligence (Phase 1.7)
+## 🚀 Phase 1.7: Rigor & Intelligence (Phase 1.7) [COMPLETED]
 *Goal: Stabilize the compiler core and introduce AI-Native capabilities.*
 
 1.  **Method Chaining** [COMPLETED]
-    *   Recursive receiver resolution for complex calls (e.g., `Vector.new().len()`).
 2.  **Short-circuiting Logic** [COMPLETED]
-    *   Lazy evaluation for `&&` and `||` to improve safety and performance.
 3.  **AI Tensor Core** [COMPLETED]
-    *   Initial intrinsics for tensor creation, math, and autograd.
 4.  **Garbage Collection** [COMPLETED]
-    *   Boehm GC integrated into the runtime for automatic memory management.
+
+---
+
+## 📊 Phase 1.8: Robustness via Data Engineering
+*Goal: Stress-test Aion by building high-performance data structures.*
+
+1.  **Generic Data Structures**
+    *   Expand `Vector` and `HashMap` with more utilities (`map`, `filter`).
+2.  **The DataFrame Core**
+    *   Implement `std.data.dataframe` with support for multiple column types (using Enums).
+3.  **Real-world I/O**
+    *   Implement a native CSV parser in Aion using `std.fs` and `std.string`.
+4.  **Error Handling**
+    *   Formalize `Result<T, E>` and `?` operator (if possible) or pattern matching usage.
 
 ---
 
@@ -89,4 +99,5 @@ This document outlines the technical path to transform Aion from its current Rus
 - [x] Type Checker (Safety & Temporal & Security Enforcement).
 - [x] CodeGen LLVM (Native & Dynamic Strings & Function Returns).
 - [x] Modular Compiler Architecture (`src/compiler.rs`).
-- [ ] **EXHAUSTIVITY GOAL**: Real Enum Tagged Unions and deep Pattern Matching.
+- [x] **EXHAUSTIVITY GOAL**: Real Enum Tagged Unions and deep Pattern Matching.
+- [x] **CORE STABILITY**: Correct struct pass-by-pointer, string content comparison, and generic unwrap type safety.

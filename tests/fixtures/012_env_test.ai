@@ -1,14 +1,16 @@
+use std.env
+use std.io
+use std.string
+
 fn main() {
-    // argc and argv are automatically available in main
+    let arguments = env.args()
     io.println("Arg count received")
     
-    // Get first arg (program name)
-    let arg0 = unsafe {
-        aion_get_argv_index(argv, 0)
-    }
+    // In our new env.args(), the first element is what was argv[1]
+    // because we start i at 1 in env.ai. 
+    // Wait, usually args[0] is the program name.
     
-    io.println("Program name: ")
-    io.println(arg0)
-    
-    return argc
+    // Let's check how many we have
+    io.print("Count: ")
+    io.println(string.from_int(arguments.len()))
 }

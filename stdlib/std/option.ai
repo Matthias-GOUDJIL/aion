@@ -22,10 +22,11 @@ impl Option<T> {
 
     pub fn unwrap(self) -> T {
         match self {
-            Option::Some(v) => return v,
+            Option::Some(v) => {
+                return v
+            },
             Option::None => {
-                // TODO: Proper panic
-                @intrinsic("io_println", "Error: called Option::unwrap() on a None value")
+                @intrinsic("io_println", "Panic: called Option::unwrap() on a None value")
                 @intrinsic("exit", 1)
                 return 0 as T
             },

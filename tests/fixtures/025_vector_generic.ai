@@ -1,5 +1,6 @@
 use std.collections.vector
 use std.io
+use std.string
 
 fn main() {
     io.println("Starting vector test...")
@@ -12,7 +13,7 @@ fn main() {
     io.println("Pushed 3 elements")
     
     io.print("Vector len: ")
-    io.println(v.len())
+    io.println(string.from_int(v.len()))
 
     let v0_opt = v.get(0)
     if v0_opt.is_some() {

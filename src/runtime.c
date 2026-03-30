@@ -39,6 +39,37 @@ void aion_io_println(const char* msg) {
     fflush(stdout);
 }
 
+char* aion_io_read_line() {
+    char* buf = GC_malloc(1024);
+    if (fgets(buf, 1024, stdin)) {
+        size_t len = strlen(buf);
+        if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
+        return buf;
+    }
+    return NULL;
+}
+
+// Command line arguments
+extern long aion_argc;
+extern char** aion_argv;
+
+long aion_get_argc() {
+    return aion_argc;
+}
+
+char* aion_get_argv_index(long index) {
+    if (index >= 0 && index < aion_argc) {
+        return aion_argv[index];
+    }
+    return NULL;
+}
+
+char* aion_getenv(const char* key) {
+    char* val = getenv(key);
+    if (!val) return NULL;
+    return GC_strdup(val); // Copy to GC memory for safety
+}
+
 char* aion_int_to_str(long long n) {
     char* buf = GC_malloc_atomic(32);
     snprintf(buf, 32, "%lld", n);
@@ -99,12 +130,6 @@ long long aion_fs_exists(const char* path) {
     return access(path, F_OK) == 0;
 }
 
-char* aion_getenv(const char* key) {
-    char* val = getenv(key);
-    if (!val) return NULL;
-    return GC_strdup(val); // Copy to GC memory
-}
-
 // AI Tensor Support
 struct AionVector {
     void* ptr;
@@ -119,11 +144,11 @@ struct AionTensor {
     long long requires_grad;
 };
 
-struct AionTensor aion_ai_tensor_zeros(struct AionVector* shape) {
-    struct AionTensor t;
-    t.shape = *shape; 
-    t.device = GC_strdup("cpu");
-    t.requires_grad = 0;
+struct AionTensor* aion_ai_tensor_zeros(struct AionVector* shape) {
+    struct AionTensor* t = (struct AionTensor*)aion_malloc(sizeof(struct AionTensor));
+    t->shape = *shape; 
+    t->device = GC_strdup("cpu");
+    t->requires_grad = 0;
     
     long long size = 1;
     long long* shape_ptr = (long long*)shape->ptr;
@@ -131,41 +156,41 @@ struct AionTensor aion_ai_tensor_zeros(struct AionVector* shape) {
         size *= shape_ptr[i];
     }
     
-    t.data.ptr = GC_malloc_atomic(size * sizeof(double));
-    t.data.len = size;
-    t.data.cap = size;
+    t->data.ptr = GC_malloc_atomic(size * sizeof(double));
+    t->data.len = size;
+    t->data.cap = size;
     
     return t;
 }
 
-struct AionTensor aion_ai_tensor_ones(struct AionVector* shape) {
-    struct AionTensor t = aion_ai_tensor_zeros(shape);
-    double* data_ptr = (double*)t.data.ptr;
-    for (long long i = 0; i < t.data.len; i++) {
+struct AionTensor* aion_ai_tensor_ones(struct AionVector* shape) {
+    struct AionTensor* t = aion_ai_tensor_zeros(shape);
+    double* data_ptr = (double*)t->data.ptr;
+    for (long long i = 0; i < t->data.len; i++) {
         data_ptr[i] = 1.0;
     }
     return t;
 }
 
-struct AionTensor aion_ai_tensor_rand(struct AionVector* shape) {
-    struct AionTensor t = aion_ai_tensor_zeros(shape);
-    double* data_ptr = (double*)t.data.ptr;
-    for (long long i = 0; i < t.data.len; i++) {
+struct AionTensor* aion_ai_tensor_rand(struct AionVector* shape) {
+    struct AionTensor* t = aion_ai_tensor_zeros(shape);
+    double* data_ptr = (double*)t->data.ptr;
+    for (long long i = 0; i < t->data.len; i++) {
         data_ptr[i] = (double)rand() / RAND_MAX;
     }
     return t;
 }
 
 void aion_ai_tensor_backward(struct AionTensor* t) {
-    // Placeholder for autograd
+    printf("Called t.backward()\n");
 }
 
-struct AionTensor aion_ai_tensor_matmul(struct AionTensor* t1, struct AionTensor* t2) {
+struct AionTensor* aion_ai_tensor_matmul(struct AionTensor* t1, struct AionTensor* t2) {
     // Placeholder: return zeros for now
     return aion_ai_tensor_zeros(&t1->shape);
 }
 
-struct AionTensor aion_ai_tensor_add(struct AionTensor* t1, struct AionTensor* t2) {
+struct AionTensor* aion_ai_tensor_add(struct AionTensor* t1, struct AionTensor* t2) {
     // Placeholder: return zeros for now
     return aion_ai_tensor_zeros(&t1->shape);
 }
@@ -182,23 +207,18 @@ char* aion_char_to_str(long long c) {
 }
 
 long long aion_str_at(const char* s, long long i) {
-    if (!s || i < 0 || i >= strlen(s)) return 0;
+    if (!s || i < 0 || i >= (long long)strlen(s)) return 0;
     return (unsigned char)s[i];
 }
 
 char* aion_str_substr(const char* s, long long start, long long len) {
     if (!s || start < 0 || len < 0) return NULL;
     size_t s_len = strlen(s);
-    if (start >= s_len) return GC_strdup("");
-    if (start + len > s_len) len = s_len - start;
+    if ((size_t)start >= s_len) return GC_strdup("");
+    if ((size_t)start + (size_t)len > s_len) len = s_len - start;
     
     char* buf = GC_malloc_atomic(len + 1);
     strncpy(buf, s + start, len);
     buf[len] = 0;
     return buf;
-}
-
-char* aion_get_argv_index(char** argv, long long index) {
-    if (!argv) return NULL;
-    return GC_strdup(argv[index]);
 }

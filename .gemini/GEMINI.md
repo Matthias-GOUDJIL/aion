@@ -46,16 +46,17 @@ This project uses a multi-role AI development workflow. I will adapt my persona 
 2.  **Atomic-Change Protocol**: You MUST run `python3 runner.py` after any compiler change and BEFORE committing. No commit is allowed if tests fail.
 3.  **Benchmark**: Measure compilation time and runtime performance.
 4.  **Parser Robustness**: Beware of ambiguous grammar (e.g. `If` vs `StructInst`). Prefer parenthesized expressions in ambiguous contexts.
+**Current Phase:** Phase 1.7 - "Rigor & Intelligence" (Completed stabilization).
 
-## 🔄 The "Elo Integration" Protocol
-... (rest of the section) ...
-
-## 💡 Architectural Invariants (v0.6)
+## 📏 Coding Standards
+...
+## 💡 Architectural Invariants (v0.7)
 1.  **Enum Layout**: Enums are compiled as `{ i64, [64 x i8] }`. Index 0 is the Tag, Index 1 is the Payload.
     - Tags: `Some/Ok = 0`, `None/Err = 1`.
 2.  **Global System Args**: `argc` and `argv` are stored in global LLVM variables `aion_argc` and `aion_argv` during `main` setup. Access them via `argc`/`argv` identifiers in any scope (compiler falls back to globals).
-3.  **Smart `io.println`**: The `io_println` intrinsic automatically detects if the argument is a pointer (`%s`) or an integer (`%lld`). Do not manually cast pointers to integers for printing.
+3.  **Strict `io.println`**: The `io_println` intrinsic ONLY takes a `String`. All non-string types MUST be converted using `string.from_int`, `string.from_float`, etc., before printing.
 4.  **Block Termination**: Every basic block in `compiler.rs` MUST be terminated. Always check `builder.get_insert_block().unwrap().get_terminator().is_none()` before adding a default return at the end of functions or branches.
+
 5.  **Inkwell Safety**: Use `ValueKind` matching for call results instead of `inkwell::values::Either` to avoid resolution errors during compiler builds.
 
 ## 🐳 Docker-First Environment (CRITICAL)

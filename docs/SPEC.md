@@ -15,9 +15,10 @@ Aion is currently a direct-to-LLVM compiler.
 -   **Generics**: Monomorphization at compile time (like C++ templates or Rust).
 
 ## 3. Memory & Strings
--   **Current**: Unsafe manual memory management (mostly leaked or stack-allocated).
+-   **Current**: Automatic memory management via Boehm Garbage Collector (GC).
 -   **Strings**: C-style strings (`char*`). 
--   **Safe Concat**: String concatenation (`+` or `concat`) uses a specialized `aion_str_concat` runtime function that allocates a new buffer to avoid memory corruption.
+-   **Safe Concat**: String concatenation (`+` or `concat`) uses a specialized `aion_str_concat` runtime function that allocates a new buffer.
+-   **Comparison**: The `==` and `!=` operators compare string content (via `strcmp`) rather than just pointers when both operands are `String`.
 -   **Safety**: Basic checks in `checker.rs`. Unsafe blocks are required for pointer dereferences and specific intrinsics.
 
 ## 4. Environment & Build
@@ -29,7 +30,11 @@ Aion is currently a direct-to-LLVM compiler.
 -   **Model**: 1:1 Threading via `pthread`.
 -   **Keyword**: `spawn { ... }` creates a detached thread.
 
-## 5. Known Limitations (Phase 1.6)
--   No Garbage Collection (GC) or RAII yet.
--   Operators `&&` and `||` are eager (no short-circuiting yet).
+## 6. Language Features
+-   **Short-circuiting**: Logical operators `&&` and `||` support short-circuiting (lazy evaluation).
+-   **Generics**: Monomorphization for structs and functions.
+-   **Pattern Matching**: Deep pattern matching on enums with payload extraction.
+
+## 7. Known Limitations (Phase 1.7)
 -   LLVM 15 Opaque Pointers must be used strictly.
+-   No RAII/Destructors (GC only).

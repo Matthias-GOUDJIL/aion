@@ -1,9 +1,10 @@
 use std.env
 use std.io
+use std.string
 
 fn main() {
     io.println("Checking args...")
     let args = std.env.args()
     io.print("Args count: ")
-    io.println(args.len())
+    io.println(string.from_int(args.len()))
 }
