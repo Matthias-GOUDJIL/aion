@@ -7,7 +7,7 @@ use inkwell::values::{BasicValueEnum, PointerValue, FunctionValue, BasicValue, V
 use inkwell::types::{StructType, BasicTypeEnum, BasicType};
 use inkwell::{AddressSpace, IntPredicate};
 use crate::ast::*;
-use crate::token::{Token, TokenKind};
+use crate::token::TokenKind;
 
 pub struct Compiler<'ctx> {
     pub context: &'ctx Context,
@@ -397,7 +397,7 @@ impl<'ctx> Compiler<'ctx> {
                 let full = self.resolve_fuzzy_name(&self.decls, &afn).unwrap_or(afn.clone()); let mut lnm = full.clone(); if let Some(Declaration::Function(f_decl)) = self.decls.get(&full) { for (an, av) in &f_decl.attributes { if an == "intrinsic" { lnm = av.replace("libc.", ""); break; } } }
                 let fv = if !aga.is_empty() { let gn = format!("{}_{}", full, aga.join("_")); if let Some(e) = self.module.get_function(&gn) { e } else { self.instantiate_function(&full, &aga)? } } else {
                     let mut debug_keys = variables.keys().cloned().collect::<Vec<String>>(); debug_keys.sort();
-                    let debug_tn = if let Some((rn, mn)) = fnm.rsplit_once('.') { format!("rn='{}', tn='{}', in_vars={}", rn, self.get_expr_type_name(&Expression::Identifier(rn.to_string()), variables), variables.contains_key(rn)) } else { "N/A".to_string() };
+                    let debug_tn = if let Some((rn, _mn)) = fnm.rsplit_once('.') { format!("rn='{}', tn='{}', in_vars={}", rn, self.get_expr_type_name(&Expression::Identifier(rn.to_string()), variables), variables.contains_key(rn)) } else { "N/A".to_string() };
                     self.module.get_function(&lnm).ok_or(format!("Function '{}' not found (debug: {}, keys: {:?})", afn, debug_tn, debug_keys))?
                 };
                 let mut ca = Vec::new(); let pts = fv.get_type().get_param_types();

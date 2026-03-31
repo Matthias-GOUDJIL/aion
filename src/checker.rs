@@ -298,7 +298,7 @@ impl TypeChecker {
                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
                 self.env.get(&format!("{}.{}", full, member)).ok_or(format!("Field '{}' not found on struct '{}'", member, full))
             },
-            Expression::MethodCall { receiver, method, generic_args, arguments } => {
+            Expression::MethodCall { receiver, method, generic_args: _, arguments } => {
                 let rt = self.check_expression(receiver)?;
                 
                 // Special case for Pointer.offset()

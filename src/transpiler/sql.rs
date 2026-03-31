@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::token::{Token, TokenKind};
+use crate::token::TokenKind;
 
 pub struct SqlTranspiler {
     buffer: String,
