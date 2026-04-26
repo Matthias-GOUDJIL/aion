@@ -1,0 +1,36 @@
+use std.io
+use std.string
+use std.result
+
+fn divide(a: i64, b: i64) -> Result<i64, String> {
+    if b == 0 {
+        return Result::Err("Division by zero");
+    }
+    return Result::Ok(a / b);
+}
+
+fn main() {
+    let success = divide(10, 2);
+    match success {
+        Result::Ok(val) => {
+            io.print("Success: ");
+            io.println(string.from_int(val));
+        },
+        Result::Err(msg) => {
+            io.print("Error: ");
+            io.println(msg);
+        }
+    }
+
+    let failure = divide(10, 0);
+    match failure {
+        Result::Ok(val) => {
+            io.print("Success: ");
+            io.println(string.from_int(val));
+        },
+        Result::Err(msg) => {
+            io.print("Error: ");
+            io.println(msg);
+        }
+    }
+}

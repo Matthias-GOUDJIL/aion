@@ -8,7 +8,7 @@
 ## 2. Collections (`std.collections`)
 - [x] `VectorString` implementation (Manual monomorphization).
 - [x] `Option<T>` enum support.
-- [ ] `HashMap<K, V>` implementation.
+- [x] `HashMap<K, V>` implementation.
 - [x] Transition `VectorString` to generic `Vector<T>`.
 
 ## 3. Environment (`std.env`)

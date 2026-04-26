@@ -16,4 +16,20 @@ impl Result<T, E> {
     pub fn is_err(self) -> bool {
         !self.is_ok()
     }
+
+    pub fn unwrap(self) -> T {
+        match self {
+            Result::Ok(val) => val,
+            Result::Err(err) => {
+                0 as T
+            }
+        }
+    }
+
+    pub fn unwrap_or(self, default: T) -> T {
+        match self {
+            Result::Ok(val) => val,
+            Result::Err(_) => default,
+        }
+    }
 }

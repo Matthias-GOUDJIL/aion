@@ -1,8 +1,14 @@
 module std.fs
+use std.result
 
-pub fn read_to_string(path: String) -> String {
+pub fn read_to_string(path: String) -> Result<String, String> {
     ::intent "Reads the entire contents of a file into a string"
-    @intrinsic("fs_read_to_string", path)
+    let content = unsafe { @intrinsic("fs_read_to_string", path) as String };
+    let is_null = unsafe { @intrinsic("mem_is_null", content) };
+    if is_null {
+        return Result::Err("Failed to read file");
+    }
+    return Result::Ok(content);
 }
 
 pub fn write(path: String, content: String) -> i64 {

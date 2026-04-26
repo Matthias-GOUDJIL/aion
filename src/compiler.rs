@@ -33,7 +33,7 @@ impl<'ctx> Compiler<'ctx> {
         let builtins = vec![
             ("io.println", "aion_io_println", "void"), ("io.print", "aion_io_print", "void"), ("io.read_line", "aion_io_read_line", "String"),
             ("string.len", "strlen", "i64"), ("string.from_int", "aion_int_to_str", "String"), ("string.from_float", "aion_float_to_str", "String"),
-            ("fs.read_to_string", "aion_read_file", "String"), ("fs.write", "aion_write_file", "i32"), ("fs.exists", "aion_fs_exists", "i64"), ("fs.append", "aion_append_file", "i32"),
+            ("fs_read_to_string", "aion_read_file", "String"), ("fs_write", "aion_write_file", "i32"), ("fs_exists", "aion_fs_exists", "i64"), ("fs_append", "aion_append_file", "i32"),
             ("aion_getenv", "aion_getenv", "String"), ("aion_get_argc", "aion_get_argc", "i64"), ("aion_get_argv_index", "aion_get_argv_index", "String"),
             ("aion_exit", "exit", "void"), ("exit", "exit", "void"), ("aion_malloc", "aion_malloc", "ptr"), ("aion_realloc", "aion_realloc", "ptr"), ("aion_free", "aion_free", "void"),
             ("aion_str_at", "aion_str_at", "i64"), ("aion_str_substr", "aion_str_substr", "String"), ("aion_char_to_str", "aion_char_to_str", "String"),
@@ -226,20 +226,21 @@ impl<'ctx> Compiler<'ctx> {
                     let cv = self.compile_expr(condition, variables, function)?.into_int_value(); let comp = self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "ifcond").unwrap();
                     let tb = self.context.append_basic_block(function, "then"); let eb = self.context.append_basic_block(function, "else"); let mb = self.context.append_basic_block(function, "ifcont");
                     self.builder.build_conditional_branch(comp, tb, eb).unwrap(); let mut phis = Vec::new();
-                    self.builder.position_at_end(tb); let mut tv = variables.clone(); let tr = self.compile_block(then_branch, &mut tv, function)?; let tf = self.builder.get_insert_block().unwrap(); if tf.get_terminator().is_none() { let v = tr.unwrap_or(i64_t.const_zero().into()); phis.push((v, tf)); self.builder.build_unconditional_branch(mb).unwrap(); }
-                    self.builder.position_at_end(eb); let mut ev = variables.clone(); let er = if let Some(e) = else_branch { self.compile_block(e, &mut ev, function)? } else { None }; let ef = self.builder.get_insert_block().unwrap(); if ef.get_terminator().is_none() { let v = er.unwrap_or(i64_t.const_zero().into()); phis.push((v, ef)); self.builder.build_unconditional_branch(mb).unwrap(); }
+                    self.builder.position_at_end(tb); let mut tv = variables.clone(); let tr = self.compile_block(then_branch, &mut tv, function)?; let tf = self.builder.get_insert_block().unwrap(); if tf.get_terminator().is_none() { let v = tr.unwrap_or(i64_t.const_zero().into()); phis.push((v, tf)); }
+                    self.builder.position_at_end(eb); let mut ev = variables.clone(); let er = if let Some(e) = else_branch { self.compile_block(e, &mut ev, function)? } else { None }; let ef = self.builder.get_insert_block().unwrap(); if ef.get_terminator().is_none() { let v = er.unwrap_or(i64_t.const_zero().into()); phis.push((v, ef)); }
                     self.builder.position_at_end(mb);
                     if !phis.is_empty() {
                         let target_type = phis[0].0.get_type(); let mut final_phis = Vec::new();
                         for (mut v, b) in phis {
+                            self.builder.position_at_end(b);
                             if v.get_type() != target_type {
-                                let cur = self.builder.get_insert_block(); self.builder.position_at_end(b);
                                 if target_type.is_pointer_type() && v.is_int_value() { v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr").unwrap().into(); }
                                 else if target_type.is_int_type() && v.is_pointer_value() { v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int").unwrap().into(); }
-                                if let Some(o) = cur { self.builder.position_at_end(o); }
                             }
+                            self.builder.build_unconditional_branch(mb).unwrap();
                             final_phis.push((v, b));
                         }
+                        self.builder.position_at_end(mb);
                         let phi = self.builder.build_phi(target_type, "ifres").unwrap(); for (v, b) in final_phis { phi.add_incoming(&[(&v, b)]); } lv = Some(phi.as_basic_value());
                     } else { if self.builder.get_insert_block().unwrap().get_terminator().is_none() { self.builder.build_unreachable().unwrap(); } lv = None; }
                 },
@@ -270,7 +271,7 @@ impl<'ctx> Compiler<'ctx> {
                                 let lv_val = self.builder.build_load(lt, cp.into_pointer_value(), &arm.params[0]).unwrap();
                                 let pa = self.builder.build_alloca(lt, &arm.params[0]).unwrap(); self.builder.build_store(pa, lv_val).unwrap(); av.insert(arm.params[0].clone(), (pa, lt, ptn));
                             }
-                            let ar = self.compile_block(&arm.body, &mut av, function)?; let abf = self.builder.get_insert_block().unwrap(); if abf.get_terminator().is_none() { let v = ar.unwrap_or(i64_t.const_zero().into()); phis.push((v, abf)); self.builder.build_unconditional_branch(exit_bb).unwrap(); }
+                            let ar = self.compile_block(&arm.body, &mut av, function)?; let abf = self.builder.get_insert_block().unwrap(); if abf.get_terminator().is_none() { let v = ar.unwrap_or(i64_t.const_zero().into()); phis.push((v, abf)); }
                             if !is_last { self.builder.position_at_end(nb); }
                         }
                         self.builder.position_at_end(exit_bb);
@@ -279,14 +280,17 @@ impl<'ctx> Compiler<'ctx> {
                             else {
                                 let target_type = phis[0].0.get_type(); let mut final_phis = Vec::new();
                                 for (mut v, b) in phis {
+                                    self.builder.position_at_end(b);
                                     if v.get_type() != target_type {
-                                        let cur = self.builder.get_insert_block(); self.builder.position_at_end(b);
                                         if target_type.is_pointer_type() && v.is_int_value() { v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr").unwrap().into(); }
                                         else if target_type.is_int_type() && v.is_pointer_value() { v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int").unwrap().into(); }
-                                        if let Some(o) = cur { self.builder.position_at_end(o); }
+                                    }
+                                    if b.get_terminator().is_none() {
+                                        self.builder.build_unconditional_branch(exit_bb).unwrap();
                                     }
                                     final_phis.push((v, b));
                                 }
+                                self.builder.position_at_end(exit_bb);
                                 let phi = self.builder.build_phi(target_type, "matchres").unwrap(); for (v, b) in final_phis { phi.add_incoming(&[(&v, b)]); } lv = Some(phi.as_basic_value());
                             }
                         } else { lv = None; }
@@ -512,7 +516,26 @@ impl<'ctx> Compiler<'ctx> {
                 for arg in arguments { ca.push(self.compile_expr(arg, variables, function)?.into()); }
                 let call = self.builder.build_call(fv, &ca, "call").unwrap(); Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() })
             },
-            Expression::Cast { target, expr } => { let v = self.compile_expr(expr, variables, function)?; let t_clean = target.replace(" ", ""); let dest = self.aion_type_to_llvm(&t_clean); if v.is_int_value() && dest.is_int_type() { let sw = v.into_int_value().get_type().get_bit_width(); let dw = dest.into_int_type().get_bit_width(); if sw < dw { Ok(self.builder.build_int_z_extend(v.into_int_value(), dest.into_int_type(), "ext").unwrap().into()) } else if sw > dw { Ok(self.builder.build_int_truncate(v.into_int_value(), dest.into_int_type(), "trunc").unwrap().into()) } else { Ok(v) } } else { Ok(self.builder.build_bit_cast(v, dest, "cast").unwrap()) } },
+            Expression::Cast { target, expr } => {
+                let v = self.compile_expr(expr, variables, function)?;
+                let t_clean = target.replace(" ", "");
+                let dest = self.aion_type_to_llvm(&t_clean);
+                if v.is_int_value() && dest.is_int_type() {
+                    let sw = v.into_int_value().get_type().get_bit_width();
+                    let dw = dest.into_int_type().get_bit_width();
+                    if sw < dw { Ok(self.builder.build_int_z_extend(v.into_int_value(), dest.into_int_type(), "ext").unwrap().into()) }
+                    else if sw > dw { Ok(self.builder.build_int_truncate(v.into_int_value(), dest.into_int_type(), "trunc").unwrap().into()) }
+                    else { Ok(v) }
+                } else if v.is_pointer_value() && dest.is_int_type() {
+                    Ok(self.builder.build_ptr_to_int(v.into_pointer_value(), dest.into_int_type(), "p2i").unwrap().into())
+                } else if v.is_int_value() && dest.is_pointer_type() {
+                    Ok(self.builder.build_int_to_ptr(v.into_int_value(), dest.into_pointer_type(), "i2p").unwrap().into())
+                } else if v.get_type() == dest {
+                    Ok(v)
+                } else {
+                    Ok(self.builder.build_bit_cast(v, dest, "cast").unwrap())
+                }
+            },
             Expression::Deref { expr } => { let v = self.compile_expr(expr, variables, function)?; let tn = self.get_expr_type_name(expr, variables); let et = self.aion_type_to_llvm(if tn.starts_with('*') { &tn[1..] } else { "i64" }); let p = if v.is_int_value() { self.builder.build_int_to_ptr(v.into_int_value(), pt, "i2p").unwrap() } else { v.into_pointer_value() }; Ok(self.builder.build_load(et, p, "deref").unwrap()) },
             Expression::Block { statements, .. } => { let mut lv_vars = variables.clone(); Ok(self.compile_block(statements, &mut lv_vars, function)?.unwrap_or(i64_t.const_zero().into())) },
             Expression::Intrinsic { name, arguments } => {
@@ -657,6 +680,14 @@ impl<'ctx> Compiler<'ctx> {
                 if t.starts_with('*') { t[1..].to_string().replace(" ", "") } else { "unknown".to_string() }
             },
             Expression::TypeRef { name, generic_args } => { if generic_args.is_empty() { name.clone() } else { format!("{}<{}>", name, generic_args.join(",")) } },
+            Expression::Block { statements, .. } => {
+                if let Some(s) = statements.last() {
+                    match s {
+                        Statement::ExpressionStmt(e) | Statement::Return { value: e, .. } => self.get_expr_type_name(e, variables),
+                        _ => "unknown".to_string()
+                    }
+                } else { "unknown".to_string() }
+            },
             _ => "unknown".to_string(),
         };
         res.replace(" ", "")

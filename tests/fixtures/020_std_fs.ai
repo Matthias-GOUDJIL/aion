@@ -14,10 +14,15 @@ fn main() {
     }
 
     // 2. Read the file back
-    let read_content = fs.read_to_string(path)
-    if string.len(read_content) > 0 {
-        io.println("File read successfully:")
-        io.println(read_content)
+    let read_result = fs.read_to_string(path)
+    if read_result.is_ok() {
+        let read_content = read_result.unwrap()
+        if string.len(read_content) > 0 {
+            io.println("File read successfully:")
+            io.println(read_content)
+        } else {
+            io.println("File read failed or empty")
+        }
     } else {
         io.println("File read failed or empty")
     }

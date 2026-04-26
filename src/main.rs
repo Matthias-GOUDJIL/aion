@@ -84,6 +84,13 @@ fn main() {
 
             if llc_status.is_err() || !llc_status.unwrap().success() {
                 println!("❌ LLVM Backend Error (llc failed)");
+                if let Ok(content) = std::fs::read_to_string(&ir_file) {
+                    println!("--- LLVM IR DUMP ---");
+                    for (i, line) in content.lines().enumerate() {
+                        println!("{:4} | {}", i + 1, line);
+                    }
+                    println!("--------------------");
+                }
                 std::process::exit(1);
             }
 

@@ -1,0 +1,26 @@
+use std.io
+use std.string
+use std.result
+
+fn divide(a: i64, b: i64) -> Result<i64, String> {
+    if b == 0 {
+        return Result::Err("Div/0");
+    }
+    return Result::Ok(a / b);
+}
+
+fn main() {
+    let r1 = divide(10, 2);
+    if r1.is_ok() {
+        io.println("r1 is Ok");
+        let v = r1.unwrap();
+        io.println(string.from_int(v));
+    }
+
+    let r2 = divide(10, 0);
+    if r2.is_err() {
+        io.println("r2 is Err");
+        let fallback = r2.unwrap_or(42);
+        io.println(string.from_int(fallback));
+    }
+}

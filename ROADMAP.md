@@ -39,12 +39,12 @@ This document outlines the technical path to transform Aion from its current Rus
 
 ---
 
-## 📊 Phase 1.8: Robustness via Data Engineering
+## 📊 Phase 1.8: Robustness via Data Engineering [COMPLETED]
 *Goal: Stress-test Aion by building high-performance data structures.*
 
-1.  **Generic Data Structures**
+1.  **Generic Data Structures** [COMPLETED]
     *   Expand `Vector` and `HashMap` with more utilities (`map`, `filter`).
-2.  **The DataFrame Core**
+2.  **The DataFrame Core** [COMPLETED]
     *   Implement `std.data.dataframe` with support for multiple column types (using Enums).
 3.  **Real-world I/O**
     *   Implement a native CSV parser in Aion using `std.fs` and `std.string`.

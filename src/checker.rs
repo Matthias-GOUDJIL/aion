@@ -50,10 +50,19 @@ impl TypeChecker {
                     let full_name = format!("{}.{}", module, trimmed);
                     if let Some(t) = self.env.get(&full_name) { return t; }
                 }
-                if trimmed.contains('<') {
-                    let parts: Vec<&str> = trimmed.split('<').collect();
-                    let base = parts[0].to_string();
-                    return Type::GenericInstance(base, vec![Type::Integer]);
+                if trimmed.contains('<') && trimmed.ends_with('>') {
+                    let start = trimmed.find('<').unwrap();
+                    let base = trimmed[..start].to_string();
+                    let args_str = &trimmed[start+1..trimmed.len()-1];
+                    let mut ga = Vec::new();
+                    // Simple split by comma (doesn't handle nested generics perfectly, but sufficient for Phase 1)
+                    for part in args_str.split(',') {
+                        let pt = part.trim().to_string();
+                        if !pt.is_empty() {
+                            ga.push(self.resolve_type(&pt));
+                        }
+                    }
+                    return Type::GenericInstance(base, ga);
                 }
                 Type::Placeholder(trimmed.to_string())
             }
@@ -78,9 +87,6 @@ impl TypeChecker {
         self.env.set("aion_str_ptr".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Pointer(Box::new(Type::Integer))) });
         self.env.set("io.println".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Unit) });
         self.env.set("io.print".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Unit) });
-        self.env.set("fs.read_to_string".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
-        self.env.set("fs.write".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
-        self.env.set("fs.exists".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Boolean) });
         self.env.set("env.var".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::GenericInstance("Option".to_string(), vec![Type::String])) });
         self.env.set("mem.is_null".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Boolean) });
         self.env.set("string.len".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
