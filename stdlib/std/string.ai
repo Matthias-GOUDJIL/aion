@@ -27,3 +27,11 @@ pub fn contains(haystack: String, needle: String) -> bool {
     // Basic implementation for now
     false 
 }
+
+pub fn at(s: String, i: i64) -> i64 {
+    @intrinsic("str_at", s, i)
+}
+
+pub fn substr(s: String, start: i64, len: i64) -> String {
+    @intrinsic("str_substr", s, start, len)
+}

@@ -22,7 +22,12 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 fn resolve_import_path(import_path: &[String]) -> PathBuf {
-    let mut path = PathBuf::from("stdlib"); // Default to stdlib root
+    let mut path = if let Some(first) = import_path.first() {
+        if first == "compiler" { PathBuf::from(".") } else { PathBuf::from("stdlib") }
+    } else {
+        PathBuf::from("stdlib")
+    };
+    
     for part in import_path {
         path.push(part);
     }

@@ -422,11 +422,16 @@ impl<'a> Parser<'a> {
                 let condition = self.parse_expression();
                 let then_branch = self.parse_block();
                 let mut else_branch = None;
-                if self.current_token.kind == TokenKind::Else { 
-                    self.next_token(); 
-                    else_branch = Some(self.parse_block()); 
-                }
-                Some(Statement::If { condition, then_branch, else_branch })
+                if self.current_token.kind == TokenKind::Else {
+                    self.next_token();
+                    if self.current_token.kind == TokenKind::If {
+                        if let Some(if_stmt) = self.parse_statement() {
+                            else_branch = Some(vec![if_stmt]);
+                        }
+                    } else {
+                        else_branch = Some(self.parse_block());
+                    }
+                }                Some(Statement::If { condition, then_branch, else_branch })
             },
             TokenKind::While => {
                 self.next_token();
@@ -607,11 +612,16 @@ impl<'a> Parser<'a> {
                 let condition = self.parse_expression();
                 let then_branch = self.parse_block();
                 let mut else_branch = None;
-                if self.current_token.kind == TokenKind::Else { 
-                    self.next_token(); 
-                    else_branch = Some(self.parse_block()); 
-                }
-                Expression::If { condition: Box::new(condition), then_branch, else_branch }
+                if self.current_token.kind == TokenKind::Else {
+                    self.next_token();
+                    if self.current_token.kind == TokenKind::If {
+                        if let Some(if_stmt) = self.parse_statement() {
+                            else_branch = Some(vec![if_stmt]);
+                        }
+                    } else {
+                        else_branch = Some(self.parse_block());
+                    }
+                }                Expression::If { condition: Box::new(condition), then_branch, else_branch }
             },
             TokenKind::LBrace => {
                 Expression::Block { statements: self.parse_block(), is_unsafe: false }

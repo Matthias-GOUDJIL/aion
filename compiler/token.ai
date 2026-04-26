@@ -1,0 +1,60 @@
+module compiler.token
+
+pub enum TokenKind {
+    // System Keywords
+    Fn, Let, Mut, Struct, Enum, Return, If, Else, Match, As, While,
+    Use, Pub, Async, Unsafe, Require, Extern,
+    Interface, Impl, Channel,
+    For, In, Type, SelfToken, Spawn,
+    
+    // AI-Native & Logic
+    Intent, 
+    Invariant,
+    Inside, 
+
+    // Identifiers and Literals
+    Identifier(String),
+    StringLiteral(String),
+    FString(String),
+    IntLiteral(i64),
+    FloatLiteral(f64),
+    DurationLiteral(u64, u32), // secs, nanos
+    DateLiteral(i64), // timestamp
+    True, False,
+
+    // Symbols and Operators
+    Plus, Minus, Star, Slash, Percent, Caret, // Arithmetic (+ % ^)
+    Eq, EqEq, NotEq, Arrow, 
+    LArrow, // <- (Send/Receive)
+    Pipeline, // |>
+    And, Or, Bang, // Logic (&& || !)
+    Gt, Lt, GtEq, LtEq,
+    LParen, RParen, LBrace, RBrace, LBracket, RBracket, 
+    Colon, Semicolon, Comma, Dot, 
+    DoubleColon, 
+    Range,       
+    At,
+    Question,
+
+    // End of File
+    EOF,
+    
+    // Error
+    Illegal(i64) // i64 since char is not natively handled yet, we cast to int
+}
+
+pub struct Token {
+    kind: TokenKind,
+    line: i64,
+    col: i64,
+}
+
+impl Token {
+    pub fn new(kind: TokenKind, line: i64, col: i64) -> Token {
+        Token {
+            kind: kind,
+            line: line,
+            col: col,
+        }
+    }
+}

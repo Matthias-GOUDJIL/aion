@@ -11,7 +11,7 @@
 | `TRACK-003` | [Generics Implementation](tracks/generics/index.md) | ✅ Done | Architect | Monomorphization for Functions and Structs. |
 | `TRACK-006` | [Rigor & Intelligence](tracks/rigor-intelligence/index.md) | ✅ Done | Architect | Stabilize core (Method Chaining, Short-circuiting) and start AI Tensor. |
 | `TRACK-007` | [Error Handling](tracks/error-handling/index.md) | ✅ Done | Librarian | Implement `Result<T, E>` enum support and robust error management. |
-| `TRACK-010` | [Self-Hosting Lexer](tracks/self-hosting-lexer/index.md) | 🚧 In Progress | Architect | Start Phase 2 by writing the Aion Lexer in pure Aion (`lexer.ai`). |
+| `TRACK-010` | [Self-Hosting Lexer](tracks/self-hosting-lexer/index.md) | ✅ Done | Architect | Start Phase 2 by writing the Aion Lexer in pure Aion (`lexer.ai`). |
 
 ## Backlog
 

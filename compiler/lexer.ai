@@ -1,0 +1,172 @@
+module compiler.lexer
+
+use std.string
+use compiler.token
+
+pub struct Lexer {
+    input: String,
+    len: i64,
+    pos: i64,
+    line: i64,
+    col: i64,
+}
+
+pub fn Lexer_new(input: String) -> Lexer {
+    Lexer {
+        input: input,
+        len: string.len(input),
+        pos: 0,
+        line: 1,
+        col: 1,
+    }
+}
+
+// ASCII Helpers
+fn is_alpha(c: i64) -> bool {
+    // 'a' = 97, 'z' = 122, 'A' = 65, 'Z' = 90, '_' = 95
+    if c >= 97 && c <= 122 { return true; }
+    if c >= 65 && c <= 90 { return true; }
+    if c == 95 { return true; }
+    return false;
+}
+
+fn is_numeric(c: i64) -> bool {
+    // '0' = 48, '9' = 57
+    if c >= 48 && c <= 57 { return true; }
+    return false;
+}
+
+fn is_alphanumeric(c: i64) -> bool {
+    if is_alpha(c) { return true; }
+    if is_numeric(c) { return true; }
+    return false;
+}
+
+fn is_whitespace(c: i64) -> bool {
+    // ' ' = 32, '\t' = 9, '\n' = 10, '\r' = 13
+    if c == 32 { return true; }
+    if c == 9 { return true; }
+    if c == 10 { return true; }
+    if c == 13 { return true; }
+    return false;
+}
+
+impl Lexer {
+    pub fn peek_char(self) -> i64 {
+        if self.pos >= self.len {
+            return 0; // EOF
+        }
+        return string.at(self.input, self.pos);
+    }
+
+    pub fn read_char(self) -> i64 {
+        if self.pos >= self.len {
+            return 0;
+        }
+        let c = string.at(self.input, self.pos);
+        self.pos = self.pos + 1;
+        if c == 10 { // '\n'
+            self.line = self.line + 1;
+            self.col = 1;
+        } else {
+            self.col = self.col + 1;
+        }
+        return c;
+    }
+
+    pub fn skip_whitespace(self) {
+        while is_whitespace(self.peek_char()) {
+            let _ = self.read_char();
+        }
+    }
+
+    fn read_identifier(self, first: i64) -> String {
+        let start = self.pos - 1;
+        while is_alphanumeric(self.peek_char()) {
+            let _ = self.read_char();
+        }
+        return string.substr(self.input, start, self.pos - start);
+    }
+
+    pub fn next_token(self) -> compiler.token.Token {
+        self.skip_whitespace();
+        let line = self.line;
+        let col = self.col;
+
+        let ch = self.read_char();
+        
+        let mut kind = compiler.token.TokenKind::EOF;
+
+        if ch == 0 {
+            return compiler.token.Token::new(kind, line, col);
+        }
+
+        if ch == 40 { kind = compiler.token.TokenKind::LParen; } // '('
+        else if ch == 41 { kind = compiler.token.TokenKind::RParen; } // ')'
+        else if ch == 123 { kind = compiler.token.TokenKind::LBrace; } // '{'
+        else if ch == 125 { kind = compiler.token.TokenKind::RBrace; } // '}'
+        else if ch == 91 { kind = compiler.token.TokenKind::LBracket; } // '['
+        else if ch == 93 { kind = compiler.token.TokenKind::RBracket; } // ']'
+        else if ch == 44 { kind = compiler.token.TokenKind::Comma; } // ','
+        else if ch == 59 { kind = compiler.token.TokenKind::Semicolon; } // ';'
+        else if ch == 42 { kind = compiler.token.TokenKind::Star; } // '*'
+        else if ch == 43 { kind = compiler.token.TokenKind::Plus; } // '+'
+        else if ch == 37 { kind = compiler.token.TokenKind::Percent; } // '%'
+        else if ch == 94 { kind = compiler.token.TokenKind::Caret; } // '^'
+        else if ch == 63 { kind = compiler.token.TokenKind::Question; } // '?'
+        else if ch == 64 { kind = compiler.token.TokenKind::At; } // '@'
+        
+        // Complex symbols like ==, =>, ->
+        else if ch == 61 { // '='
+            if self.peek_char() == 61 { // '=='
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::EqEq;
+            } else if self.peek_char() == 62 { // '=>'
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::Arrow;
+            } else {
+                kind = compiler.token.TokenKind::Eq;
+            }
+        } else if ch == 33 { // '!'
+            if self.peek_char() == 61 { // '!='
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::NotEq;
+            } else {
+                kind = compiler.token.TokenKind::Bang;
+            }
+        } else if ch == 46 { // '.'
+            if self.peek_char() == 46 { // '..'
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::Range;
+            } else {
+                kind = compiler.token.TokenKind::Dot;
+            }
+        } else if is_alpha(ch) {
+            // Identifier / Keywords
+            let ident = self.read_identifier(ch);
+            if std.string.equals(ident, "fn") { kind = compiler.token.TokenKind::Fn; }
+            else if std.string.equals(ident, "let") { kind = compiler.token.TokenKind::Let; }
+            else if std.string.equals(ident, "if") { kind = compiler.token.TokenKind::If; }
+            else if std.string.equals(ident, "else") { kind = compiler.token.TokenKind::Else; }
+            else if std.string.equals(ident, "return") { kind = compiler.token.TokenKind::Return; }
+            else if std.string.equals(ident, "match") { kind = compiler.token.TokenKind::Match; }
+            else if std.string.equals(ident, "true") { kind = compiler.token.TokenKind::True; }
+            else if std.string.equals(ident, "false") { kind = compiler.token.TokenKind::False; }
+            else { kind = compiler.token.TokenKind::Identifier(ident); }
+        } else if is_numeric(ch) {
+            // Simplified numeric parser
+            let start = self.pos - 1;
+            while is_numeric(self.peek_char()) {
+                let _ = self.read_char();
+            }
+            let num_str = string.substr(self.input, start, self.pos - start);
+            // Since Aion doesn't have an int_parse yet, we will just store as identifier for now
+            // A true self-hosted lexer needs string to int conversion
+            kind = compiler.token.TokenKind::Identifier(num_str);
+        } else {
+            kind = compiler.token.TokenKind::Illegal(ch);
+        }
+
+        return compiler.token.Token::new(kind, line, col);
+    }
+}

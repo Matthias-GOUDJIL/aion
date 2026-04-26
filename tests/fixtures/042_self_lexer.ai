@@ -1,0 +1,59 @@
+use std.io
+use std.string
+use compiler.lexer
+use compiler.token
+
+fn main() {
+    let source = "let x = 42;";
+    let mut l = compiler.lexer.Lexer_new(source);
+
+    // 1. let
+    let tok1 = l.next_token();
+    match tok1.kind {
+        compiler.token.TokenKind::Let => io.println("Token 1: Let"),
+        _ => io.println("Token 1: FAIL"),
+    }
+
+    // 2. x
+    let tok2 = l.next_token();
+    match tok2.kind {
+        compiler.token.TokenKind::Identifier(name) => {
+            io.print("Token 2: Identifier(");
+            io.print(name);
+            io.println(")");
+        },
+        _ => io.println("Token 2: FAIL"),
+    }
+
+    // 3. =
+    let tok3 = l.next_token();
+    match tok3.kind {
+        compiler.token.TokenKind::Eq => io.println("Token 3: Eq"),
+        _ => io.println("Token 3: FAIL"),
+    }
+
+    // 4. 42 (parsed as Identifier for now because no string.parse_int yet)
+    let tok4 = l.next_token();
+    match tok4.kind {
+        compiler.token.TokenKind::Identifier(val) => {
+            io.print("Token 4: Identifier(");
+            io.print(val);
+            io.println(")");
+        },
+        _ => io.println("Token 4: FAIL"),
+    }
+
+    // 5. ;
+    let tok5 = l.next_token();
+    match tok5.kind {
+        compiler.token.TokenKind::Semicolon => io.println("Token 5: Semicolon"),
+        _ => io.println("Token 5: FAIL"),
+    }
+
+    // 6. EOF
+    let tok6 = l.next_token();
+    match tok6.kind {
+        compiler.token.TokenKind::EOF => io.println("Token 6: EOF"),
+        _ => io.println("Token 6: FAIL"),
+    }
+}
