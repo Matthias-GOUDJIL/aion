@@ -1,0 +1,10 @@
+# 🤖 Aider AI Workflow Rules (Aion Compiler)
+
+## 🛑 Interaction Protocol
+1. **Ask Before Acting**: NEVER modify files, run shell commands, or commit changes without explicit user approval. Always propose changes first and wait for confirmation.
+2. **Language**: All commit messages, code comments, variable names, and documentation MUST be in **ENGLISH ONLY**.
+3. **Git Policy**: NEVER execute `git commit`, `git push`, or `git add` automatically. Only suggest commands for the user to run manually.
+4. **Docker-First**: NEVER run `cargo build`, `cargo run`, or `cargo test` directly on the host. Always use `./aion` or `python3 runner.py` for compilation and testing.
+
+## 📝 File Output Format
+When suggesting code changes, you MUST return the **ENTIRE** file content. NEVER use `...`, `// rest of code`, or skip sections. Follow this exact structure:
