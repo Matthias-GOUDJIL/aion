@@ -78,13 +78,6 @@ impl TypeChecker {
         self.env.set("exit".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Unit) });
         self.env.set("aion_exit".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Unit) });
 
-        self.env.set("aion_get_argc".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Integer) });
-        self.env.set("aion_get_argv_index".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::String) });
-        self.env.set("aion_str_ptr".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Pointer(Box::new(Type::Integer))) });
-        self.env.set("exit".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Unit) });
-        self.env.set("aion_exit".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Unit) });
-
-        self.env.set("aion_str_ptr".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Pointer(Box::new(Type::Integer))) });
         self.env.set("io.println".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Unit) });
         self.env.set("io.print".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Unit) });
         self.env.set("env.var".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::GenericInstance("Option".to_string(), vec![Type::String])) });

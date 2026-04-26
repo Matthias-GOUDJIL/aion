@@ -18,14 +18,12 @@ impl Environment {
 
     pub fn get(&self, name: &str) -> Option<Type> {
         if let Some(t) = self.store.get(name) {
-            eprintln!("DEBUG: env.get('{}') found exact match: {:?}", name, t);
             return Some(t.clone());
         }
         
         // Fuzzy lookup: check if name matches a fully qualified name suffix
         for (key, val) in &self.store {
             if key.ends_with(name) && (key.len() == name.len() || key.as_bytes()[key.len() - name.len() - 1] == b'.') {
-                eprintln!("DEBUG: env.get('{}') found fuzzy match '{}': {:?}", name, key, val);
                 return Some(val.clone());
             }
         }
