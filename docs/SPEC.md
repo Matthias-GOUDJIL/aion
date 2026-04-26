@@ -1,40 +1,48 @@
-# Aion Specification v0.2 (Current Implementation)
+# Aion Specification v0.3 (Current Implementation)
 
 ## 1. Architecture
-Aion is currently a direct-to-LLVM compiler.
+Aion is a direct-to-LLVM compiler with a strict safety-first pipeline.
 -   **Frontend**: Hand-written Lexer (`lexer.rs`) and Recursive Descent Parser (`parser.rs`).
--   **Middle**: Type Checker (`checker.rs`) with basic type inference.
--   **Backend**: Direct LLVM IR generation (`compiler.rs`) using `inkwell` (LLVM 15).
--   **Runtime**: Minimal C runtime (`runtime.c`) for I/O and threading.
+-   **Middle**: Type Checker (`checker.rs`) with scoped environments, fuzzy resolution, and strict generic validation.
+-   **Backend**: Direct LLVM IR generation (`compiler.rs`) using `inkwell` (LLVM 15+ Opaque Pointers).
+-   **Runtime**: Minimal C runtime (`runtime.c`) for I/O, threading, and AI tensor primitives.
+-   **Orchestration**: Docker-first execution via `./aion` wrapper. Host `cargo` commands are strictly forbidden for compilation.
 
 ## 2. Type System (Implemented)
 -   **Primitives**: `i64` (integer), `f64` (float), `bool`, `String` (pointer to C-string).
--   **Composite**: `Struct`, `Enum` (tagged unions).
+-   **Composite**: `Struct`, `Enum` (tagged unions), `Interface`, `Impl` blocks.
 -   **Enum Layout**: Enums are compiled as `{ i64, [64 x i8] }`. Index 0 is the Tag, Index 1 is the Payload.
--   **Pointers**: All complex types are passed by reference (pointers). Explicit pointer types use `*T`.
--   **Generics**: Monomorphization at compile time (like C++ templates or Rust).
+    - Tags: `Some/Ok = 0`, `None/Err = 1`.
+-   **Pointers**: All complex types are passed by reference. Explicit pointer types use `*T`.
+-   **Generics**: Monomorphization at compile time. Full type substitution before LLVM generation.
+-   **Fuzzy Resolution**: Supports suffix/prefix matching for imports and method calls (e.g., `HashMap` → `std.collections.map.HashMap`).
 
 ## 3. Memory & Strings
--   **Current**: Automatic memory management via Boehm Garbage Collector (GC).
+-   **Current**: Automatic memory management via Boehm Garbage Collector (`libgc`).
 -   **Strings**: C-style strings (`char*`). 
--   **Safe Concat**: String concatenation (`+` or `concat`) uses a specialized `aion_str_concat` runtime function that allocates a new buffer.
--   **Comparison**: The `==` and `!=` operators compare string content (via `strcmp`) rather than just pointers when both operands are `String`.
--   **Safety**: Basic checks in `checker.rs`. Unsafe blocks are required for pointer dereferences and specific intrinsics.
+-   **Safe Concat**: String concatenation (`+` or `concat`) uses `aion_str_concat` (allocates new buffer).
+-   **Comparison**: `==` and `!=` compare string content via `aion_str_eq` when both operands are `String`.
+-   **Safety**: `unsafe` blocks required for pointer dereferences, FFI, and specific intrinsics.
 
-## 4. Environment & Build
--   **Docker-First**: The compiler requires LLVM 15, which is managed via the `aion-compiler` Docker image.
--   **Wrapper**: The `./aion` script is the primary entry point for building and running code.
--   **Fuzzy Resolution**: The compiler supports fuzzy name resolution for types and methods (e.g., `HashMap` can resolve to `std.collections.map.HashMap`).
+## 4. Compiler Robustness (v0.3 Additions)
+-   **Error Handling**: Zero `unwrap()` in production code. All compiler stages return `Result<T, String>` or typed errors.
+-   **Block Termination**: Every LLVM basic block is guaranteed to be terminated. The compiler injects `ret` or `unreachable` if `get_terminator().is_none()`.
+-   **Type Safety**: `Type::Unknown` is never returned silently. Fallbacks are explicit and validated.
+-   **Debug Hygiene**: No `println!`/`eprintln!` in production builds. Conditional logging only.
 
-## 5. Concurrency
--   **Model**: 1:1 Threading via `pthread`.
--   **Keyword**: `spawn { ... }` creates a detached thread.
+## 5. Environment & Build
+-   **Docker-First**: LLVM 15+ dependencies are isolated in `aion-compiler` Docker image.
+-   **Wrapper**: `./aion` is the primary entry point. `python3 runner.py` handles integration testing.
+-   **Import Resolution**: Recursive import processing with automatic namespace prefixing to prevent symbol collisions.
 
-## 6. Language Features
--   **Short-circuiting**: Logical operators `&&` and `||` support short-circuiting (lazy evaluation).
--   **Generics**: Monomorphization for structs and functions.
--   **Pattern Matching**: Deep pattern matching on enums with payload extraction.
+## 6. Concurrency & AI-Native Features
+-   **Model**: 1:1 Threading via `pthread`. `spawn { ... }` creates detached threads.
+-   **AI Tensors**: First-class `std.ai.tensor` support (`zeros`, `ones`, `rand`, `matmul`, `backward`).
+-   **Intents**: `::intent "..."` syntax for AI-guided compilation hints.
+-   **Short-circuiting**: `&&` and `||` use lazy evaluation via conditional branching.
 
 ## 7. Known Limitations (Phase 1.7)
--   LLVM 15 Opaque Pointers must be used strictly.
--   No RAII/Destructors (GC only).
+-   No RAII/Destructors (GC-only memory model).
+-   Pattern matching is limited to enum variants (no structural/guard matching yet).
+-   LLVM opaque pointers require explicit type casting in some edge cases.
+-   Cross-compilation targets are not yet supported (x86_64-linux only).
