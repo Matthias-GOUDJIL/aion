@@ -59,7 +59,7 @@ impl Lexer {
         return string.at(self.input, self.pos);
     }
 
-    pub fn read_char(self) -> i64 {
+    pub fn read_char(mut self) -> i64 {
         if self.pos >= self.len {
             return 0;
         }
@@ -74,13 +74,13 @@ impl Lexer {
         return c;
     }
 
-    pub fn skip_whitespace(self) {
+    pub fn skip_whitespace(mut self) {
         while is_whitespace(self.peek_char()) {
             let _ = self.read_char();
         }
     }
 
-    fn read_identifier(self, first: i64) -> String {
+    fn read_identifier(mut self, first: i64) -> String {
         let start = self.pos - 1;
         while is_alphanumeric(self.peek_char()) {
             let _ = self.read_char();
@@ -88,7 +88,7 @@ impl Lexer {
         return string.substr(self.input, start, self.pos - start);
     }
 
-    pub fn next_token(self) -> compiler.token.Token {
+    pub fn next_token(mut self) -> compiler.token.Token {
         self.skip_whitespace();
         let line = self.line;
         let col = self.col;
@@ -109,8 +109,24 @@ impl Lexer {
         else if ch == 93 { kind = compiler.token.TokenKind::RBracket; } // ']'
         else if ch == 44 { kind = compiler.token.TokenKind::Comma; } // ','
         else if ch == 59 { kind = compiler.token.TokenKind::Semicolon; } // ';'
+        else if ch == 58 { // ':'
+            if self.peek_char() == 58 { // '::'
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::DoubleColon;
+            } else {
+                kind = compiler.token.TokenKind::Colon;
+            }
+        }
         else if ch == 42 { kind = compiler.token.TokenKind::Star; } // '*'
         else if ch == 43 { kind = compiler.token.TokenKind::Plus; } // '+'
+        else if ch == 45 { // '-'
+            if self.peek_char() == 62 { // '->'
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::Arrow;
+            } else {
+                kind = compiler.token.TokenKind::Minus;
+            }
+        }
         else if ch == 37 { kind = compiler.token.TokenKind::Percent; } // '%'
         else if ch == 94 { kind = compiler.token.TokenKind::Caret; } // '^'
         else if ch == 63 { kind = compiler.token.TokenKind::Question; } // '?'
@@ -123,7 +139,7 @@ impl Lexer {
                 kind = compiler.token.TokenKind::EqEq;
             } else if self.peek_char() == 62 { // '=>'
                 let _ = self.read_char();
-                kind = compiler.token.TokenKind::Arrow;
+                kind = compiler.token.TokenKind::Arrow; // actually should probably be FatArrow if it exists, but Aion might use Arrow for both or maybe Arrow is just ->
             } else {
                 kind = compiler.token.TokenKind::Eq;
             }
@@ -141,9 +157,44 @@ impl Lexer {
             } else {
                 kind = compiler.token.TokenKind::Dot;
             }
+        } else if ch == 60 { // '<'
+            if self.peek_char() == 45 { // '<-'
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::LArrow;
+            } else if self.peek_char() == 61 { // '<='
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::LtEq;
+            } else {
+                kind = compiler.token.TokenKind::Lt;
+            }
+        } else if ch == 62 { // '>'
+            if self.peek_char() == 61 { // '>='
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::GtEq;
+            } else {
+                kind = compiler.token.TokenKind::Gt;
+            }
+        } else if ch == 124 { // '|'
+            if self.peek_char() == 62 { // '|>'
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::Pipeline;
+            } else if self.peek_char() == 124 { // '||'
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::Or;
+            } else {
+                kind = compiler.token.TokenKind::Illegal(ch);
+            }
+        } else if ch == 38 { // '&'
+            if self.peek_char() == 38 { // '&&'
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::And;
+            } else {
+                kind = compiler.token.TokenKind::Illegal(ch);
+            }
         } else if is_alpha(ch) {
             // Identifier / Keywords
             let ident = self.read_identifier(ch);
+            
             if std.string.equals(ident, "fn") { kind = compiler.token.TokenKind::Fn; }
             else if std.string.equals(ident, "let") { kind = compiler.token.TokenKind::Let; }
             else if std.string.equals(ident, "if") { kind = compiler.token.TokenKind::If; }

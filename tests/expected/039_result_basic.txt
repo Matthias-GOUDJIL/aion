@@ -1,2 +1,0 @@
-Success: 5
-Error: Division by zero

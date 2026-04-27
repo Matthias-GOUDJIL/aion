@@ -1,0 +1,27 @@
+use compiler.lexer
+use compiler.token
+use std.io
+use std.string
+
+fn main() {
+    let src = "fn add(a: i64, b: i64) -> i64 { return a + b }"
+    
+    let mut lex = compiler.lexer.Lexer_new(src)
+    
+    let mut count = 0
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        count = count + 1
+        
+        match tok.kind {
+            compiler.token.TokenKind::EOF => {
+                done = true
+            },
+            _ => { }
+        }
+    }
+    
+    io.print("Self-hosted lexer tokens: ")
+    io.println(string.from_int(count))
+}
