@@ -79,7 +79,7 @@ fn main() {
 
             // Fix: Add PIC relocation model for modern Linux compatibility
             let llc_status = Command::new("llc-15")
-                .args(&["-filetype=obj", "-relocation-model=pic", &ir_file, "-o", &obj_file])
+                .args(["-filetype=obj", "-relocation-model=pic", &ir_file, "-o", &obj_file])
                 .status();
 
             if llc_status.is_err() || !llc_status.unwrap().success() {
@@ -95,7 +95,7 @@ fn main() {
             }
 
             let gcc_status = Command::new("gcc")
-                .args(&[&obj_file, "src/runtime.c", "-o", &bin_file, "-lpthread", "-lgc"])
+                .args([&obj_file, "src/runtime.c", "-o", &bin_file, "-lpthread", "-lgc"])
                 .status();
 
             if gcc_status.is_err() || !gcc_status.unwrap().success() {

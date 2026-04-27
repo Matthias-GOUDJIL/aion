@@ -104,6 +104,10 @@ pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), String> {
     let context = Context::create();
     let mut compiler = Compiler::new(&context, "aion_module");
     compiler.compile(&program)?;
+
+    // 3. Run Optimization Passes
+    compiler.optimize()?;
+
     compiler.print_to_file(Path::new(output_path))?;
 
     Ok(())

@@ -3,9 +3,11 @@ use std::collections::{HashMap, HashSet};
 use inkwell::context::Context;
 use inkwell::builder::Builder;
 use inkwell::module::Module;
-use inkwell::values::{BasicValueEnum, PointerValue, FunctionValue, BasicValue, ValueKind};
+use inkwell::values::{BasicValueEnum, PointerValue, FunctionValue, ValueKind, BasicValue};
 use inkwell::types::{StructType, BasicTypeEnum, BasicType};
 use inkwell::{AddressSpace, IntPredicate};
+use inkwell::passes::{PassManager, PassManagerBuilder};
+use inkwell::OptimizationLevel;
 use crate::ast::*;
 use crate::token::TokenKind;
 
@@ -672,7 +674,7 @@ impl<'ctx> Compiler<'ctx> {
                 let mut is_mc = false;
                 if let Some((rn, mn)) = fnm.rsplit_once('.') {
                      let re = Expression::Identifier(rn.to_string());
-                     let mut tn = self.get_expr_type_name(&re, variables);
+                     let tn = self.get_expr_type_name(&re, variables);
                      if (tn.starts_with('*') || tn.contains("ptr")) && mn == "offset" && arguments.len() == 1 {
                          let idx = self.compile_expr(&arguments[0], variables, function)?.into_int_value();
                          let ptr = if let Ok((p, _)) = self.compile_lvalue(&re, variables, function) {
@@ -1106,6 +1108,24 @@ impl<'ctx> Compiler<'ctx> {
             _ => "unknown".to_string(),
         };
         res.replace(" ", "")
+    }
+
+    pub fn optimize(&self) -> Result<(), String> {
+        let builder = PassManagerBuilder::create();
+        builder.set_optimization_level(OptimizationLevel::Aggressive);
+
+        let fpm = PassManager::create(&self.module);
+        builder.populate_function_pass_manager(&fpm);
+
+        for function in self.module.get_functions() {
+            fpm.run_on(&function);
+        }
+
+        let mpm = PassManager::create(());
+        builder.populate_module_pass_manager(&mpm);
+        mpm.run_on(&self.module);
+
+        Ok(())
     }
 
     pub fn print_to_file(&self, path: &Path) -> Result<(), String> { 

@@ -13,6 +13,12 @@ pub struct TypeChecker {
     in_unsafe_context: bool,
 }
 
+impl Default for TypeChecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TypeChecker {
     pub fn new() -> Self {
         let mut checker = Self { 
@@ -32,8 +38,8 @@ impl TypeChecker {
         }
         
         let trimmed = name.trim();
-        if trimmed.starts_with('*') {
-            return Type::Pointer(Box::new(self.resolve_type(trimmed[1..].trim())));
+        if let Some(stripped) = trimmed.strip_prefix('*') {
+            return Type::Pointer(Box::new(self.resolve_type(stripped.trim())));
         }
 
         match trimmed {
@@ -242,15 +248,14 @@ impl TypeChecker {
             },
             Expression::Identifier(name) => {
                 if let Some(t) = self.env.get(name) { return Ok(t); }
-                if let Some((var, field)) = name.split_once('.') {
-                    if let Ok(rt) = self.check_expression(&Expression::Identifier(var.to_string())) {
+                if let Some((var, field)) = name.split_once('.')
+                    && let Ok(rt) = self.check_expression(&Expression::Identifier(var.to_string())) {
                         let tn = match rt { Type::GenericInstance(n, _) | Type::Struct { name: n } => n, _ => "".to_string() };
                         if !tn.is_empty() {
                             let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
                             if let Some(t) = self.env.get(&format!("{}.{}", full, field)) { return Ok(t); }
                         }
                     }
-                }
                 Ok(Type::Unknown)
             },
             Expression::Infix { left, operator, right } => {
@@ -301,8 +306,8 @@ impl TypeChecker {
                 let rt = self.check_expression(receiver)?;
                 
                 // Special case for Pointer.offset()
-                if method == "offset" {
-                    if let Type::Pointer(_) = rt {
+                if method == "offset"
+                    && let Type::Pointer(_) = rt {
                         // Check argument is integer
                         if !arguments.is_empty() {
                             let arg_type = self.check_expression(&arguments[0])?;
@@ -310,7 +315,6 @@ impl TypeChecker {
                         }
                         return Ok(rt); // offset returns same pointer type
                     }
-                }
 
                 let tn = match rt { 
                     Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } | Type::Enum { name: ref n } => n.clone(), 
@@ -342,12 +346,11 @@ impl TypeChecker {
             Expression::Intrinsic { name, arguments } => {
                 let mut actual_name = name.clone();
                 let mut args = arguments.as_slice();
-                if name == "intrinsic" && !arguments.is_empty() {
-                    if let Expression::String(s) = &arguments[0] {
+                if name == "intrinsic" && !arguments.is_empty()
+                    && let Expression::String(s) = &arguments[0] {
                         actual_name = s.clone();
                         args = &arguments[1..];
                     }
-                }
                 for arg in args { self.check_expression(arg)?; }
                 if actual_name == "str_len" || actual_name == "fs_exists" || actual_name == "fs_write" || actual_name == "fs_append" { Ok(Type::Integer) }
                 else if actual_name == "str_concat" || actual_name == "fs_read_to_string" || actual_name == "int_to_str" || actual_name == "float_to_str" || actual_name == "char_to_str" || actual_name == "str_substr" { Ok(Type::String) }
@@ -402,12 +405,10 @@ impl TypeChecker {
                 }
             },
             Type::String => {
-                if t2 == Type::String || t2 == Type::Integer {
-                    if op.kind == TokenKind::Plus { return Ok(Type::String); }
-                }
-                if t2 == Type::String {
-                    if matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq) { return Ok(Type::Boolean); }
-                }
+                if (t2 == Type::String || t2 == Type::Integer)
+                    && op.kind == TokenKind::Plus { return Ok(Type::String); }
+                if t2 == Type::String
+                    && matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq) { return Ok(Type::Boolean); }
             },
             Type::Placeholder(_) => { return Ok(t1.clone()); },
             Type::Date => {

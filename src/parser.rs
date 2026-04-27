@@ -354,9 +354,8 @@ impl<'a> Parser<'a> {
         } else {
             let is_extern = modifiers.iter().any(|m| m.kind == TokenKind::Extern);
             let is_intrinsic = attributes.iter().any(|(k, _)| k == "intrinsic");
-            if is_extern || is_intrinsic {
-                if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
-            }
+            if (is_extern || is_intrinsic)
+                && self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
         }
         Some(Function { name, generic_params, params, return_type, body, modifiers, attributes })
     }

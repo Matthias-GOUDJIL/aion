@@ -166,14 +166,12 @@ impl<'a> Lexer<'a> {
 
     fn read_block_comment(&mut self) {
         while let Some(ch) = self.read_char() {
-            if ch == '*' {
-                if let Some(&next) = self.input.peek() {
-                    if next == '/' {
+            if ch == '*'
+                && let Some(&next) = self.input.peek()
+                    && next == '/' {
                         self.read_char();
                         break;
                     }
-                }
-            }
         }
     }
 
@@ -265,9 +263,8 @@ impl<'a> Lexer<'a> {
             if ch == '.' {
                 let mut lookahead = self.input.clone();
                 lookahead.next();
-                if let Some(&next) = lookahead.peek() {
-                    if next == '.' { break; }
-                }
+                if let Some(&next) = lookahead.peek()
+                    && next == '.' { break; }
                 
                 is_float = true;
                 num_str.push(self.read_char().unwrap());
