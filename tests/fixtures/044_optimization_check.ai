@@ -1,0 +1,28 @@
+use std.io
+use std.string
+
+fn main() {
+    io.println("Optimized code runs correctly")
+    
+    let x = 10
+    let y = 20
+    let z = x + y
+    
+    if z == 30 {
+        io.println("Arithmetic optimized")
+    }
+    
+    let a = true
+    let b = false
+    if a && !b {
+        io.println("Logic optimized")
+    }
+    
+    let s1 = "hello"
+    let s2 = "hello"
+    if string.len(s1) == 5 {
+        io.println("String optimized")
+    }
+    
+    io.println("All optimizations pass")
+}

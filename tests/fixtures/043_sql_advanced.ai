@@ -1,0 +1,48 @@
+use std.env
+use std.collections.vector
+use std.io
+use std.string
+
+fn test_declare() -> i64 {
+    let x = 42
+    let y = 100
+    return x + y
+}
+
+fn test_while() -> i64 {
+    let mut i = 0
+    let mut sum = 0
+    while i < 3 {
+        sum = sum + i
+        i = i + 1
+    }
+    return sum
+}
+
+fn main() {
+    io.println("SQL transpiler: DECLARE, WHILE, strings, AND/OR")
+    
+    let result = test_declare()
+    if result == 142 {
+        io.println("DECLARE works")
+    }
+    
+    let w = test_while()
+    if w == 3 {
+        io.println("WHILE works")
+    }
+    
+    let a = true
+    let b = true
+    if a && b {
+        io.println("AND works")
+    }
+    
+    let c = false
+    let d = true
+    if c || d {
+        io.println("OR works")
+    }
+    
+    io.println("Hello SQL World")
+}

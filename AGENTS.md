@@ -43,6 +43,8 @@ conductor/     — Project planning and roadmap docs
 - `005_unsafe_check` is an **expected failure** (tests unsafe block enforcement)
 - New expected output files are auto-created on first run if missing
 - **Always run `python3 runner.py` after any compiler change before committing**
+- **Create a test for every new feature or bug fix** — if behavior changes, add or update a fixture
+- **Create a test for every new feature or bug fix** — if behavior changes, add or update a fixture
 
 ## Architectural Invariants
 
