@@ -75,7 +75,7 @@ This document outlines the technical path to transform Aion from its current Rus
 *Goal: Rewrite the compiler core (currently in Rust) in the Aion language.*
 
 ### **v0.7: Aion Lexer**
-- [ ] `lexer.ai` implementation. Validation by the Rust (Bootstrap) compiler.
+- [x] `lexer.ai` implementation. Validation by the Rust (Bootstrap) compiler.
 
 ### **v0.8: Aion Parser**
 - [ ] `parser.ai` implementation. AST manipulation via Aion `struct` and `match`.
