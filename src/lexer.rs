@@ -190,7 +190,7 @@ impl<'a> Lexer<'a> {
         let mut ident = String::from(first);
         while let Some(&ch) = self.input.peek() {
             if !ch.is_alphanumeric() && ch != '_' { break; }
-            ident.push(self.read_char().unwrap());
+            if let Some(c) = self.read_char() { ident.push(c); }
         }
         ident
     }
@@ -199,7 +199,7 @@ impl<'a> Lexer<'a> {
         let mut s = String::new();
         while let Some(&ch) = self.input.peek() {
             if ch == '"' { self.read_char(); break; }
-            s.push(self.read_char().unwrap());
+            if let Some(c) = self.read_char() { s.push(c); }
         }
         TokenKind::StringLiteral(s)
     }
@@ -208,7 +208,7 @@ impl<'a> Lexer<'a> {
         let mut s = String::new();
         while let Some(&ch) = self.input.peek() {
             if ch == '"' { self.read_char(); break; }
-            s.push(self.read_char().unwrap());
+            if let Some(c) = self.read_char() { s.push(c); }
         }
         TokenKind::FString(s)
     }
@@ -267,9 +267,9 @@ impl<'a> Lexer<'a> {
                     && next == '.' { break; }
                 
                 is_float = true;
-                num_str.push(self.read_char().unwrap());
+                if let Some(c) = self.read_char() { num_str.push(c); }
             } else if ch.is_numeric() {
-                num_str.push(self.read_char().unwrap());
+                if let Some(c) = self.read_char() { num_str.push(c); }
             } else {
                 break;
             }
@@ -278,7 +278,7 @@ impl<'a> Lexer<'a> {
         let mut suffix = String::new();
         while let Some(&ch) = self.input.peek() {
             if ch.is_alphabetic() {
-                suffix.push(self.read_char().unwrap());
+                if let Some(c) = self.read_char() { suffix.push(c); }
             } else {
                 break;
             }

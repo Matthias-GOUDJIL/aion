@@ -57,18 +57,19 @@ impl TypeChecker {
                     if let Some(t) = self.env.get(&full_name) { return t; }
                 }
                 if trimmed.contains('<') && trimmed.ends_with('>') {
-                    let start = trimmed.find('<').unwrap();
-                    let base = trimmed[..start].to_string();
-                    let args_str = &trimmed[start+1..trimmed.len()-1];
-                    let mut ga = Vec::new();
-                    // Simple split by comma (doesn't handle nested generics perfectly, but sufficient for Phase 1)
-                    for part in args_str.split(',') {
-                        let pt = part.trim().to_string();
-                        if !pt.is_empty() {
-                            ga.push(self.resolve_type(&pt));
+                    if let Some(start) = trimmed.find('<') {
+                        let base = trimmed[..start].to_string();
+                        let args_str = &trimmed[start+1..trimmed.len()-1];
+                        let mut ga = Vec::new();
+                        // Simple split by comma (doesn't handle nested generics perfectly, but sufficient for Phase 1)
+                        for part in args_str.split(',') {
+                            let pt = part.trim().to_string();
+                            if !pt.is_empty() {
+                                ga.push(self.resolve_type(&pt));
+                            }
                         }
+                        return Type::GenericInstance(base, ga);
                     }
-                    return Type::GenericInstance(base, ga);
                 }
                 Type::Placeholder(trimmed.to_string())
             }
@@ -119,7 +120,7 @@ impl TypeChecker {
                 Declaration::Impl(i) => {
                     let mut full_target = i.target_name.clone();
                     if !i.generic_params.is_empty() { full_target = format!("{}<{}>", i.target_name, i.generic_params.join(", ")); }
-                    let base_target = if i.target_name.contains('<') { i.target_name.split('<').next().unwrap() } else { &i.target_name };
+                    let base_target = if i.target_name.contains('<') { i.target_name.split('<').next().unwrap_or(&i.target_name) } else { &i.target_name };
                     for f in &i.functions {
                         let name = format!("{}::{}", base_target, f.name);
                         self.decls.insert(name.clone(), Declaration::Function(f.clone()));

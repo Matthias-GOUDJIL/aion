@@ -477,7 +477,12 @@ impl<'a> Parser<'a> {
 
                         if self.current_token.kind == TokenKind::Arrow {
                             self.next_token();
-                            let body = if self.current_token.kind == TokenKind::LBrace { self.parse_block() } else { vec![self.parse_statement().unwrap()] };
+                            let body = if self.current_token.kind == TokenKind::LBrace { self.parse_block() } else {
+                                match self.parse_statement() {
+                                    Some(s) => vec![s],
+                                    None => vec![],
+                                }
+                            };
                             arms.push(MatchArm { pattern, params, body });
                         }
                     } else if self.current_token.kind != TokenKind::Comma {
