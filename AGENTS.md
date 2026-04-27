@@ -42,6 +42,23 @@ conductor/     — Project planning and roadmap docs
 - Output is parsed between `-------------------------------` delimiter lines
 - `005_unsafe_check` is an **expected failure** (tests unsafe block enforcement)
 - New expected output files are auto-created on first run if missing
+- **Always run `python3 runner.py` after any compiler change before committing**
+
+## Architectural Invariants
+
+- **Enum layout**: compiled as `{ i64, [64 x i8] }`. Index 0 = Tag, Index 1 = Payload. Tags: `Some/Ok = 0`, `None/Err = 1`
+- **Global args**: `argc`/`argv` stored in global LLVM variables `aion_argc`/`aion_argv`, set in `main`
+- **`io.println`** only accepts `String`. Convert non-string types with `string.from_int`, `string.from_float`, etc.
+- **Block termination**: every LLVM basic block in `compiler.rs` must be terminated. Check `builder.get_insert_block().unwrap().get_terminator().is_none()` before adding default returns
+- **Inkwell safety**: use `ValueKind` matching for call results instead of `inkwell::values::Either`
+
+## Coding Standards
+
+- **Completion first**: never start a new feature if existing ones are incomplete or untested
+- **No dead code**: remove commented-out blocks and unused code immediately
+- **No debug prints**: use `eprintln!` with feature flags, not `println!` for debugging
+- **SPEC alignment**: code behavior must match `docs/SPEC.md`. If code changes, update SPEC first
+- **Zero-cost abstractions**: verify generated IR is optimal, isolate `unsafe` blocks, use `Result<T, E>` extensively
 
 ## Toolchain Quirks
 
@@ -51,8 +68,15 @@ conductor/     — Project planning and roadmap docs
 - **Rust edition 2024** (see `Cargo.toml`)
 - Import resolution: `compiler.*` → project root, everything else → `stdlib/`
 
+## Debugging
+
+- **LLVM IR inspection**: run `./aion build file.ai` and check `output.ll` for `undef`, `null`, or misaligned pointers
+- **Verify IR**: `opt-15 -verify output.ll`
+- **GDB**: `gdb --args ./aion build file.ai`
+- **AddressSanitizer**: `RUSTFLAGS="-Z sanitizer=address" cargo build` (requires nightly)
+
 ## Conventions
 
 - All code, comments, variable names, and commit messages in **English only**
 - Read `docs/SPEC.md` before contributing to the compiler
-- The `.cursorrules` file contains AI interaction rules (ask before acting, no auto-commits)
+- **Never run git add, commit, or push without explicit user approval**

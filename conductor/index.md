@@ -1,20 +1,17 @@
 # Aion Project Conductor
 
-Welcome to the Aion project conductor. This space orchestrates the development of the Aion system programming language.
+This space orchestrates the development of the Aion system programming language.
 
-## 🧭 Project Status
-**Phase:** 1.6 - Rigor & Completeness (Bug fixing & Stabilization)
-**Last Major Update:** Fix Parser Loop & Ambiguity (StructInst/If)
+## Navigation
 
-## 🗺️ Navigation
+- [Product Definition](product.md): What is Aion?
+- [Tech Stack](tech-stack.md): Rust, LLVM, Python.
+- [Workflows](workflow.md): Build, test, and feature protocols.
+- [Tracks Registry](tracks.md): Active development streams.
 
--   [Product Definition](product.md): What is Aion?
--   [Tech Stack](tech-stack.md): Rust, LLVM, Python.
--   [Workflows](workflow.md): AI Personas & Protocols.
--   [Tracks Registry](tracks.md): Active development streams.
+## Core Links
 
-## 📂 Core Links
-
--   [Specification](../docs/SPEC.md)
--   [Standard Library API](../docs/API.md)
--   [Source Code](../src/)
+- [Specification](../docs/SPEC.md)
+- [Standard Library API](../docs/API.md)
+- [Agent Instructions](../AGENTS.md)
+- [Source Code](../src/)

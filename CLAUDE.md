@@ -1,4 +1,4 @@
-# Aion — AI Workflow Rules
+# Aion — Agent Instructions
 
 All project instructions, conventions, and workflow rules are maintained in a single source of truth:
 
