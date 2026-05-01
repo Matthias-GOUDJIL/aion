@@ -12,9 +12,9 @@
 | `TRACK-006` | [Rigor & Intelligence](tracks/rigor-intelligence/index.md) | ✅ Done | Architect | Stabilize core (Method Chaining, Short-circuiting) and start AI Tensor. |
 | `TRACK-007` | [Error Handling](tracks/error-handling/index.md) | ✅ Done | Librarian | Implement `Result<T, E>` enum support and robust error management. |
 | `TRACK-010` | [Self-Hosting Lexer](tracks/self-hosting-lexer/index.md) | ✅ Done | Architect | Start Phase 2 by writing the Aion Lexer in pure Aion (`lexer.ai`). |
+| `TRACK-011` | [Self-Hosting Parser](tracks/self-hosting-parser/index.md) | 🔄 In Progress | Architect | Phase 2.1: Implement Aion's AST and Parser (`parser.ai`) in pure Aion. |
 
 ## Backlog
 
 -   `TRACK-008`: Memory Safety (Borrow Checker prototype).
 -   `TRACK-009`: Networking (TCP/HTTP stack).
--   `TRACK-011`: Self-Hosting Parser (`parser.ai`).

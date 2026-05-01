@@ -1,0 +1,174 @@
+module compiler.parser
+
+use std.collections.vector
+use std.option
+use std.result
+use compiler.token
+use compiler.ast
+
+pub struct Parser {
+    tokens: vector.Vector<token.Token>,
+    current: i64,
+}
+
+impl Parser {
+    pub fn new(tokens: vector.Vector<token.Token>) -> Parser {
+        Parser {
+            tokens: tokens,
+            current: 0,
+        }
+    }
+
+    pub fn is_at_end(self) -> bool {
+        let tk = self.peek();
+        match tk.kind {
+            token.TokenKind::EOF => true,
+            _ => false,
+        }
+    }
+
+    pub fn peek(self) -> token.Token {
+        if self.current >= self.tokens.len() {
+            return token.Token::new(token.TokenKind::EOF, 0, 0);
+        }
+        let opt_token = self.tokens.get(self.current);
+        return opt_token.unwrap(); // Or unwrap_or(token.Token::new(token.TokenKind::EOF, 0, 0))
+    }
+
+    pub fn previous(self) -> token.Token {
+        if self.current == 0 {
+            return self.tokens.get(0).unwrap();
+        }
+        return self.tokens.get(self.current - 1).unwrap();
+    }
+
+    pub fn advance(mut self) -> token.Token {
+        if !self.is_at_end() {
+            self.current = self.current + 1;
+        }
+        return self.previous();
+    }
+
+    pub fn get_precedence(self, kind: token.TokenKind) -> i64 {
+        match kind {
+            token.TokenKind::Star => { return 8; },
+            token.TokenKind::Slash => { return 8; },
+            token.TokenKind::Percent => { return 8; },
+            token.TokenKind::As => { return 7; },
+            token.TokenKind::Plus => { return 6; },
+            token.TokenKind::Minus => { return 6; },
+            token.TokenKind::Caret => { return 5; },
+            token.TokenKind::Gt => { return 4; },
+            token.TokenKind::Lt => { return 4; },
+            token.TokenKind::GtEq => { return 4; },
+            token.TokenKind::LtEq => { return 4; },
+            token.TokenKind::EqEq => { return 4; },
+            token.TokenKind::NotEq => { return 4; },
+            token.TokenKind::Inside => { return 4; },
+            token.TokenKind::And => { return 3; },
+            token.TokenKind::Or => { return 2; },
+            token.TokenKind::Pipeline => { return 1; },
+            _ => { return 0; },
+        }
+        return 0;
+    }
+
+    pub fn parse_infix(mut self, precedence: i64) -> result.Result<ast.Expression, String> {
+        let left_res = self.parse_primary();
+        if left_res.is_err() {
+            return left_res;
+        }
+        let mut left = left_res.unwrap();
+        
+        let mut loop_condition = true;
+        while loop_condition {
+            let tk = self.peek();
+            
+            let mut is_eof = false;
+            match tk.kind {
+                token.TokenKind::EOF => { is_eof = true; },
+                _ => { is_eof = false; },
+            }
+            if is_eof {
+                loop_condition = false;
+            } else {
+                let op_prec = self.get_precedence(tk.kind);
+                if op_prec <= precedence {
+                    loop_condition = false;
+                } else {
+                    let op = self.advance();
+                    
+                    let right_res = self.parse_infix(op_prec);
+                    if right_res.is_err() {
+                        return right_res;
+                    }
+                    let right = right_res.unwrap();
+                    
+                    left = ast.Expression::Infix(left, op, right);
+                }
+            }
+        }
+        
+        return result.Result::Ok(left);
+    }
+
+    pub fn parse_expression(mut self) -> result.Result<ast.Expression, String> {
+        return self.parse_infix(0);
+    }
+
+    pub fn parse_primary(mut self) -> result.Result<ast.Expression, String> {
+        let tk = self.advance();
+        match tk.kind {
+            token.TokenKind::IntLiteral(val) => {
+                return result.Result::Ok(ast.Expression::Integer(val));
+            },
+            token.TokenKind::FloatLiteral(val) => {
+                return result.Result::Ok(ast.Expression::Float(val));
+            },
+            token.TokenKind::StringLiteral(val) => {
+                return result.Result::Ok(ast.Expression::StringLit(val));
+            },
+            token.TokenKind::Identifier(val) => {
+                return result.Result::Ok(ast.Expression::Identifier(val));
+            },
+            token.TokenKind::SelfToken => {
+                return result.Result::Ok(ast.Expression::Identifier("self"));
+            },
+            token.TokenKind::DurationLiteral(secs, nanos) => {
+                return result.Result::Ok(ast.Expression::DurationLit(secs, nanos));
+            },
+            token.TokenKind::DateLiteral(ts) => {
+                return result.Result::Ok(ast.Expression::DateLit(ts));
+            },
+            token.TokenKind::True => {
+                return result.Result::Ok(ast.Expression::Boolean(true));
+            },
+            token.TokenKind::False => {
+                return result.Result::Ok(ast.Expression::Boolean(false));
+            },
+            token.TokenKind::LParen => {
+                let expr_res = self.parse_expression();
+                if expr_res.is_err() {
+                    return expr_res;
+                }
+                
+                let next_tk = self.peek();
+                let mut is_rparen = false;
+                match next_tk.kind {
+                    token.TokenKind::RParen => { is_rparen = true; },
+                    _ => { is_rparen = false; }
+                }
+                
+                if is_rparen {
+                    self.advance();
+                    return expr_res;
+                } else {
+                    return result.Result::Err("Expected ')' after expression");
+                }
+            },
+            _ => {
+                return result.Result::Err("Expected expression in parse_primary");
+            }
+        }
+    }
+}
