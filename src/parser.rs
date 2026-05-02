@@ -803,7 +803,7 @@ impl<'a> Parser<'a> {
                     let is_struct = if next_tok.kind == TokenKind::RBrace { true } 
                         else if let TokenKind::Identifier(_) = next_tok.kind {
                             let next_next = self.peek_at(1);
-                            matches!(next_next.kind, TokenKind::Colon | TokenKind::Eq)
+                            next_next.kind == TokenKind::Colon
                         } else { false };
                     
                     if is_struct {
@@ -812,12 +812,20 @@ impl<'a> Parser<'a> {
                         while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
                             if let TokenKind::Identifier(f_name) = self.current_token.clone().kind {
                                 self.next_token();
-                                if self.current_token.kind == TokenKind::Colon || self.current_token.kind == TokenKind::Eq {
+                                if self.current_token.kind == TokenKind::Colon {
                                     self.next_token();
                                     fields.push((f_name, self.parse_expression()));
+                                } else {
+                                    break;
                                 }
+                            } else {
+                                break;
                             }
-                            if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                            if self.current_token.kind == TokenKind::Comma { 
+                                self.next_token(); 
+                            } else if self.current_token.kind != TokenKind::RBrace {
+                                break;
+                            }
                         }
                         if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
                         let (name, generic_args) = match expr {

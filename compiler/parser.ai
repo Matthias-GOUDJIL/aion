@@ -32,7 +32,7 @@ impl Parser {
             return token.Token::new(token.TokenKind::EOF, 0, 0);
         }
         let opt_token = self.tokens.get(self.current);
-        return opt_token.unwrap(); // Or unwrap_or(token.Token::new(token.TokenKind::EOF, 0, 0))
+        return opt_token.unwrap();
     }
 
     pub fn previous(self) -> token.Token {
@@ -71,6 +71,14 @@ impl Parser {
             _ => { return 0; },
         }
         return 0;
+    }
+
+    pub fn parse_type_name(mut self) -> String {
+        let tk = self.advance();
+        match tk.kind {
+            token.TokenKind::Identifier(val) => { return val; },
+            _ => { return "UnknownType"; }
+        }
     }
 
     pub fn parse_infix(mut self, precedence: i64) -> result.Result<ast.Expression, String> {
@@ -170,5 +178,400 @@ impl Parser {
                 return result.Result::Err("Expected expression in parse_primary");
             }
         }
+    }
+
+    pub fn parse_block(mut self) -> result.Result<vector.Vector<ast.Statement>, String> {
+        let mut stmts = vector.Vector<ast.Statement>.new();
+        
+        let tk = self.peek();
+        let mut is_lbrace = false;
+        match tk.kind {
+            token.TokenKind::LBrace => { is_lbrace = true; },
+            _ => { is_lbrace = false; },
+        }
+        
+        if is_lbrace {
+            self.advance();
+        }
+        
+        let mut loop_condition = true;
+        while loop_condition {
+            let next_tk = self.peek();
+            
+            let mut is_end = false;
+            match next_tk.kind {
+                token.TokenKind::RBrace => { is_end = true; },
+                token.TokenKind::EOF => { is_end = true; },
+                _ => { is_end = false; },
+            }
+            
+            if is_end {
+                loop_condition = false;
+            } else {
+                let mut is_semi = false;
+                match next_tk.kind {
+                    token.TokenKind::Semicolon => { is_semi = true; },
+                    _ => { is_semi = false; },
+                }
+                
+                if is_semi {
+                    self.advance();
+                } else {
+                    let stmt_res = self.parse_statement();
+                    if stmt_res.is_err() {
+                        return result.Result::Err(stmt_res.unwrap_err());
+                    }
+                    stmts.push(stmt_res.unwrap());
+                    
+                    let check_semi = self.peek();
+                    let mut needs_consume = false;
+                    match check_semi.kind {
+                        token.TokenKind::Semicolon => { needs_consume = true; },
+                        _ => { needs_consume = false; },
+                    }
+                    if needs_consume {
+                        self.advance();
+                    }
+                }
+            }
+        }
+        
+        let end_tk = self.peek();
+        let mut consume_end = false;
+        match end_tk.kind {
+            token.TokenKind::RBrace => { consume_end = true; },
+            _ => { consume_end = false; },
+        }
+        if consume_end {
+            self.advance();
+        }
+        
+        return result.Result::Ok(stmts);
+    }
+
+    pub fn parse_statement(mut self) -> result.Result<ast.Statement, String> {
+        let tk = self.peek();
+        
+        match tk.kind {
+            token.TokenKind::Let => {
+                self.advance(); // consume let
+                
+                let mut is_mut = false;
+                let check_mut = self.peek();
+                match check_mut.kind {
+                    token.TokenKind::Mut => {
+                        is_mut = true;
+                        self.advance();
+                    },
+                    _ => {},
+                }
+                
+                let name_tk = self.advance();
+                let mut name = "";
+                match name_tk.kind {
+                    token.TokenKind::Identifier(val) => { name = val; },
+                    _ => { return result.Result::Err("Expected identifier after let"); },
+                }
+                
+                let eq_tk = self.peek();
+                let mut is_eq = false;
+                match eq_tk.kind {
+                    token.TokenKind::Eq => { is_eq = true; },
+                    _ => { is_eq = false; },
+                }
+                
+                if is_eq {
+                    self.advance(); // consume =
+                    let val_res = self.parse_expression();
+                    if val_res.is_err() { return result.Result::Err(val_res.unwrap_err()); }
+                    let val = val_res.unwrap();
+                    
+                    let check_semi = self.peek();
+                    let mut consume_semi = false;
+                    match check_semi.kind {
+                        token.TokenKind::Semicolon => { consume_semi = true; },
+                        _ => { consume_semi = false; },
+                    }
+                    if consume_semi { self.advance(); }
+                    
+                    return result.Result::Ok(ast.Statement::Let(name, val, "", is_mut));
+                } else {
+                    return result.Result::Err("Expected = after let identifier");
+                }
+            },
+            token.TokenKind::Return => {
+                self.advance(); // consume return
+                
+                let next_tk = self.peek();
+                let mut is_empty_return = false;
+                match next_tk.kind {
+                    token.TokenKind::Semicolon => { is_empty_return = true; },
+                    token.TokenKind::RBrace => { is_empty_return = true; },
+                    _ => { is_empty_return = false; },
+                }
+                
+                if is_empty_return {
+                    let check_semi = self.peek();
+                    let mut consume_semi = false;
+                    match check_semi.kind {
+                        token.TokenKind::Semicolon => { consume_semi = true; },
+                        _ => { consume_semi = false; },
+                    }
+                    if consume_semi { self.advance(); }
+                    return result.Result::Ok(ast.Statement::Return(ast.Expression::Integer(0), ""));
+                } else {
+                    let val_res = self.parse_expression();
+                    if val_res.is_err() { return result.Result::Err(val_res.unwrap_err()); }
+                    let val = val_res.unwrap();
+                    
+                    let check_semi = self.peek();
+                    let mut consume_semi = false;
+                    match check_semi.kind {
+                        token.TokenKind::Semicolon => { consume_semi = true; },
+                        _ => { consume_semi = false; },
+                    }
+                    if consume_semi { self.advance(); }
+                    
+                    return result.Result::Ok(ast.Statement::Return(val, ""));
+                }
+            },
+            token.TokenKind::If => {
+                self.advance(); // consume if
+                
+                let cond_res = self.parse_expression();
+                if cond_res.is_err() { return result.Result::Err(cond_res.unwrap_err()); }
+                let cond = cond_res.unwrap();
+                
+                let then_res = self.parse_block();
+                if then_res.is_err() { return result.Result::Err(then_res.unwrap_err()); }
+                let then_branch = then_res.unwrap();
+                
+                let else_tk = self.peek();
+                let mut has_else = false;
+                match else_tk.kind {
+                    token.TokenKind::Else => { has_else = true; },
+                    _ => { has_else = false; },
+                }
+                
+                if has_else {
+                    self.advance(); // consume else
+                    
+                    let next_if = self.peek();
+                    let mut is_else_if = false;
+                    match next_if.kind {
+                        token.TokenKind::If => { is_else_if = true; },
+                        _ => { is_else_if = false; },
+                    }
+                    
+                    if is_else_if {
+                        let stmt_res = self.parse_statement();
+                        if stmt_res.is_err() { return result.Result::Err(stmt_res.unwrap_err()); }
+                        let stmt = stmt_res.unwrap();
+                        let mut else_branch = vector.Vector<ast.Statement>.new();
+                        else_branch.push(stmt);
+                        return result.Result::Ok(ast.Statement::If(cond, then_branch, else_branch));
+                    } else {
+                        let else_res = self.parse_block();
+                        if else_res.is_err() { return result.Result::Err(else_res.unwrap_err()); }
+                        let else_branch = else_res.unwrap();
+                        return result.Result::Ok(ast.Statement::If(cond, then_branch, else_branch));
+                    }
+                } else {
+                    let else_branch = vector.Vector<ast.Statement>.new();
+                    return result.Result::Ok(ast.Statement::If(cond, then_branch, else_branch));
+                }
+            },
+            token.TokenKind::While => {
+                self.advance(); // consume while
+                
+                let cond_res = self.parse_expression();
+                if cond_res.is_err() { return result.Result::Err(cond_res.unwrap_err()); }
+                let cond = cond_res.unwrap();
+                
+                let body_res = self.parse_block();
+                if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
+                let body = body_res.unwrap();
+                
+                return result.Result::Ok(ast.Statement::While(cond, body));
+            },
+            _ => {
+                let expr_res = self.parse_expression();
+                if expr_res.is_err() { return result.Result::Err(expr_res.unwrap_err()); }
+                let expr = expr_res.unwrap();
+                
+                let eq_tk = self.peek();
+                let mut is_eq = false;
+                match eq_tk.kind {
+                    token.TokenKind::Eq => { is_eq = true; },
+                    _ => { is_eq = false; },
+                }
+                
+                if is_eq {
+                    self.advance(); // consume =
+                    let val_res = self.parse_expression();
+                    if val_res.is_err() { return result.Result::Err(val_res.unwrap_err()); }
+                    let val = val_res.unwrap();
+                    
+                    let check_semi = self.peek();
+                    let mut consume_semi = false;
+                    match check_semi.kind {
+                        token.TokenKind::Semicolon => { consume_semi = true; },
+                        _ => { consume_semi = false; },
+                    }
+                    if consume_semi { self.advance(); }
+                    
+                    return result.Result::Ok(ast.Statement::Assignment(expr, val));
+                } else {
+                    let check_semi = self.peek();
+                    let mut consume_semi = false;
+                    match check_semi.kind {
+                        token.TokenKind::Semicolon => { consume_semi = true; },
+                        _ => { consume_semi = false; },
+                    }
+                    if consume_semi { self.advance(); }
+                    
+                    return result.Result::Ok(ast.Statement::ExpressionStmt(expr));
+                }
+            }
+        }
+    }
+
+    pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
+        self.advance(); // consume fn
+        
+        let name_tk = self.advance();
+        let mut name = "";
+        match name_tk.kind {
+            token.TokenKind::Identifier(val) => { name = val; },
+            _ => { return result.Result::Err("Expected identifier after fn"); },
+        }
+        
+        let mut params = vector.Vector<ast.Param>.new();
+        let lparen_tk = self.advance();
+        let mut is_lparen = false;
+        match lparen_tk.kind {
+            token.TokenKind::LParen => { is_lparen = true; },
+            _ => { is_lparen = false; },
+        }
+        if !is_lparen { return result.Result::Err("Expected ( after fn name"); }
+        
+        let mut loop_condition = true;
+        while loop_condition {
+            let next_tk = self.peek();
+            let mut is_rparen = false;
+            match next_tk.kind {
+                token.TokenKind::RParen => { is_rparen = true; },
+                token.TokenKind::EOF => { is_rparen = true; },
+                _ => { is_rparen = false; },
+            }
+            if is_rparen {
+                loop_condition = false;
+            } else {
+                let p_name_tk = self.advance();
+                let mut p_name = "";
+                match p_name_tk.kind {
+                    token.TokenKind::Identifier(val) => { p_name = val; },
+                    _ => { return result.Result::Err("Expected parameter name"); },
+                }
+                
+                let colon_tk = self.advance();
+                let mut is_colon = false;
+                match colon_tk.kind {
+                    token.TokenKind::Colon => { is_colon = true; },
+                    _ => { is_colon = false; },
+                }
+                if !is_colon { return result.Result::Err("Expected : after parameter name"); }
+                
+                let p_type = self.parse_type_name();
+                
+                let p = ast.Param {
+                    name: p_name,
+                    type_name: p_type,
+                };
+                params.push(p);
+                
+                let check_comma = self.peek();
+                let mut is_comma = false;
+                match check_comma.kind {
+                    token.TokenKind::Comma => { is_comma = true; },
+                    _ => { is_comma = false; },
+                }
+                if is_comma { self.advance(); }
+            }
+        }
+        
+        let rparen_tk = self.advance(); // consume )
+        
+        let mut return_type = "void";
+        let check_arrow = self.peek();
+        let mut is_arrow = false;
+        match check_arrow.kind {
+            token.TokenKind::Arrow => { is_arrow = true; },
+            _ => { is_arrow = false; },
+        }
+        if is_arrow {
+            self.advance();
+            return_type = self.parse_type_name();
+        }
+        
+        let body_res = self.parse_block();
+        if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
+        let body = body_res.unwrap();
+        
+        let f = ast.Function {
+            name: name,
+            generic_params: vector.Vector<String>.new(),
+            params: params,
+            return_type: return_type,
+            has_body: true,
+            body: body,
+            modifiers: vector.Vector<token.Token>.new(),
+            attributes: vector.Vector<ast.Attribute>.new(),
+        };
+        
+        return result.Result::Ok(f);
+    }
+
+    pub fn parse_declaration(mut self) -> result.Result<ast.Declaration, String> {
+        let tk = self.peek();
+        match tk.kind {
+            token.TokenKind::Fn => {
+                let f_res = self.parse_function();
+                if f_res.is_err() { return result.Result::Err(f_res.unwrap_err()); }
+                return result.Result::Ok(ast.Declaration::Function(f_res.unwrap()));
+            },
+            _ => {
+                return result.Result::Err("Expected declaration");
+            }
+        }
+    }
+
+    pub fn parse_program(mut self) -> result.Result<ast.Program, String> {
+        let mut decls = vector.Vector<ast.Declaration>.new();
+        
+        let mut loop_condition = true;
+        while loop_condition {
+            let tk = self.peek();
+            let mut is_eof = false;
+            match tk.kind {
+                token.TokenKind::EOF => { is_eof = true; },
+                _ => { is_eof = false; },
+            }
+            if is_eof {
+                loop_condition = false;
+            } else {
+                let decl_res = self.parse_declaration();
+                if decl_res.is_err() { return result.Result::Err(decl_res.unwrap_err()); }
+                decls.push(decl_res.unwrap());
+            }
+        }
+        
+        let p = ast.Program {
+            module_name: "test",
+            imports: vector.Vector<ast.Import>.new(),
+            declarations: decls,
+        };
+        
+        return result.Result::Ok(p);
     }
 }

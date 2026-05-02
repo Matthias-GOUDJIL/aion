@@ -5,12 +5,12 @@ use compiler.token
 
 pub struct Program {
     module_name: String,
-    imports: Vector<Import>,
-    declarations: Vector<Declaration>,
+    imports: vector.Vector<Import>,
+    declarations: vector.Vector<Declaration>,
 }
 
 pub struct Import {
-    path: Vector<String>,
+    path: vector.Vector<String>,
     alias: String,
 }
 
@@ -24,14 +24,14 @@ pub enum Declaration {
 
 pub struct Interface {
     name: String,
-    methods: Vector<Function>,
+    methods: vector.Vector<Function>,
 }
 
 pub struct ImplBlock {
     target_name: String,
-    generic_params: Vector<String>,
+    generic_params: vector.Vector<String>,
     interface_name: String, // Empty string if None
-    functions: Vector<Function>,
+    functions: vector.Vector<Function>,
 }
 
 // In Aion, we might not have tuple types yet, or maybe we do. 
@@ -54,51 +54,51 @@ pub struct Attribute {
 
 pub struct Function {
     name: String,
-    generic_params: Vector<String>,
-    params: Vector<Param>,
+    generic_params: vector.Vector<String>,
+    params: vector.Vector<Param>,
     return_type: String,
     // body is Option in rust, we can use a boolean or an empty Vector to mean "no body" (for interfaces/externs)
     has_body: bool,
-    body: Vector<Statement>,
-    modifiers: Vector<Token>,
-    attributes: Vector<Attribute>,
+    body: vector.Vector<Statement>,
+    modifiers: vector.Vector<Token>,
+    attributes: vector.Vector<Attribute>,
 }
 
 pub struct Struct {
     name: String,
-    generic_params: Vector<String>,
-    fields: Vector<Field>,
-    attributes: Vector<String>,
+    generic_params: vector.Vector<String>,
+    fields: vector.Vector<Field>,
+    attributes: vector.Vector<String>,
 }
 
 pub struct Enum {
     name: String,
-    generic_params: Vector<String>,
-    variants: Vector<EnumVariant>,
+    generic_params: vector.Vector<String>,
+    variants: vector.Vector<EnumVariant>,
 }
 
 pub struct EnumVariant {
     name: String,
-    data_types: Vector<String>,
+    data_types: vector.Vector<String>,
 }
 
 pub struct MatchArm {
     pattern: String,
-    params: Vector<String>,
-    body: Vector<Statement>,
+    params: vector.Vector<String>,
+    body: vector.Vector<Statement>,
 }
 
 pub enum Statement {
     Let(String, Expression, String, bool), // name, value, intent, is_mut
     Return(Expression, String), // value, intent
     ExpressionStmt(Expression),
-    If(Expression, Vector<Statement>, Vector<Statement>), // condition, then_branch, else_branch (empty if none)
+    If(Expression, vector.Vector<Statement>, vector.Vector<Statement>), // condition, then_branch, else_branch (empty if none)
     Assignment(Expression, Expression), // target, value
-    While(Expression, Vector<Statement>),
-    For(String, Expression, Vector<Statement>),
-    Spawn(Vector<Statement>),
-    Match(Expression, Vector<MatchArm>),
-    UnsafeBlock(Vector<Statement>),
+    While(Expression, vector.Vector<Statement>),
+    For(String, Expression, vector.Vector<Statement>),
+    Spawn(vector.Vector<Statement>),
+    Match(Expression, vector.Vector<MatchArm>),
+    UnsafeBlock(vector.Vector<Statement>),
     NoOp
 }
 
@@ -116,16 +116,16 @@ pub enum Expression {
     Identifier(String),
     Boolean(bool),
     Infix(Expression, Token, Expression), // left, operator, right
-    Call(String, Vector<String>, Vector<Expression>), // function, generic_args, arguments
-    StructInst(String, Vector<String>, Vector<FieldInit>), // name, generic_args, fields
+    Call(String, vector.Vector<String>, vector.Vector<Expression>), // function, generic_args, arguments
+    StructInst(String, vector.Vector<String>, vector.Vector<FieldInit>), // name, generic_args, fields
     Range(Expression, Expression), // start, end
-    Block(Vector<Statement>, bool), // statements, is_unsafe
-    IfExpr(Expression, Vector<Statement>, Vector<Statement>), // condition, then_branch, else_branch
+    Block(vector.Vector<Statement>, bool), // statements, is_unsafe
+    IfExpr(Expression, vector.Vector<Statement>, vector.Vector<Statement>), // condition, then_branch, else_branch
     Deref(Expression),
     Cast(Expression, String), // expr, target
-    Intrinsic(String, Vector<Expression>), // name, arguments
-    EnumInst(String, String, Vector<String>, Vector<Expression>), // name, variant, generic_args, arguments
+    Intrinsic(String, vector.Vector<Expression>), // name, arguments
+    EnumInst(String, String, vector.Vector<String>, vector.Vector<Expression>), // name, variant, generic_args, arguments
     MemberAccess(Expression, String), // receiver, member
-    MethodCall(Expression, String, Vector<String>, Vector<Expression>), // receiver, method, generic_args, arguments
-    TypeRef(String, Vector<String>) // name, generic_args
+    MethodCall(Expression, String, vector.Vector<String>, vector.Vector<Expression>), // receiver, method, generic_args, arguments
+    TypeRef(String, vector.Vector<String>) // name, generic_args
 }
