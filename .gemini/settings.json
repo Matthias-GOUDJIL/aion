@@ -1,0 +1,8 @@
+{
+  "model": "gemini-3.1-pro-preview",
+  "thinkingLevel": "medium",
+  "temperature": 0.2,
+  "maxOutputTokens": 65536,
+  "summarizeToolOutput": true,
+  "contextPercentageThreshold": 0.6
+}

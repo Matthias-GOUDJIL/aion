@@ -1,0 +1,19 @@
+# Exclusions to save tokens and context
+target/
+.git/
+tests/tmp/
+token_trace.txt
+*.log
+
+# Potential Node.js exclusions (editors/tooling)
+node_modules/
+editors/vscode/node_modules/
+editors/vscode/out/
+editors/vscode/dist/
+
+# Always allow reading Gemini instructions, even if a parent folder is ignored
+!GEMINI.md
+
+# Large data files
+tests/fixtures/**/*.json
+tests/fixtures/**/*.csv

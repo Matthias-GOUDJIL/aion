@@ -1,0 +1,13 @@
+## Coding Standards
+
+- **Completion first**: never start a new feature if existing ones are incomplete or untested
+- **No dead code**: remove commented-out blocks and unused code immediately
+- **No debug prints**: use `eprintln!` with feature flags, not `println!` for debugging
+- **SPEC alignment**: code behavior must match `docs/SPEC.md`. If code changes, update SPEC first
+- **Zero-cost abstractions**: verify generated IR is optimal, isolate `unsafe` blocks, use `Result<T, E>` extensively
+
+## Conventions
+
+- All code, comments, variable names, and commit messages in **English only**
+- Read `docs/SPEC.md` before contributing to the compiler
+- **Never run git add, commit, or push without explicit user approval**
