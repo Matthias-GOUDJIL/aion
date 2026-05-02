@@ -7,8 +7,7 @@
         { "include": "#strings" },
         { "include": "#fstrings" },
         { "include": "#keywords" },
-        { "include": "#intents" },
-        { "include": "#invariants" },
+        { "include": "#ai-native" },
         { "include": "#attributes" },
         { "include": "#constants" },
         { "include": "#operators" },
@@ -33,7 +32,7 @@
             "patterns": [
                 {
                     "name": "keyword.control.aion",
-                    "match": "\\b(if|else|match|return|for|in|use|pub|async|unsafe|require|inside|spawn)\\b"
+                    "match": "\\b(if|else|match|return|for|in|use|pub|async|unsafe|require|extern|spawn|while|as)\\b"
                 },
                 {
                     "name": "keyword.declaration.aion",
@@ -41,17 +40,13 @@
                 }
             ]
         },
-        "intents": {
-            "patterns": [{
-                "name": "keyword.other.intent.aion",
-                "match": "::intent"
-            }]
-        },
-        "invariants": {
-            "patterns": [{
-                "name": "keyword.other.invariant.aion",
-                "match": "::invariant"
-            }]
+        "ai-native": {
+            "patterns": [
+                {
+                    "name": "keyword.other.intent.aion",
+                    "match": "\\b(intent|invariant|inside)\\b"
+                }
+            ]
         },
         "attributes": {
             "patterns": [{
@@ -161,7 +156,7 @@
             "patterns": [
                 {
                     "name": "storage.type.primitive.aion",
-                    "match": "\\b(i64|f64|u8|u16|u32|u64|bool|char|String|void)\\b"
+                    "match": "\\b(i64|f64|u8|u16|u32|u64|bool|char|String|void|Unit)\\b"
                 },
                 {
                     "name": "storage.type.generic.aion",

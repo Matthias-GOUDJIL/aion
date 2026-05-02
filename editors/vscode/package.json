@@ -1,10 +1,10 @@
 {
     "name": "aion-lang",
     "displayName": "Aion Language Support",
-    "description": "Syntax highlighting for the Aion programming language",
-    "version": "0.1.2",
+    "description": "Syntax highlighting and snippets for the Aion programming language",
+    "version": "0.2.0",
     "engines": { "vscode": "^1.60.0" },
-    "categories": [ "Programming Languages" ],
+    "categories": [ "Programming Languages", "Snippets" ],
     "contributes": {
         "languages": [{
             "id": "aion",

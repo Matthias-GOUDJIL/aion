@@ -18,3 +18,4 @@
 
 -   `TRACK-008`: Memory Safety (Borrow Checker prototype).
 -   `TRACK-009`: Networking (TCP/HTTP stack).
+-   `TRACK-012`: IDE & Tooling (Auto-completion from Stdlib, Code Formatter, LSP, Debugging support).

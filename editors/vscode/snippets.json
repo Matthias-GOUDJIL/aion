@@ -82,6 +82,24 @@
         ],
         "description": "If-else block"
     },
+    "For": {
+        "prefix": "for",
+        "body": [
+            "for ${1:item} in ${2:iterable} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "For loop"
+    },
+    "While": {
+        "prefix": "while",
+        "body": [
+            "while ${1:condition} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "While loop"
+    },
     "Println": {
         "prefix": "pl",
         "body": [
@@ -101,8 +119,15 @@
     "Intent": {
         "prefix": "intent",
         "body": [
-            "::intent "${1:Goal}""
+            "intent \"${1:Goal}\""
         ],
         "description": "Define an AI intent"
+    },
+    "Invariant": {
+        "prefix": "invariant",
+        "body": [
+            "invariant \"${1:Condition}\""
+        ],
+        "description": "Define an AI invariant"
     }
 }
