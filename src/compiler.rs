@@ -359,7 +359,7 @@ impl<'ctx> Compiler<'ctx> {
         for d in &program.declarations { 
             match d { 
                 Declaration::Struct(s) => { self.struct_types.insert(s.name.clone(), self.context.opaque_struct_type(&s.name)); }, 
-                Declaration::Enum(e) => { self.enum_types.insert(e.name.clone(), self.context.struct_type(&[i64_t.into(), self.context.i8_type().array_type(64).into()], false)); }, 
+                Declaration::Enum(e) => { self.enum_types.insert(e.name.clone(), self.context.struct_type(&[i64_t.into(), self.context.i8_type().array_type(256).into()], false)); }, 
                 _ => {} 
             } 
         }
@@ -377,7 +377,7 @@ impl<'ctx> Compiler<'ctx> {
         }
         
         if self.resolve_fuzzy_name(&self.enum_types, "Option").is_none() { 
-            self.enum_types.insert("Option".to_string(), self.context.struct_type(&[i64_t.into(), self.context.i8_type().array_type(64).into()], false)); 
+            self.enum_types.insert("Option".to_string(), self.context.struct_type(&[i64_t.into(), self.context.i8_type().array_type(256).into()], false)); 
         }
         
         let ad: Vec<Declaration> = self.decls.values().cloned().collect();
@@ -557,7 +557,7 @@ impl<'ctx> Compiler<'ctx> {
                             } else {
                                 self.builder.build_conditional_branch(self.builder.build_int_compare(IntPredicate::EQ, tag, i64_t.const_int(at, false), "is_arm").map_err(|e| e.to_string())?, ab, nb).map_err(|e| e.to_string())?;
                             }
-                            if is_last { 
+                            if is_last && !is_default { 
                                 let test_bb = self.builder.get_insert_block().ok_or("No active insert block")?; 
                                 phis.push((i64_t.const_zero().into(), test_bb)); 
                             }

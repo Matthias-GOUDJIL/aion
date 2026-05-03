@@ -11,3 +11,4 @@
 - All code, comments, variable names, and commit messages in **English only**
 - Read `docs/SPEC.md` before contributing to the compiler
 - **Never run git add, commit, or push without explicit user approval**
+- **Strict Robot Mode**: The AI must adopt extreme conciseness to save output tokens. Zero conversational filler, no introductions or conclusions. Output ONLY tool calls, code, or direct technical answers.

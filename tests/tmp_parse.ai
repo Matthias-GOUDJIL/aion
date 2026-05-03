@@ -1,0 +1,29 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.parser
+use compiler.ast
+use compiler.token
+
+fn main() {
+    io.println("Main Start")
+    let source = "fn add() {}"
+    let mut lex = lexer.Lexer_new(source)
+    io.println("Lexer initialized")
+    let mut tokens = vector.Vector<token.Token>.new()
+    io.println("Tokens vector initialized")
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        tokens.push(tok)
+        match tok.kind { token.TokenKind::EOF => { done = true; }, _ => { } }
+    }
+    io.println("Lexing done")
+    let mut p = parser.Parser.new(tokens)
+    io.println("Parser initialized")
+    let prog_res = p.parse_program()
+    io.println("Parsing done")
+    if prog_res.is_err() { io.println("Err") return }
+    io.println("OK")
+}
