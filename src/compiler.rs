@@ -359,7 +359,7 @@ impl<'ctx> Compiler<'ctx> {
         for d in &program.declarations { 
             match d { 
                 Declaration::Struct(s) => { self.struct_types.insert(s.name.clone(), self.context.opaque_struct_type(&s.name)); }, 
-                Declaration::Enum(e) => { self.enum_types.insert(e.name.clone(), self.context.struct_type(&[i64_t.into(), self.context.i8_type().array_type(256).into()], false)); }, 
+                Declaration::Enum(e) => { self.enum_types.insert(e.name.clone(), self.context.struct_type(&[i64_t.into(), self.context.i8_type().array_type(512).into()], false)); }, 
                 _ => {} 
             } 
         }
@@ -377,7 +377,7 @@ impl<'ctx> Compiler<'ctx> {
         }
         
         if self.resolve_fuzzy_name(&self.enum_types, "Option").is_none() { 
-            self.enum_types.insert("Option".to_string(), self.context.struct_type(&[i64_t.into(), self.context.i8_type().array_type(256).into()], false)); 
+            self.enum_types.insert("Option".to_string(), self.context.struct_type(&[i64_t.into(), self.context.i8_type().array_type(512).into()], false)); 
         }
         
         let ad: Vec<Declaration> = self.decls.values().cloned().collect();
@@ -885,16 +885,9 @@ impl<'ctx> Compiler<'ctx> {
                     self.compile_expr(&call_expr, variables, function)
                 }
             },
-            Expression::MemberAccess { receiver, member } => {
-                let (rp, _) = self.compile_lvalue(receiver, variables, function)?; 
-                let rtn = self.get_expr_type_name(receiver, variables); 
-                let ftn = self.get_field_type(&rtn, member);
-                let mut bc = if rtn.contains('<') { rtn.split('<').next().ok_or("Invalid type name")? } else { &rtn }; 
-                while bc.starts_with('*') { bc = &bc[1..]; }
-                let ft = self.resolve_fuzzy_name(&self.decls, bc).ok_or_else(|| format!("Struct '{}' not found (rec_type={}, receiver={:?})", bc, rtn, receiver))?;
-                let st = *self.struct_types.get(&ft).ok_or_else(|| format!("LLVM type not found for '{}'", ft))?;
-                let idx = *self.struct_fields.get(&ft).ok_or_else(|| format!("Fields for struct '{}' not found", ft))?.get(member).ok_or_else(|| format!("Field '{}' not found", member))?;
-                Ok(self.builder.build_load(self.aion_type_to_llvm(&ftn), self.builder.build_struct_gep(st, rp, idx, member).map_err(|e| e.to_string())?, member).map_err(|e| e.to_string())?)
+            Expression::MemberAccess { .. } => {
+                let (rp, rt_llvm) = self.compile_lvalue(e, variables, function)?; 
+                Ok(self.builder.build_load(rt_llvm, rp, "load_member").map_err(|e| e.to_string())?)
             },
             Expression::MethodCall { receiver, method, generic_args, arguments } => {
                 let rtn = self.get_expr_type_name(receiver, variables);
@@ -951,6 +944,61 @@ impl<'ctx> Compiler<'ctx> {
                 let p = if v.is_int_value() { self.builder.build_int_to_ptr(v.into_int_value(), pt, "i2p").map_err(|e| e.to_string())? } else { v.into_pointer_value() }; 
                 Ok(self.builder.build_load(et, p, "deref").map_err(|e| e.to_string())?) 
             },
+            Expression::If { condition, then_branch, else_branch } => {
+                let cv = self.compile_expr(condition, variables, function)?.into_int_value(); 
+                let comp = self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "ifcond").map_err(|e| e.to_string())?;
+                let tb = self.context.append_basic_block(function, "then"); 
+                let eb = self.context.append_basic_block(function, "else"); 
+                let mb = self.context.append_basic_block(function, "ifcont");
+                self.builder.build_conditional_branch(comp, tb, eb).map_err(|e| e.to_string())?; 
+                let mut phis = Vec::new();
+                
+                self.builder.position_at_end(tb); 
+                let mut tv = variables.clone(); 
+                let tr = self.compile_block(then_branch, &mut tv, function)?; 
+                let tf = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                if tf.get_terminator().is_none() { 
+                    let v = tr.unwrap_or(i64_t.const_zero().into()); 
+                    phis.push((v, tf)); 
+                }
+                
+                self.builder.position_at_end(eb); 
+                let mut ev = variables.clone(); 
+                let er = if let Some(e) = else_branch { self.compile_block(e, &mut ev, function)? } else { None }; 
+                let ef = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                if ef.get_terminator().is_none() { 
+                    let v = er.unwrap_or(i64_t.const_zero().into()); 
+                    phis.push((v, ef)); 
+                }
+                
+                self.builder.position_at_end(mb);
+                if !phis.is_empty() {
+                    let target_type = phis[0].0.get_type(); 
+                    let mut final_phis = Vec::new();
+                    for (mut v, b) in phis {
+                        self.builder.position_at_end(b);
+                        if v.get_type() != target_type {
+                            if target_type.is_pointer_type() && v.is_int_value() { 
+                                v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr").map_err(|e| e.to_string())?.into(); 
+                            } else if target_type.is_int_type() && v.is_pointer_value() { 
+                                v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int").map_err(|e| e.to_string())?.into(); 
+                            }
+                        }
+                        self.builder.build_unconditional_branch(mb).map_err(|e| e.to_string())?;
+                        final_phis.push((v, b));
+                    }
+                    self.builder.position_at_end(mb);
+                    let phi = self.builder.build_phi(target_type, "ifres").map_err(|e| e.to_string())?; 
+                    for (v, b) in final_phis { phi.add_incoming(&[(&v, b)]); } 
+                    Ok(phi.as_basic_value())
+                } else { 
+                    if self.builder.get_insert_block().ok_or("No active insert block")?.get_terminator().is_none() { 
+                        self.builder.build_unconditional_branch(mb).map_err(|e| e.to_string())?; 
+                    } 
+                    self.builder.position_at_end(mb);
+                    Ok(i64_t.const_zero().into())
+                }
+            },
             Expression::Block { statements, .. } => { 
                 let mut lv_vars = variables.clone(); 
                 Ok(self.compile_block(statements, &mut lv_vars, function)?.unwrap_or(i64_t.const_zero().into())) 
@@ -979,7 +1027,10 @@ impl<'ctx> Compiler<'ctx> {
                             return Ok(et.size_of().ok_or("Enum size unknown")?.into());
                         }
                     }
-                    if let Some(s) = self.aion_type_to_llvm(&tnm).size_of() { return Ok(s.into()); } 
+                    let lt = self.aion_type_to_llvm(&tnm);
+                    let res = if lt.is_pointer_type() { i64_t.const_int(8, false).into() } 
+                              else { lt.size_of().unwrap_or(i64_t.const_zero()).into() };
+                    return Ok(res);
                 }
                 if an == "mem_is_null" && !aa.is_empty() {
                     let ptr = self.compile_expr(&aa[0], variables, function)?.into_pointer_value();
@@ -1012,28 +1063,27 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn get_field_type(&self, it: &String, fnm: &str) -> String {
-        let clean = it.replace(" ", ""); 
-        let mut cs = clean.as_str(); 
+        let clean = it.replace(" ", "");
+        let mut cs = clean.as_str();
         while cs.starts_with('*') { cs = &cs[1..]; }
-        let (btn, tga) = if cs.contains('<') { 
-            let p: Vec<&str> = cs.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect(); 
-            (p[0].to_string(), p[1..].iter().map(|s| s.trim().to_string()).collect::<Vec<String>>()) 
+        let (btn, tga) = if cs.contains('<') {
+            let p: Vec<&str> = cs.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
+            (p[0].to_string(), p[1..].iter().map(|s| s.trim().to_string()).collect::<Vec<String>>())
         } else { (cs.to_string(), vec![]) };
-        let full = self.resolve_fuzzy_name(&self.decls, &btn).unwrap_or(btn);
-        if let Some(Declaration::Struct(s)) = self.decls.get(&full) { 
-            for (f_nm, ft) in &s.fields { 
-                if f_nm == fnm { 
-                    let mut rft = ft.clone(); 
-                    for (i, p) in s.generic_params.iter().enumerate() { 
-                        if i < tga.len() { rft = rft.replace(p, &tga[i]); } 
-                    } 
-                    return rft.replace(" ", ""); 
-                } 
-            } 
+        let full = self.resolve_fuzzy_name(&self.struct_types, &btn).unwrap_or(btn);
+        if let Some(Declaration::Struct(s)) = self.decls.get(&full) {
+            for (f_nm, ft) in &s.fields {
+                if f_nm == fnm {
+                    let mut rft = ft.clone();
+                    for (i, p) in s.generic_params.iter().enumerate() {
+                        if i < tga.len() { rft = rft.replace(p, &tga[i]); }
+                    }
+                    return rft.replace(" ", "");
+                }
+            }
         }
         "unknown".to_string()
     }
-
     fn get_expr_type_name(&self, e: &Expression, variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>) -> String {
         let res = match e {
             Expression::Integer(_) => "i64".to_string(), 

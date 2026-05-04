@@ -5,48 +5,48 @@
 **Target:** `v0.7.1`
 
 ## 📋 Objective
-Éliminer les points de fragilité du pipeline de compilation (Lexer → Parser → Checker → LLVM) pour atteindre un état "Production-Ready" : zéro `unwrap()` non justifié, terminaison garantie des blocs IR, et résolution de types déterministe.
+Eliminate fragility points in the compilation pipeline (Lexer → Parser → Checker → LLVM) to reach a "Production-Ready" state: zero unjustified `unwrap()`, guaranteed termination of IR blocks, and deterministic type resolution.
 
 ## 🔍 Current State Analysis
-- `src/compiler.rs` : Utilise massivement `.unwrap()` sur les appels LLVM et les lookups de variables. Certains blocs `if`/`match` peuvent manquer de terminateur explicite.
-- `src/checker.rs` : Le `resolve_fuzzy_name` et la substitution de génériques fonctionnent mais manquent de garde-fous contre les collisions de noms ou les types non résolus.
-- `src/lib.rs` : Les imports récursifs et le préfixage des déclarations sont fonctionnels mais pourraient générer des conflits si deux modules exportent le même nom.
-- Debug statements : Présence de `println!("DEBUG: ...")` et `eprintln!` dans le code de compilation.
+- `src/compiler.rs`: Heavily relies on `.unwrap()` for LLVM calls and variable lookups. Some `if`/`match` blocks may lack explicit terminators.
+- `src/checker.rs`: `resolve_fuzzy_name` and generic substitution are functional but lack safeguards against name collisions or unresolved types.
+- `src/lib.rs`: Recursive imports and declaration prefixing are functional but could cause conflicts if two modules export the same name.
+- Debug statements: Presence of `println!("DEBUG: ...")` and `eprintln!` in the compilation code.
 
 ## 🛠️ Atomic Tasks
 
 ### T1: Error Handling Standardization
-- [ ] Remplacer tous les `.unwrap()` dans `compiler.rs` par `.map_err()` ou des retours `Err(String)` explicites.
-- [ ] Créer un enum `CompilerError` dans `src/lib.rs` ou `src/compiler.rs` pour typer les erreurs (Lexical, Syntax, Type, LLVM, Runtime).
-- [ ] Supprimer les `println!`/`eprintln!` de debug. Remplacer par un système de logs conditionnel (`#[cfg(feature = "debug")]`) ou les déplacer dans un fichier de test dédié.
+- [ ] Replace all `.unwrap()` in `compiler.rs` with `.map_err()` or explicit `Err(String)` returns.
+- [ ] Create a `CompilerError` enum in `src/lib.rs` or `src/compiler.rs` to type errors (Lexical, Syntax, Type, LLVM, Runtime).
+- [ ] Remove debug `println!`/`eprintln!`. Replace with a conditional logging system (`#[cfg(feature = "debug")]`) or move them to a dedicated test file.
 
 ### T2: LLVM Block Termination Guarantee
-- [ ] Implémenter une fonction utilitaire `ensure_block_terminated(builder, default_value)` qui vérifie `get_terminator().is_none()` et injecte un `ret` ou `unreachable` si nécessaire.
-- [ ] Appliquer cette fonction à la fin de `compile_function`, `compile_block`, et chaque branche `if`/`match`/`while`.
-- [ ] Vérifier la conformité avec l'invariant `GEMINI.md` #4.
+- [ ] Implement a utility function `ensure_block_terminated(builder, default_value)` that checks `get_terminator().is_none()` and injects a `ret` or `unreachable` if necessary.
+- [ ] Apply this function at the end of `compile_function`, `compile_block`, and every `if`/`match`/`while` branch.
+- [ ] Verify compliance with invariant `GEMINI.md` #4.
 
 ### T3: Type Checker Robustness
-- [ ] Renforcer `resolve_fuzzy_name` dans `checker.rs` pour éviter les faux positifs (ex: `User` matchant `std.User` par suffixe).
-- [ ] Ajouter une validation stricte des génériques : vérifier que tous les paramètres de type sont bien substitués avant la génération LLVM.
-- [ ] Garantir que `check_expression` retourne toujours un `Type` concret ou une erreur explicite, jamais `Type::Unknown` en silence.
+- [ ] Strengthen `resolve_fuzzy_name` in `checker.rs` to prevent false positives (e.g., `User` matching `std.User` by suffix).
+- [ ] Add strict generic validation: ensure all type parameters are fully substituted before LLVM generation.
+- [ ] Guarantee that `check_expression` always returns a concrete `Type` or an explicit error, never silently returning `Type::Unknown`.
 
 ### T4: Import & Module Isolation
-- [ ] Dans `src/lib.rs`, ajouter un namespace automatique basé sur le chemin du fichier importé pour éviter les collisions de symboles globaux.
-- [ ] Valider que les déclarations `impl` et `struct` ne sont pas dupliquées lors de l'import récursif.
+- [ ] In `src/lib.rs`, add an automatic namespace based on the imported file path to prevent global symbol collisions.
+- [ ] Validate that `impl` and `struct` declarations are not duplicated during recursive import.
 
 ## ✅ Success Criteria
-- `cargo check` passe sans warnings.
-- `python3 runner.py` exécute 100% des fixtures sans crash ni fuite mémoire.
-- Aucun `unwrap()` résiduel dans `src/compiler.rs` et `src/checker.rs` (sauf dans les tests unitaires).
-- Le transpileur SQL et le backend LLVM génèrent un IR valide pour tous les exemples `examples/*.ai`.
+- `cargo check` passes with no warnings.
+- `python3 runner.py` executes 100% of fixtures without crashes or memory leaks.
+- No residual `unwrap()` in `src/compiler.rs` and `src/checker.rs` (except in unit tests).
+- The SQL transpiler and LLVM backend generate valid IR for all `examples/*.ai` files.
 
 ## 🔗 Dependencies
-- `conductor/tracks/rigor-intelligence/` (alignement phase)
-- `conductor/tracks/error-handling/` (standards de reporting)
-- `GEMINI.md` (invariants architecturaux v0.7)
+- `conductor/tracks/rigor-intelligence/` (alignment phase)
+- `conductor/tracks/error-handling/` (reporting standards)
+- `GEMINI.md` (v0.7 architectural invariants)
 
 ## 📅 Next Steps
-1. Valider ce plan.
-2. Implémenter T1 (Error Handling) → Commit + Test.
-3. Implémenter T2 (Block Termination) → Commit + Test.
-4. Revue de code & merge.
+1. Validate this plan.
+2. Implement T1 (Error Handling) → Commit + Test.
+3. Implement T2 (Block Termination) → Commit + Test.
+4. Code review & merge.

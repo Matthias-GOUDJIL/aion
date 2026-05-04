@@ -436,37 +436,23 @@ impl Parser {
             }
         }
     }
+pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
+    self.advance(); // consume fn
 
-    pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
-        io.println("A");
-        self.advance(); // consume fn
-        io.println("B");
-        
-        let name_tk = self.advance();
+    let name_tk = self.advance();
         let mut name = "";
         match name_tk.kind {
             token.TokenKind::Identifier(val) => { name = val; },
             _ => { return result.Result::Err("Expected identifier after fn"); },
         }
-        io.println("C");
-        
         let mut params = vector.Vector<ast.Param>.new();
-        io.println("C1: Params vector created");
-        
         let lparen_tk = self.advance();
-        io.println("C2: Advanced for lparen");
-        
         let mut is_lparen = false;
-        io.println("C3: About to match lparen.kind");
-        
         match lparen_tk.kind {
             token.TokenKind::LParen => { is_lparen = true; },
-            token.TokenKind::Identifier(v) => { io.print("Got ID instead of (: "); io.println(v); },
-            token.TokenKind::RParen => { io.println("Got ) instead of ("); },
-            _ => { io.println("Got other instead of ("); is_lparen = false; },
+            _ => { is_lparen = false; },
         }
         if !is_lparen { return result.Result::Err("Expected ( after fn name"); }
-        io.println("D");
         
         let mut loop_condition = true;
         while loop_condition {
@@ -512,7 +498,6 @@ impl Parser {
                 if is_comma { self.advance(); }
             }
         }
-        io.println("E");
         
         let rparen_tk = self.advance(); // consume )
         
@@ -527,12 +512,10 @@ impl Parser {
             self.advance();
             return_type = self.parse_type_name();
         }
-        io.println("F");
         
         let body_res = self.parse_block();
         if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
         let body = body_res.unwrap();
-        io.println("G");
         
         let f = ast.Function {
             name: name,
@@ -544,13 +527,11 @@ impl Parser {
             modifiers: vector.Vector<token.Token>.new(),
             attributes: vector.Vector<ast.Attribute>.new(),
         };
-        io.println("H");
         
         return result.Result::Ok(f);
     }
 
     pub fn parse_struct(mut self) -> result.Result<ast.Struct, String> {
-        io.println("Struct Start");
         self.advance(); // consume struct
         
         let name_tk = self.advance();
@@ -615,7 +596,7 @@ impl Parser {
             }
         }
         
-        let rbrace_tk = self.advance(); // consume }
+        self.advance(); // consume }
         
         let s = ast.Struct {
             name: name,
@@ -624,29 +605,18 @@ impl Parser {
             attributes: vector.Vector<String>.new(),
         };
         
-        io.println("Struct Done");
         return result.Result::Ok(s);
     }
 
     pub fn parse_declaration(mut self) -> result.Result<ast.Declaration, String> {
-        io.println("Decl Start");
         let tk = self.peek();
         match tk.kind {
-            token.TokenKind::Fn => { io.println("Got Fn"); },
-            token.TokenKind::Struct => { io.println("Got Struct"); },
-            token.TokenKind::Identifier(v) => { io.print("Got ID: "); io.println(v); },
-            token.TokenKind::EOF => { io.println("Got EOF"); },
-            _ => { io.println("Got Other Token"); }
-        }
-        match tk.kind {
             token.TokenKind::Fn => {
-                io.println("Is Fn");
                 let f_res = self.parse_function();
                 if f_res.is_err() { return result.Result::Err(f_res.unwrap_err()); }
                 return result.Result::Ok(ast.Declaration::Function(f_res.unwrap()));
             },
             token.TokenKind::Struct => {
-                io.println("Is Struct");
                 let s_res = self.parse_struct();
                 if s_res.is_err() { return result.Result::Err(s_res.unwrap_err()); }
                 return result.Result::Ok(ast.Declaration::Struct(s_res.unwrap()));
@@ -658,34 +628,27 @@ impl Parser {
     }
 
     pub fn parse_program(mut self) -> result.Result<ast.Program, String> {
-        io.println("Prog Start");
         let mut decls = vector.Vector<ast.Declaration>.new();
         
         let mut loop_condition = true;
         while loop_condition {
-            io.println("Loop start");
             let tk = self.peek();
-            io.println("Peeked");
             let mut is_eof = false;
             match tk.kind {
                 token.TokenKind::EOF => { is_eof = true; },
                 _ => { is_eof = false; },
             }
             if is_eof {
-                io.println("Is EOF");
                 loop_condition = false;
             } else {
-                io.println("Parsing decl");
                 let decl_res = self.parse_declaration();
-                io.println("Decl parsed");
                 if decl_res.is_err() { return result.Result::Err(decl_res.unwrap_err()); }
                 decls.push(decl_res.unwrap());
             }
         }
         
-        io.println("Creating Program object");
         let p = ast.Program {
-            module_name: "test",
+            module_name: "main",
             imports: vector.Vector<ast.Import>.new(),
             declarations: decls,
         };
