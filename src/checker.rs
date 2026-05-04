@@ -91,6 +91,8 @@ impl TypeChecker {
         self.env.set("mem.is_null".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Boolean) });
         self.env.set("string.len".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
         self.env.set("string.concat".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
+        self.env.set("string.from_int".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
+        self.env.set("string.from_float".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
         
         self.env.set("argc".to_string(), Type::Integer);
         self.env.set("argv".to_string(), Type::String);
