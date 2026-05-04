@@ -658,12 +658,12 @@ impl<'a> Parser<'a> {
             if op.kind == TokenKind::Pipeline {
                 let right = self.parse_infix(1);
                 left = match right {
-                    Expression::Call { function, mut arguments, generic_args } => {
+                    Expression::Call { function, mut arguments, generic_args, .. } => {
                         arguments.insert(0, left);
-                        Expression::Call { function, generic_args, arguments }
+                        Expression::Call { function, generic_args, arguments, line: op.line, col: op.col }
                     },
                     Expression::Identifier(function) => {
-                        Expression::Call { function, generic_args: vec![], arguments: vec![left] }
+                        Expression::Call { function, generic_args: vec![], arguments: vec![left], line: op.line, col: op.col }
                     },
                     _ => Expression::Infix { left: Box::new(left), operator: op, right: Box::new(right) }
                 };
@@ -855,6 +855,8 @@ impl<'a> Parser<'a> {
         loop {
             match self.current_token.kind {
                 TokenKind::Dot => {
+                    let dot_line = self.current_token.line;
+                    let dot_col = self.current_token.col;
                     self.next_token();
                     if let TokenKind::Identifier(member) = self.current_token.clone().kind {
                         let member_name = member;
@@ -873,7 +875,9 @@ impl<'a> Parser<'a> {
                                 receiver: Box::new(expr.clone()), 
                                 method: member_name, 
                                 generic_args: m_generic_args, 
-                                arguments: args 
+                                arguments: args,
+                                line: dot_line,
+                                col: dot_col,
                             };
                         } else {
                             if let Expression::Identifier(ref name) = expr {
@@ -920,6 +924,8 @@ impl<'a> Parser<'a> {
                     } else { break; }
                 },
                 TokenKind::LParen => {
+                    let call_line = self.current_token.line;
+                    let call_col = self.current_token.col;
                     self.next_token();
                     let mut args = Vec::new();
                     while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
@@ -929,9 +935,9 @@ impl<'a> Parser<'a> {
                     if self.current_token.kind == TokenKind::RParen { self.next_token(); }
                     
                     if let Expression::Identifier(ref name) = expr {
-                        expr = Expression::Call { function: name.clone(), generic_args: vec![], arguments: args };
+                        expr = Expression::Call { function: name.clone(), generic_args: vec![], arguments: args, line: call_line, col: call_col };
                     } else if let Expression::TypeRef { ref name, ref generic_args } = expr {
-                        expr = Expression::Call { function: name.clone(), generic_args: generic_args.clone(), arguments: args };
+                        expr = Expression::Call { function: name.clone(), generic_args: generic_args.clone(), arguments: args, line: call_line, col: call_col };
                     } else { break; }
                 },
                 TokenKind::LBrace => {

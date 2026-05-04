@@ -2,6 +2,7 @@ use crate::ast::{Statement, Expression, Program, Declaration};
 use crate::types::Type;
 use crate::environment::Environment;
 use crate::token::{Token, TokenKind};
+use crate::error::CompileError;
 
 use std::collections::HashMap;
 
@@ -11,6 +12,7 @@ pub struct TypeChecker {
     pub decls: HashMap<String, Declaration>,
     pub current_module: Option<String>,
     in_unsafe_context: bool,
+    source: String,
 }
 
 impl Default for TypeChecker {
@@ -21,15 +23,25 @@ impl Default for TypeChecker {
 
 impl TypeChecker {
     pub fn new() -> Self {
+        Self::with_source("")
+    }
+
+    pub fn with_source(source: &str) -> Self {
         let mut checker = Self { 
             env: Environment::new(), 
             type_params: HashMap::new(),
             decls: HashMap::new(),
             current_module: None,
-            in_unsafe_context: false 
+            in_unsafe_context: false,
+            source: source.to_string(),
         };
         checker.register_builtins();
         checker
+    }
+
+    fn err(&self, msg: impl Into<String>, expr: &Expression) -> String {
+        let (line, col) = expr.span();
+        CompileError::new(msg, line, col).with_snippet(&self.source).to_string()
     }
 
     fn resolve_type(&self, name: &str) -> Type {
@@ -310,7 +322,8 @@ impl TypeChecker {
                 let t2 = self.check_expression(right)?;
                 self.check_compatibility(t1, t2, operator)
             },
-            Expression::Call { function, arguments, .. } => {
+            Expression::Call { function, arguments, line, col, .. } => {
+                let call_expr = Expression::Call { function: function.clone(), generic_args: vec![], arguments: arguments.clone(), line: *line, col: *col };
                 if let Some((receiver_name, method_name)) = function.rsplit_once('.') {
                     let receiver_expr = Expression::Identifier(receiver_name.to_string());
                     if let Ok(rt) = self.check_expression(&receiver_expr) {
@@ -334,7 +347,9 @@ impl TypeChecker {
                                 let cand_dot = format!("{}.{}", full, method_name);
                                 let ft = self.env.get(&cand_colon).or_else(|| self.env.get(&cand_dot));
                                 if let Some(Type::Function { is_unsafe, ref return_type }) = ft {
-                                    if is_unsafe && !self.in_unsafe_context { return Err(format!("Unsafe method call '{}'", method_name)); }
+                                    if is_unsafe && !self.in_unsafe_context {
+                                        return Err(self.err(format!("unsafe method call '{}'", method_name), &call_expr));
+                                    }
                                     for arg in arguments { self.check_expression(arg)?; }
                                     return Ok(*return_type.clone());
                                 }
@@ -344,20 +359,25 @@ impl TypeChecker {
                 }
                 let ft = if let Some(t) = self.env.get(function) { t }
                          else if self.in_unsafe_context && function.starts_with("aion_") { Type::Function { is_unsafe: true, return_type: Box::new(Type::Unknown) } }
-                         else { return Err(format!("Function '{}' not defined", function)); };
+                         else { return Err(self.err(format!("function '{}' not defined", function), &call_expr)); };
                 if let Type::Function { is_unsafe, ref return_type } = ft {
-                    if is_unsafe && !self.in_unsafe_context { return Err(format!("Call to unsafe function '{}' requires unsafe block", function)); }
+                    if is_unsafe && !self.in_unsafe_context {
+                        return Err(self.err(format!("call to unsafe function '{}' requires unsafe block", function), &call_expr));
+                    }
                     for arg in arguments { self.check_expression(arg)?; }
                     Ok(*return_type.clone())
-                } else { Err(format!("'{}' is not a function", function)) }
+                } else { Err(self.err(format!("'{}' is not a function", function), &call_expr)) }
             },
             Expression::MemberAccess { receiver, member } => {
                 let rt = self.check_expression(receiver)?;
-                let tn = match rt { Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } => n.clone(), _ => return Err(format!("Member access on {:?}", rt)) };
+                let (line, col) = receiver.span();
+                let tn = match rt { Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } => n.clone(), _ => return Err(CompileError::new(format!("member access on {:?}", rt), line, col).with_snippet(&self.source).to_string()) };
                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
-                self.env.get(&format!("{}.{}", full, member)).ok_or(format!("Field '{}' not found on struct '{}'", member, full))
+                self.env.get(&format!("{}.{}", full, member))
+                    .ok_or_else(|| CompileError::new(format!("field '{}' not found on struct '{}'", member, full), line, col).with_snippet(&self.source).to_string())
             },
-            Expression::MethodCall { receiver, method, generic_args: _, arguments } => {
+            Expression::MethodCall { receiver, method, generic_args: _, arguments, line, col } => {
+                let method_expr = Expression::MethodCall { receiver: receiver.clone(), method: method.clone(), generic_args: vec![], arguments: arguments.clone(), line: *line, col: *col };
                 let rt = self.check_expression(receiver)?;
                 
                 // Special case for Pointer.offset()
@@ -366,7 +386,7 @@ impl TypeChecker {
                         // Check argument is integer
                         if !arguments.is_empty() {
                             let arg_type = self.check_expression(&arguments[0])?;
-                            if arg_type != Type::Integer { return Err("Offset argument must be an integer".to_string()); }
+                            if arg_type != Type::Integer { return Err(self.err("offset argument must be an integer", &method_expr)); }
                         }
                         return Ok(rt); // offset returns same pointer type
                     }
@@ -375,17 +395,19 @@ impl TypeChecker {
                     Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } | Type::Enum { name: ref n } => n.clone(), 
                     Type::Integer => "i64".to_string(),
                     Type::String => "String".to_string(),
-                    _ => return Err(format!("Method call on {:?}", rt)) 
+                    _ => return Err(self.err(format!("method call on {:?}", rt), &method_expr)) 
                 };
 
                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
                 let cand = format!("{}::{}", full, method);
-                let ft = self.env.get(&cand).ok_or(format!("Method '{}' not found on '{}'", method, full))?;
+                let ft = self.env.get(&cand).ok_or_else(|| self.err(format!("method '{}' not found on '{}'", method, full), &method_expr))?;
                 if let Type::Function { is_unsafe, ref return_type } = ft {
-                    if is_unsafe && !self.in_unsafe_context { return Err(format!("Unsafe method call '{}'", method)); }
+                    if is_unsafe && !self.in_unsafe_context {
+                        return Err(self.err(format!("unsafe method call '{}'", method), &method_expr));
+                    }
                     for arg in arguments { self.check_expression(arg)?; }
                     Ok(*return_type.clone())
-                } else { Err(format!("'{}' is not a function", cand)) }
+                } else { Err(self.err(format!("'{}' is not a function", cand), &method_expr)) }
             },
             Expression::Cast { target, .. } => Ok(self.resolve_type(target)),
             Expression::StructInst { name, .. } => {

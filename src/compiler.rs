@@ -843,7 +843,7 @@ impl<'ctx> Compiler<'ctx> {
                     Err(format!("Variable '{}' not found", name)) 
                 } 
             },
-            Expression::Call { function: fnm, generic_args, arguments } => {
+            Expression::Call { function: fnm, generic_args, arguments, .. } => {
                 let mut afn = fnm.clone(); 
                 let mut aga = generic_args.clone(); 
                 let mut aa = arguments.clone(); 
@@ -1056,7 +1056,7 @@ impl<'ctx> Compiler<'ctx> {
                     }
                     Ok(pr.into())
                 } else {
-                    let call_expr = Expression::Call { function: format!("{}.{}", name, variant), generic_args: generic_args.clone(), arguments: arguments.clone() };
+                    let call_expr = Expression::Call { function: format!("{}.{}", name, variant), generic_args: generic_args.clone(), arguments: arguments.clone(), line: 0, col: 0 };
                     self.compile_expr(&call_expr, variables, function)
                 }
             },
@@ -1064,7 +1064,7 @@ impl<'ctx> Compiler<'ctx> {
                 let (rp, rt_llvm) = self.compile_lvalue(e, variables, function)?; 
                 Ok(self.builder.build_load(rt_llvm, rp, "load_member").map_err(|e| e.to_string())?)
             },
-            Expression::MethodCall { receiver, method, generic_args, arguments } => {
+            Expression::MethodCall { receiver, method, generic_args, arguments, .. } => {
                 let rtn = self.get_expr_type_name(receiver, variables);
                 if method == "offset" && rtn.starts_with('*') { 
                     let p = self.compile_expr(receiver, variables, function)?.into_pointer_value(); 
@@ -1349,7 +1349,7 @@ impl<'ctx> Compiler<'ctx> {
                 if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, name) {
                     if generic_args.is_empty() { en.replace(" ", "") } else { format!("{}<{}>", en, generic_args.join(",")).replace(" ", "") }
                 } else {
-                    let call_expr = Expression::Call { function: format!("{}.{}", name, variant), generic_args: generic_args.clone(), arguments: arguments.clone() };
+                    let call_expr = Expression::Call { function: format!("{}.{}", name, variant), generic_args: generic_args.clone(), arguments: arguments.clone(), line: 0, col: 0 };
                     self.get_expr_type_name(&call_expr, variables)
                 }
             },

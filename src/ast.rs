@@ -105,7 +105,9 @@ pub enum Expression {
     Call { 
         function: String, 
         generic_args: Vec<String>,
-        arguments: Vec<Expression> 
+        arguments: Vec<Expression>,
+        line: usize,
+        col: usize,
     },
     StructInst { 
         name: String, 
@@ -133,9 +135,22 @@ pub enum Expression {
         method: String,
         generic_args: Vec<String>,
         arguments: Vec<Expression>,
+        line: usize,
+        col: usize,
     },
     TypeRef {
         name: String,
         generic_args: Vec<String>,
     },
+}
+
+impl Expression {
+    pub fn span(&self) -> (usize, usize) {
+        match self {
+            Expression::Infix { operator, .. } => (operator.line, operator.col),
+            Expression::Call { line, col, .. } => (*line, *col),
+            Expression::MethodCall { line, col, .. } => (*line, *col),
+            _ => (0, 0),
+        }
+    }
 }

@@ -7,6 +7,7 @@ pub mod environment;
 pub mod checker;
 pub mod transpiler;
 pub mod compiler;
+pub mod error;
 
 use std::fs;
 use std::path::Path;
@@ -95,7 +96,7 @@ pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), String> {
     process_imports(&mut program, &mut visited)?;
 
     // 1. Run Type Checker (Safety Pass)
-    let mut checker = TypeChecker::new();
+    let mut checker = TypeChecker::with_source(&source);
     if let Err(e) = checker.check_program(&program) {
         return Err(format!("Type/Safety Error: {}", e));
     }
