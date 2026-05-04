@@ -13,6 +13,10 @@
 | `TRACK-007` | [Error Handling](tracks/error-handling/index.md) | ✅ Done | Librarian | Implement `Result<T, E>` enum support and robust error management. |
 | `TRACK-010` | [Self-Hosting Lexer](tracks/self-hosting-lexer/index.md) | ✅ Done | Architect | Start Phase 2 by writing the Aion Lexer in pure Aion (`lexer.ai`). |
 | `TRACK-011` | [Self-Hosting Parser](tracks/self-hosting-parser/index.md) | ✅ Done | Architect | Phase 2.1: Implement Aion's AST and Parser (`parser.ai`) in pure Aion. |
+| `TRACK-012` | [Fix Broken Tests](tracks/fix-broken-tests/index.md) | 🔄 In Progress | - | Fix failing tests 021_env_args and 022_vector_repro. |
+| `TRACK-013` | [Compiler Error Handling](tracks/compiler-error-handling/index.md) | ⏳ Pending | - | Replace `panic!` calls with proper error handling. |
+| `TRACK-014` | [Stdlib JSON Implementation](tracks/stdlib-json-implementation/index.md) | ⏳ Pending | - | Implement working JSON parser in std.json. |
+| `TRACK-015` | [Better Compiler Messages](tracks/better-compiler-messages/index.md) | ⏳ Pending | - | Add line numbers, code snippets, and suggestions to errors. |
 
 ## Backlog
 
