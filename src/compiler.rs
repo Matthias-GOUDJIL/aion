@@ -640,7 +640,18 @@ impl<'ctx> Compiler<'ctx> {
                             if !is_default && !is_binding_var {
                                 if ctn == "i64" || ctn == "Integer" {
                                     for pat in &all_patterns {
-                                        if let Ok(val) = pat.parse::<i64>() {
+                                        if let Some((start_str, end_str)) = pat.split_once("..") {
+                                            if let (Ok(start), Ok(end)) = (start_str.parse::<i64>(), end_str.parse::<i64>()) {
+                                                let cv_val = cv.into_int_value();
+                                                let cond_start = self.builder.build_int_compare(IntPredicate::SGE, cv_val, i64_t.const_int(start as u64, false), "range_start").map_err(|e| e.to_string())?;
+                                                let cond_end = self.builder.build_int_compare(IntPredicate::SLE, cv_val, i64_t.const_int(end as u64, false), "range_end").map_err(|e| e.to_string())?;
+                                                let range_cond = self.builder.build_and(cond_start, cond_end, "range_cond").map_err(|e| e.to_string())?;
+                                                prim_match_cond = Some(match prim_match_cond {
+                                                    Some(prev) => self.builder.build_or(prev, range_cond, "range_or").map_err(|e| e.to_string())?,
+                                                    None => range_cond,
+                                                });
+                                            }
+                                        } else if let Ok(val) = pat.parse::<i64>() {
                                             let cond = self.builder.build_int_compare(IntPredicate::EQ, cv.into_int_value(), i64_t.const_int(val as u64, false), "match_cond").map_err(|e| e.to_string())?;
                                             prim_match_cond = Some(match prim_match_cond {
                                                 Some(prev) => self.builder.build_or(prev, cond, "match_or").map_err(|e| e.to_string())?,
@@ -683,10 +694,17 @@ impl<'ctx> Compiler<'ctx> {
                             
                             // For primitives, bind pattern variable if present and evaluate guard
                             let mut av = variables.clone();
-                            if !arm.params.is_empty() && ctn == "i64" {
-                                let pa = self.builder.build_alloca(i64_t, &arm.params[0]).map_err(|e| e.to_string())?;
-                                self.builder.build_store(pa, cv).map_err(|e| e.to_string())?;
-                                av.insert(arm.params[0].clone(), (pa, i64_t.into(), "i64".to_string()));
+                            if !arm.params.is_empty() {
+                                let cv_type = cv.get_type();
+                                let pa = self.builder.build_alloca(cv_type, &arm.params[0]).map_err(|e| e.to_string())?;
+                                if ctn == "String" {
+                                    let cv_ptr = cv.into_pointer_value();
+                                    self.builder.build_store(pa, cv_ptr).map_err(|e| e.to_string())?;
+                                } else {
+                                    self.builder.build_store(pa, cv).map_err(|e| e.to_string())?;
+                                }
+                                let type_name = if ctn == "String" { "String".to_string() } else { "i64".to_string() };
+                                av.insert(arm.params[0].clone(), (pa, cv_type, type_name));
                             }
                             
                             // Evaluate guard condition if present

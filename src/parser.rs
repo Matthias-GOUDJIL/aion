@@ -472,12 +472,24 @@ impl<'a> Parser<'a> {
                         TokenKind::IntLiteral(n) => {
                             pattern = n.to_string();
                             self.next_token();
+                            // Check if this is a range pattern (e.g., 1..5)
+                            if self.current_token.kind == TokenKind::Range {
+                                self.next_token();
+                                if let TokenKind::IntLiteral(end_n) = &self.current_token.kind {
+                                    pattern = format!("{}..{}", pattern, end_n);
+                                    self.next_token();
+                                }
+                            }
                             is_valid_pattern = true;
                         },
                         TokenKind::StringLiteral(s) => {
                             pattern = format!("\"{}\"", s);
                             self.next_token();
                             is_valid_pattern = true;
+                        },
+                        TokenKind::Range => {
+                            // This shouldn't happen here - ranges are handled in expression parsing
+                            self.next_token();
                         },
                         _ => {
                             // Skip unexpected token to avoid infinite loop
