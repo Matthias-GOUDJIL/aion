@@ -10,6 +10,7 @@ use inkwell::passes::{PassManager, PassManagerBuilder};
 use inkwell::OptimizationLevel;
 use crate::ast::*;
 use crate::token::TokenKind;
+use crate::error::CompileError;
 
 pub struct Compiler<'ctx> {
     pub context: &'ctx Context,
@@ -20,10 +21,15 @@ pub struct Compiler<'ctx> {
     pub enum_types: HashMap<String, StructType<'ctx>>,
     pub decls: HashMap<String, Declaration>,
     pub compiled_instances: HashSet<String>,
+    source: String,
 }
 
 impl<'ctx> Compiler<'ctx> {
     pub fn new(context: &'ctx Context, module_name: &str) -> Self {
+        Self::with_source(context, module_name, "")
+    }
+
+    pub fn with_source(context: &'ctx Context, module_name: &str, source: &str) -> Self {
         let module = context.create_module(module_name);
         let builder = context.create_builder();
         let mut compiler = Self { 
@@ -34,10 +40,16 @@ impl<'ctx> Compiler<'ctx> {
             struct_fields: HashMap::new(), 
             enum_types: HashMap::new(), 
             decls: HashMap::new(), 
-            compiled_instances: HashSet::new() 
+            compiled_instances: HashSet::new(),
+            source: source.to_string(),
         };
         compiler.register_builtins();
         compiler
+    }
+
+    fn err(&self, msg: impl Into<String>, expr: &Expression) -> String {
+        let (line, col) = expr.span();
+        CompileError::new(msg, line, col).with_snippet(&self.source).to_string()
     }
 
     fn register_builtins(&mut self) {
@@ -797,7 +809,7 @@ impl<'ctx> Compiler<'ctx> {
                         } 
                     } 
                 }
-                if let Some((ptr, vt, _)) = variables.get(name) { Ok((*ptr, *vt)) } else { Err(format!("Variable '{}' not found", name)) }
+                if let Some((ptr, vt, _)) = variables.get(name) { Ok((*ptr, *vt)) } else { Err(self.err(format!("variable '{}' not found", name), e)) }
             },
             Expression::MemberAccess { receiver, member } => {
                 let (rp, rt_llvm) = self.compile_lvalue(receiver, variables, function)?; 
@@ -840,7 +852,7 @@ impl<'ctx> Compiler<'ctx> {
                     } 
                     if name == "argc" { if let Some(g) = self.module.get_global("aion_argc") { return Ok(self.builder.build_load(i64_t, g.as_pointer_value(), "argc").map_err(|e| e.to_string())?); } } 
                     if name == "argv" { if let Some(g) = self.module.get_global("aion_argv") { return Ok(self.builder.build_load(pt, g.as_pointer_value(), "argv").map_err(|e| e.to_string())?); } } 
-                    Err(format!("Variable '{}' not found", name)) 
+                    Err(self.err(format!("variable '{}' not found", name), e)) 
                 } 
             },
             Expression::Call { function: fnm, generic_args, arguments, .. } => {
@@ -886,7 +898,7 @@ impl<'ctx> Compiler<'ctx> {
                     let gn = format!("{}_{}", full, aga.join("_")); 
                     if let Some(e) = self.module.get_function(&gn) { e } else { self.instantiate_function(&full, &aga)? } 
                 } else {
-                    self.module.get_function(&lnm).ok_or(format!("Function '{}' not found", afn))?
+                    self.module.get_function(&lnm).ok_or_else(|| self.err(format!("function '{}' not found", afn), e))?
                 };
                 let mut ca = Vec::new(); 
                 let pts = fv.get_type().get_param_types();

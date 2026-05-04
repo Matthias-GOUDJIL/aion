@@ -103,7 +103,7 @@ pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), String> {
 
     // 2. Run Code Generation
     let context = Context::create();
-    let mut compiler = Compiler::new(&context, "aion_module");
+    let mut compiler = Compiler::with_source(&context, "aion_module", &source);
     compiler.compile(&program)?;
 
     // 3. Run Optimization Passes
