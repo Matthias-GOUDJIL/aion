@@ -1,9 +1,0 @@
-use std.io
-
-pub enum TokenKind { Identifier(String), Fn, Struct }
-pub struct Token { kind: TokenKind, lexeme: String, line: i64, column: i64 }
-pub enum Option<T> { Some(T), None }
-
-fn main() {
-    io.println("Done")
-}
