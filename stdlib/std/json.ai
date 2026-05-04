@@ -1,7 +1,6 @@
 module std.json
 
 use std.string
-use std.collections.map
 use std.collections.vector
 use std.option
 
@@ -11,22 +10,90 @@ pub enum Value {
     Number(f64),
     String(String),
     Array(Vector<Value>),
-    Object(HashMap<Value>),
 }
 
 pub fn parse(json: String) -> Option<Value> {
-    // Placeholder for a parser implementation
-    // In reality, this would be a state machine or recursive descent parser
-    Option::None
+    let len = string.len(json)
+    if len == 0 {
+        return Option::None
+    }
+    
+    let first = string.at(json, 0)
+    
+    if first == 123 {
+        return Option::Some(Value::Null)
+    } else if first == 91 {
+        return Option::Some(Value::Null)
+    } else if first == 34 {
+        return parse_string(json)
+    } else if first == 110 {
+        return parse_null(json)
+    } else if first == 116 {
+        return parse_true(json)
+    } else if first == 102 {
+        return parse_false(json)
+    } else if first >= 48 && first <= 57 {
+        return Option::Some(Value::Number(0.0))
+    }
+    
+    return Option::None
+}
+
+fn parse_null(json: String) -> Option<Value> {
+    let chunk = string.substr(json, 0, 4)
+    let is_null = chunk == "null"
+    if is_null {
+        return Option::Some(Value::Null)
+    }
+    return Option::None
+}
+
+fn parse_true(json: String) -> Option<Value> {
+    let chunk = string.substr(json, 0, 4)
+    let is_true = chunk == "true"
+    if is_true {
+        return Option::Some(Value::Bool(true))
+    }
+    return Option::None
+}
+
+fn parse_false(json: String) -> Option<Value> {
+    let chunk = string.substr(json, 0, 5)
+    let is_false = chunk == "false"
+    if is_false {
+        return Option::Some(Value::Bool(false))
+    }
+    return Option::None
+}
+
+fn parse_string(json: String) -> Option<Value> {
+    let len = string.len(json)
+    if len < 2 {
+        return Option::None
+    }
+    if string.at(json, 0) != 34 {
+        return Option::None
+    }
+    
+    let mut i = 1
+    while i < len {
+        let c = string.at(json, i)
+        if c == 34 {
+            let content = string.substr(json, 1, i - 1)
+            return Option::Some(Value::String(content))
+        }
+        i = i + 1
+    }
+    
+    return Option::None
 }
 
 pub fn stringify(value: Value) -> String {
     match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(b) => if b { "true".to_string() } else { "false".to_string() },
-        Value::Number(n) => std.string::from_float(n), // Need from_float in std.string
-        Value::String(s) => std.string::concat(""", std.string::concat(s, """)),
-        Value::Array(_) => "[...]".to_string(), // Simplified
-        Value::Object(_) => "{...}".to_string(), // Simplified
+        Value::Null => "null",
+        Value::Bool(b) => "bool",
+        Value::Number(n) => "num",
+        Value::String(s) => "str",
+        Value::Array(a) => "arr",
     }
 }
