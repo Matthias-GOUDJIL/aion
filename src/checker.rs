@@ -210,6 +210,7 @@ impl TypeChecker {
                     Type::GenericInstance(name, _) => name.clone(),
                     Type::Integer => "i64".to_string(),
                     Type::String => "String".to_string(),
+                    Type::Struct { name } => name.clone(),
                     _ => "unknown".to_string(),
                 };
                 for arm in arms {
@@ -245,6 +246,13 @@ impl TypeChecker {
                             payload = Type::Integer;
                         } else if cond_name == "String" {
                             payload = Type::String;
+                        } else if let Some(Declaration::Struct(s)) = self.decls.get(&cond_name) {
+                            payload = Type::Struct { name: cond_name.clone() };
+                            // Add struct fields to environment
+                            for (field_name, field_type_str) in &s.fields {
+                                let field_type = self.resolve_type(field_type_str);
+                                self.env.set(format!("{}.{}", arm.params[0], field_name), field_type);
+                            }
                         }
                         
                         self.env.set(arm.params[0].clone(), payload);

@@ -700,11 +700,14 @@ impl<'ctx> Compiler<'ctx> {
                                 if ctn == "String" {
                                     let cv_ptr = cv.into_pointer_value();
                                     self.builder.build_store(pa, cv_ptr).map_err(|e| e.to_string())?;
+                                } else if ctn != "i64" && ctn != "Integer" {
+                                    // For structs and other types, store the pointer directly
+                                    let cv_ptr = cv.into_pointer_value();
+                                    self.builder.build_store(pa, cv_ptr).map_err(|e| e.to_string())?;
                                 } else {
                                     self.builder.build_store(pa, cv).map_err(|e| e.to_string())?;
                                 }
-                                let type_name = if ctn == "String" { "String".to_string() } else { "i64".to_string() };
-                                av.insert(arm.params[0].clone(), (pa, cv_type, type_name));
+                                av.insert(arm.params[0].clone(), (pa, cv_type, ctn.to_string()));
                             }
                             
                             // Evaluate guard condition if present

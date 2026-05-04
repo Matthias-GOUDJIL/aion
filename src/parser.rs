@@ -458,6 +458,38 @@ impl<'a> Parser<'a> {
                         TokenKind::Identifier(p) => {
                             pattern = p.clone(); 
                             self.next_token();
+                            // Check for struct pattern: Point { x: a, y: b }
+                            let mut struct_fields: Vec<(String, String)> = Vec::new();
+                            if self.current_token.kind == TokenKind::LBrace {
+                                self.next_token();
+                                while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+                                    if let TokenKind::Identifier(field_name) = &self.current_token.kind {
+                                        let fn_str = field_name.clone();
+                                        self.next_token();
+                                        if self.current_token.kind == TokenKind::Colon {
+                                            self.next_token();
+                                            if let TokenKind::Identifier(var_name) = &self.current_token.kind {
+                                                struct_fields.push((fn_str, var_name.clone()));
+                                                self.next_token();
+                                            }
+                                        }
+                                    }
+                                    if self.current_token.kind == TokenKind::Comma {
+                                        self.next_token();
+                                    }
+                                }
+                                if self.current_token.kind == TokenKind::RBrace {
+                                    self.next_token();
+                                }
+                            }
+                            if !struct_fields.is_empty() {
+                                let fields_str = struct_fields.iter()
+                                    .map(|(f, v)| format!("{}:{}", f, v))
+                                    .collect::<Vec<_>>()
+                                    .join(",");
+                                pattern = format!("{}_{{{}}}", pattern, fields_str);
+                            }
+                            
                             while self.current_token.kind == TokenKind::DoubleColon || self.current_token.kind == TokenKind::Dot {
                                 let op = if self.current_token.kind == TokenKind::DoubleColon { "::" } else { "." };
                                 self.next_token();
