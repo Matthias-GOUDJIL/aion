@@ -85,10 +85,10 @@ impl<'a> Lexer<'a> {
                     if self.peek_char() == '&' { self.read_char(); TokenKind::And }
                     else { TokenKind::Illegal('&') }
                 },
-                '|' => {
-                    if self.peek_char() == '>' { self.read_char(); TokenKind::Pipeline } 
-                    else if self.peek_char() == '|' { self.read_char(); TokenKind::Or }
-                    else { TokenKind::Illegal('|') }
+'|' => {
+                    if self.peek_char() == '|' { self.read_char(); TokenKind::Or }
+                    else if self.peek_char() == '>' { self.read_char(); TokenKind::Pipeline }
+                    else { TokenKind::Pipe }
                 },
                 '>' => {
                     if self.peek_char() == '=' { self.read_char(); TokenKind::GtEq } 

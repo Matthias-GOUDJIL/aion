@@ -486,6 +486,18 @@ impl<'a> Parser<'a> {
                     }
 
                     if is_valid_pattern {
+                        // Support multiple patterns with |
+                        let mut patterns = vec![pattern.clone()];
+                        while self.current_token.kind == TokenKind::Pipe {
+                            self.next_token();
+                            match &self.current_token.kind {
+                                TokenKind::Identifier(p) => { patterns.push(p.clone()); self.next_token(); },
+                                TokenKind::IntLiteral(n) => { patterns.push(n.to_string()); self.next_token(); },
+                                TokenKind::StringLiteral(s) => { patterns.push(format!("\"{}\"", s)); self.next_token(); },
+                                _ => { break; }
+                            }
+                        }
+                        
                         let mut params = Vec::new();
                         
                         if self.current_token.kind == TokenKind::LParen {
@@ -510,7 +522,7 @@ impl<'a> Parser<'a> {
                                     None => vec![],
                                 }
                             };
-                            arms.push(MatchArm { pattern, params, body });
+                            arms.push(MatchArm { pattern, patterns, params, body });
                         }
                     }
                     if self.current_token.kind == TokenKind::Comma { self.next_token(); }

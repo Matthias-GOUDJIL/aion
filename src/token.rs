@@ -43,6 +43,7 @@ pub enum TokenKind {
     Gt, Lt, GtEq, LtEq,
     LParen, RParen, LBrace, RBrace, LBracket, RBracket, 
     Colon, Semicolon, Comma, Dot, 
+    Pipe,
     DoubleColon, 
     Range,       
     At,

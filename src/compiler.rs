@@ -529,33 +529,49 @@ impl<'ctx> Compiler<'ctx> {
                         let tag = self.builder.build_load(i64_t, self.builder.build_struct_gep(et, ep, 0, "tagptr").map_err(|e| e.to_string())?, "tag").map_err(|e| e.to_string())?.into_int_value();
                         let na = arms.len();
                         for (i, arm) in arms.iter().enumerate() {
-                            let ab = self.context.append_basic_block(function, &format!("arm_{}_{}", arm.pattern, i)); 
+                            let ab = self.context.append_basic_block(function, &format!("arm_{}_{}", i, arm.pattern)); 
                             let is_last = i == na - 1; 
                             let nb = if is_last { exit_bb } else { self.context.append_basic_block(function, "match_next") };
-                            let mut is_default = arm.pattern == "_";
-                            let mut at = i as u64;
+                            
+                            // Get all patterns to check
+                            let all_patterns: Vec<String> = if arm.patterns.is_empty() {
+                                vec![arm.pattern.clone()]
+                            } else {
+                                arm.patterns.clone()
+                            };
+                            
+                            let is_default = all_patterns.iter().any(|p| p == "_");
+                            let mut arm_match_cond: Option<inkwell::values::IntValue<'ctx>> = None;
+                            
                             if !is_default {
                                 if let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen) {
-                                    let mut found = false;
-                                    for (vi, v) in e_decl.variants.iter().enumerate() {
-                                        if arm.pattern == v.name || arm.pattern.ends_with(&format!(".{}", v.name)) || arm.pattern.ends_with(&format!("::{}", v.name)) {
-                                            at = vi as u64;
-                                            found = true;
-                                            break;
+                                    for pat in &all_patterns {
+                                        let mut at = i as u64;
+                                        for (vi, v) in e_decl.variants.iter().enumerate() {
+                                            if pat == &v.name || pat.ends_with(&format!(".{}", v.name)) || pat.ends_with(&format!("::{}", v.name)) {
+                                                at = vi as u64;
+                                                break;
+                                            }
                                         }
+                                        // Fallback for common variants
+                                        if at == i as u64 && (pat == "Some" || pat == "Ok" || pat.ends_with(".Some") || pat.ends_with("::Some")) { at = 0; }
+                                        if at == i as u64 && (pat == "None" || pat == "Err" || pat.ends_with(".None") || pat.ends_with("::None")) { at = 1; }
+                                        
+                                        let cond = self.builder.build_int_compare(IntPredicate::EQ, tag, i64_t.const_int(at, false), "is_arm").map_err(|e| e.to_string())?;
+                                        arm_match_cond = Some(match arm_match_cond {
+                                            Some(prev) => self.builder.build_or(prev, cond, "arm_or").map_err(|e| e.to_string())?,
+                                            None => cond,
+                                        });
                                     }
-                                    if !found {
-                                        at = if arm.pattern == "Some" || arm.pattern == "Ok" || arm.pattern.ends_with(".Some") || arm.pattern.ends_with("::Some") { 0 } else if arm.pattern == "None" || arm.pattern == "Err" || arm.pattern.ends_with(".None") || arm.pattern.ends_with("::None") { 1 } else { i as u64 };
-                                    }
-                                } else {
-                                    at = if arm.pattern == "Some" || arm.pattern == "Ok" || arm.pattern.ends_with(".Some") || arm.pattern.ends_with("::Some") { 0 } else if arm.pattern == "None" || arm.pattern == "Err" || arm.pattern.ends_with(".None") || arm.pattern.ends_with("::None") { 1 } else { i as u64 };
                                 }
                             }
                             
-                            if is_default {
+                            if is_default && arm_match_cond.is_none() {
                                 self.builder.build_unconditional_branch(ab).map_err(|e| e.to_string())?;
+                            } else if let Some(cond) = arm_match_cond {
+                                self.builder.build_conditional_branch(cond, ab, nb).map_err(|e| e.to_string())?;
                             } else {
-                                self.builder.build_conditional_branch(self.builder.build_int_compare(IntPredicate::EQ, tag, i64_t.const_int(at, false), "is_arm").map_err(|e| e.to_string())?, ab, nb).map_err(|e| e.to_string())?;
+                                self.builder.build_unconditional_branch(nb).map_err(|e| e.to_string())?;
                             }
                             if is_last && !is_default { 
                                 let test_bb = self.builder.get_insert_block().ok_or("No active insert block")?; 

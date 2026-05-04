@@ -86,7 +86,8 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub struct MatchArm {
     pub pattern: String,
-    pub params: Vec<String>, // Variables bound in the pattern (e.g., val in Ok(val))
+    pub patterns: Vec<String>,
+    pub params: Vec<String>,
     pub body: Vec<Statement>,
 }
 
