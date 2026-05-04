@@ -42,21 +42,24 @@ impl<'ctx> Compiler<'ctx> {
 
     fn register_builtins(&mut self) {
         let builtins = vec![
-            ("io.println", "aion_io_println", "void"), ("io.print", "aion_io_print", "void"), ("io.read_line", "aion_io_read_line", "String"),
-            ("string.len", "strlen", "i64"), ("string.from_int", "aion_int_to_str", "String"), ("string.from_float", "aion_float_to_str", "String"),
-            ("fs_read_to_string", "aion_read_file", "String"), ("fs_write", "aion_write_file", "i32"), ("fs_exists", "aion_fs_exists", "i64"), ("fs_append", "aion_append_file", "i32"),
-            ("aion_getenv", "aion_getenv", "String"), ("aion_get_argc", "aion_get_argc", "i64"), ("aion_get_argv_index", "aion_get_argv_index", "String"),
-            ("aion_exit", "exit", "void"), ("exit", "exit", "void"), ("aion_malloc", "aion_malloc", "ptr"), ("aion_realloc", "aion_realloc", "ptr"), ("aion_free", "aion_free", "void"),
-            ("aion_str_at", "aion_str_at", "i64"), ("aion_str_substr", "aion_str_substr", "String"), ("aion_char_to_str", "aion_char_to_str", "String"),
-            ("ai.tensor_zeros", "aion_ai_tensor_zeros", "ptr"), ("ai.tensor_ones", "aion_ai_tensor_ones", "ptr"), ("ai.tensor_rand", "aion_ai_tensor_rand", "ptr"),
-            ("ai.tensor_backward", "aion_ai_tensor_backward", "void"), ("ai.tensor_matmul", "aion_ai_tensor_matmul", "ptr"), ("ai.tensor_add", "aion_ai_tensor_add", "ptr"),
-            ("ai.tensor_move", "aion_ai_tensor_move", "ptr")
+            ("io.println", "aion_io_println", "void", false), ("io.print", "aion_io_print", "void", false), ("io.read_line", "aion_io_read_line", "String", false),
+            ("string.from_int", "aion_int_to_str", "String", false), ("string.from_float", "aion_float_to_str", "String", false),
+            ("fs_read_to_string", "aion_read_file", "String", false), ("fs_write", "aion_write_file", "i32", false), ("fs_exists", "aion_fs_exists", "i64", false), ("fs_append", "aion_append_file", "i32", false),
+            ("aion_getenv", "aion_getenv", "String", false), ("aion_get_argc", "aion_get_argc", "i64", false), ("aion_get_argv_index", "aion_get_argv_index", "String", false),
+            ("aion_exit", "exit", "void", false), ("exit", "exit", "void", false), ("aion_malloc", "aion_malloc", "ptr", false), ("aion_realloc", "aion_realloc", "ptr", false), ("aion_free", "aion_free", "void", false),
+            ("aion_str_at", "aion_str_at", "i64", false), ("aion_str_substr", "aion_str_substr", "String", false), ("aion_char_to_str", "aion_char_to_str", "String", false),
+            ("ai.tensor_zeros", "aion_ai_tensor_zeros", "ptr", false), ("ai.tensor_ones", "aion_ai_tensor_ones", "ptr", false), ("ai.tensor_rand", "aion_ai_tensor_rand", "ptr", false),
+            ("ai.tensor_backward", "aion_ai_tensor_backward", "void", false), ("ai.tensor_matmul", "aion_ai_tensor_matmul", "ptr", false), ("ai.tensor_add", "aion_ai_tensor_add", "ptr", false),
+            ("ai.tensor_move", "aion_ai_tensor_move", "ptr", false),
+            ("i64.abs", "aion_i64_abs", "i64", true), ("i64.max", "aion_i64_max", "i64", true), ("i64.min", "aion_i64_min", "i64", true),
+            ("string.len", "aion_string_len", "i64", true), ("String.len", "aion_string_len", "i64", true)
         ];
-        for (an, ln, rt) in builtins {
+        for (an, ln, rt, is_method) in builtins {
+            let params = if is_method { vec![("self".to_string(), "i64".to_string(), None)] } else { vec![] };
             let d = Declaration::Function(Function { 
                 name: an.to_string(), 
                 generic_params: vec![], 
-                params: vec![], 
+                params,
                 return_type: rt.to_string(), 
                 body: None, 
                 modifiers: vec![], 

@@ -130,6 +130,24 @@ long long aion_fs_exists(const char* path) {
     return access(path, F_OK) == 0;
 }
 
+// i64 methods
+long long aion_i64_abs(long long x) {
+    return x < 0 ? -x : x;
+}
+
+long long aion_i64_max(long long a, long long b) {
+    return a > b ? a : b;
+}
+
+long long aion_i64_min(long long a, long long b) {
+    return a < b ? a : b;
+}
+
+// String methods
+long long aion_string_len(const char* s) {
+    return s ? strlen(s) : 0;
+}
+
 // AI Tensor Support
 struct AionVector {
     void* ptr;

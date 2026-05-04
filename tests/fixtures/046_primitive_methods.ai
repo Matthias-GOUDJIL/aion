@@ -1,0 +1,10 @@
+fn main() {
+    let x = -42
+    io.println("--- Primitive Method Calls ---")
+    io.println(string.from_int(x.abs()))
+    io.println(string.from_int(i64.max(10, 20)))
+    io.println(string.from_int(i64.min(10, 20)))
+
+    let s = "hello"
+    io.println(string.from_int(s.len()))
+}

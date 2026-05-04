@@ -90,6 +90,7 @@ impl TypeChecker {
         self.env.set("env.var".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::GenericInstance("Option".to_string(), vec![Type::String])) });
         self.env.set("mem.is_null".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Boolean) });
         self.env.set("string.len".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
+        self.env.set("String.len".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
         self.env.set("string.concat".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
         self.env.set("string.from_int".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
         self.env.set("string.from_float".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
@@ -320,11 +321,19 @@ impl TypeChecker {
                             return Ok(rt.clone());
                         }
                         if rt != Type::Unknown {
-                            let tn = match rt { Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } | Type::Enum { name: ref n } => n.clone(), _ => "".to_string() };
+                            let tn = match rt {
+                                Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } | Type::Enum { name: ref n } => n.clone(),
+                                Type::Integer => "i64".to_string(),
+                                Type::String => "String".to_string(),
+                                _ => "".to_string()
+                            };
                             if !tn.is_empty() {
                                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
-                                let cand = format!("{}::{}", full, method_name);
-                                if let Some(Type::Function { is_unsafe, ref return_type }) = self.env.get(&cand) {
+                                // Try both :: and . formats for method lookup
+                                let cand_colon = format!("{}::{}", full, method_name);
+                                let cand_dot = format!("{}.{}", full, method_name);
+                                let ft = self.env.get(&cand_colon).or_else(|| self.env.get(&cand_dot));
+                                if let Some(Type::Function { is_unsafe, ref return_type }) = ft {
                                     if is_unsafe && !self.in_unsafe_context { return Err(format!("Unsafe method call '{}'", method_name)); }
                                     for arg in arguments { self.check_expression(arg)?; }
                                     return Ok(*return_type.clone());
@@ -364,6 +373,8 @@ impl TypeChecker {
 
                 let tn = match rt { 
                     Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } | Type::Enum { name: ref n } => n.clone(), 
+                    Type::Integer => "i64".to_string(),
+                    Type::String => "String".to_string(),
                     _ => return Err(format!("Method call on {:?}", rt)) 
                 };
 

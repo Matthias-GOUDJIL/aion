@@ -777,6 +777,22 @@ impl<'a> Parser<'a> {
             },
             TokenKind::True => { self.next_token(); Expression::Boolean(true) },
             TokenKind::False => { self.next_token(); Expression::Boolean(false) },
+            TokenKind::Minus => {
+                self.next_token();
+                if let TokenKind::IntLiteral(n) = self.current_token.clone().kind {
+                    self.next_token();
+                    Expression::Integer(-n)
+                } else if let TokenKind::FloatLiteral(f) = self.current_token.clone().kind {
+                    self.next_token();
+                    Expression::Float(-f)
+                } else {
+                    Expression::Infix {
+                        left: Box::new(Expression::Integer(0)),
+                        operator: Token::new(TokenKind::Minus, self.current_token.line, self.current_token.col),
+                        right: Box::new(self.parse_primary())
+                    }
+                }
+            },
             TokenKind::IntLiteral(n) => { self.next_token(); Expression::Integer(n) },
             TokenKind::FloatLiteral(f) => { self.next_token(); Expression::Float(f) },
             TokenKind::StringLiteral(s) => { self.next_token(); Expression::String(s) },
