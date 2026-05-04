@@ -41,34 +41,26 @@ fn main() {
 
     match cli.command {
         Commands::Build { input, output } => {
-            println!("🚀 Building {}...", input);
             if let Err(e) = compile_file(&input, &output) {
-                println!("❌ Error: {}", e);
+                eprintln!("{}", e);
                 std::process::exit(1);
-            } else {
-                println!("✨ Success! Generated {}", output);
-                println!("💡 To run this, use: ./aion run {}", input);
-                println!("🛠️  Or compile manually: clang {} src/runtime.c -o output -lpthread && ./output", output);
             }
         }
         Commands::Doc { input, output } => {
-            println!("🧠 Generating AI documentation for {}...", input);
             match generate_docs(&input) {
                 Ok(doc) => {
                     if let Err(e) = fs::write(&output, doc) {
-                        println!("❌ Error writing documentation: {}", e);
+                        eprintln!("error: {}", e);
                         std::process::exit(1);
                     }
-                    println!("✨ Documentation generated in {}", output);
                 },
                 Err(e) => {
-                    println!("❌ Error: {}", e);
+                    eprintln!("error: {}", e);
                     std::process::exit(1);
                 }
             }
         }
         Commands::Run { input, args } => {
-            println!("🚀 Compiling and Running {}...", input);
             
             let run_id = std::env::var("AION_RUN_ID").unwrap_or_else(|_| std::process::id().to_string());
             let ir_file = format!("temp_{}.ll", run_id);
@@ -76,7 +68,7 @@ fn main() {
             let bin_file = format!("./aion_app_{}", run_id);
 
             if let Err(e) = compile_file(&input, &ir_file) {
-                println!("❌ Aion Compilation Error: {}", e);
+                eprintln!("{}", e);
                 std::process::exit(1);
             }
 
@@ -86,24 +78,10 @@ fn main() {
                 .status();
 
             if let Err(e) = llc_status {
-                println!("❌ LLVM Backend Error (llc failed): {}", e);
-                if let Ok(content) = std::fs::read_to_string(&ir_file) {
-                    println!("--- LLVM IR DUMP ---");
-                    for (i, line) in content.lines().enumerate() {
-                        println!("{:4} | {}", i + 1, line);
-                    }
-                    println!("--------------------");
-                }
+                eprintln!("error: llc failed: {}", e);
                 std::process::exit(1);
             } else if !llc_status.unwrap().success() {
-                println!("❌ LLVM Backend Error (llc failed with non-zero exit)");
-                if let Ok(content) = std::fs::read_to_string(&ir_file) {
-                    println!("--- LLVM IR DUMP ---");
-                    for (i, line) in content.lines().enumerate() {
-                        println!("{:4} | {}", i + 1, line);
-                    }
-                    println!("--------------------");
-                }
+                eprintln!("error: llc failed with non-zero exit");
                 std::process::exit(1);
             }
 
@@ -112,14 +90,13 @@ fn main() {
                 .status();
 
             if let Err(e) = gcc_status {
-                println!("❌ Linking Error (gcc failed): {}", e);
+                eprintln!("error: gcc failed: {}", e);
                 std::process::exit(1);
             } else if !gcc_status.unwrap().success() {
-                println!("❌ Linking Error (gcc failed with non-zero exit)");
+                eprintln!("error: gcc failed with non-zero exit");
                 std::process::exit(1);
             }
 
-            println!("✨ Execution Output:");
             println!("-------------------------------");
             let output = Command::new(&bin_file)
                 .args(&args)
@@ -130,10 +107,10 @@ fn main() {
                     print!("{}", String::from_utf8_lossy(&out.stdout));
                     eprint!("{}", String::from_utf8_lossy(&out.stderr));
                     if !out.status.success() {
-                        println!("⚠️ Process exited with code: {}", out.status.code().unwrap_or(-1));
+                        eprintln!("error: process exited with code: {}", out.status.code().unwrap_or(-1));
                     }
                 },
-                Err(e) => println!("❌ Execution Error: {}", e),
+                Err(e) => eprintln!("error: execution failed: {}", e),
             }
             println!("-------------------------------");
 
@@ -142,21 +119,19 @@ fn main() {
             let _ = fs::remove_file(bin_file);
         }
         Commands::Transpile { input, output, target } => {
-            println!("🔄 Transpiling {} to {}...", input, target);
             if target != "sql" {
-                println!("❌ Only SQL target is supported for now.");
+                eprintln!("error: only SQL target is supported for now");
                 return;
             }
             
             match transpile_sql(&input) {
                 Ok(sql) => {
                     if let Err(e) = fs::write(&output, sql) {
-                        println!("❌ Error writing SQL output: {}", e);
+                        eprintln!("error: {}", e);
                         std::process::exit(1);
                     }
-                    println!("✨ Success! Generated {}", output);
                 },
-                Err(e) => println!("❌ Error: {}", e),
+                Err(e) => eprintln!("error: {}", e),
             }
         }
     }
