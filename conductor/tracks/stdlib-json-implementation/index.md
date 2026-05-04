@@ -1,7 +1,7 @@
 # TRACK-014: Stdlib JSON Implementation
 
 ## Status
-⏳ **Pending**
+✅ **Done** (basic implementation)
 
 ## Overview
 Implement a working JSON parser in the Aion standard library. Currently `std.json.parse()` is a stub that always returns `None`.
