@@ -1,5 +1,12 @@
-::intent "A simple Aion program to test the CLI"
-let score = 42
-let bonus = 10
-let total = score + bonus
-return total
+use std.io
+use std.string
+
+fn main() {
+    io.println("Hello, Aion!")
+    let score = 42
+    let bonus = 10
+    let total = score + bonus
+    io.print("Total Score: ")
+    io.println(string.from_int(total))
+    return 0
+}

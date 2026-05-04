@@ -784,7 +784,25 @@ impl<'ctx> Compiler<'ctx> {
                     phi.add_incoming(&[(&lv_v, lfb), (&ri, rfb)]); 
                     return Ok(phi.as_basic_value().into()); 
                 }
+
                 let lhs = self.compile_expr(left, variables, function)?; 
+
+                // Special case for 'inside' which needs to peek at 'right' before compiling it
+                if operator.kind == TokenKind::Inside {
+                    if let Expression::Infix { left: r_left, operator: r_op, right: r_right } = &**right {
+                        if r_op.kind == TokenKind::Range {
+                            let l = lhs.into_int_value();
+                            let min = self.compile_expr(r_left, variables, function)?.into_int_value();
+                            let max = self.compile_expr(r_right, variables, function)?.into_int_value();
+                            let c1 = self.builder.build_int_compare(IntPredicate::SGE, l, min, "in_ge").map_err(|e| e.to_string())?;
+                            let c2 = self.builder.build_int_compare(IntPredicate::SLT, l, max, "in_lt").map_err(|e| e.to_string())?;
+                            let res = self.builder.build_and(c1, c2, "in_res").map_err(|e| e.to_string())?;
+                            return Ok(self.builder.build_int_z_extend(res, i64_t, "bool").map_err(|e| e.to_string())?.into());
+                        }
+                    }
+                    return Err("Operator 'inside' currently only supports ranges (min..max)".to_string());
+                }
+
                 let rhs = self.compile_expr(right, variables, function)?;
                 if lhs.is_int_value() && rhs.is_int_value() {
                     let mut l = lhs.into_int_value(); 

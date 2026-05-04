@@ -48,12 +48,18 @@ impl<'a> Parser<'a> {
                 },
                 TokenKind::Use => imports.push(self.parse_import()),
                 TokenKind::DoubleColon => {
-                    self.next_token(); // consume ::
-                    if self.current_token.kind == TokenKind::Intent {
+                    if self.peek_at(0).kind == TokenKind::Intent {
+                        self.next_token(); // consume ::
                         self.next_token(); // consume intent
                         if let TokenKind::StringLiteral(_) = self.current_token.kind {
                             self.next_token();
                         }
+                    } else {
+                        // If it's not an intent, we shouldn't consume it here.
+                        // But wait, what else starts with :: at top level? Nothing yet.
+                        // For safety, let's just break if we don't know what it is or error.
+                        eprintln!("{}", self.error("Syntax Error: Unexpected :: at top level"));
+                        self.next_token();
                     }
                 },
                 _ => {
@@ -136,13 +142,11 @@ impl<'a> Parser<'a> {
         self.next_token();
         let generic_params = self.parse_generic_params();
         
-        let (interface_name, target_name) = if let TokenKind::Identifier(ref id) = self.current_token.kind {
-            if id == "for" {
+        let (interface_name, target_name) = if self.current_token.kind == TokenKind::For {
                 self.next_token();
                 let target = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
                 self.next_token();
                 (Some(name1), target)
-            } else { (None, name1) }
         } else { (None, name1) };
 
         if self.current_token.kind != TokenKind::LBrace { 
@@ -501,6 +505,14 @@ impl<'a> Parser<'a> {
                     None
                 }
             },
+            TokenKind::Spawn => {
+                self.next_token();
+                if self.current_token.kind == TokenKind::LBrace {
+                    Some(Statement::Spawn(self.parse_block()))
+                } else {
+                    None
+                }
+            },
             _ => {
                 let expr = self.parse_expression();
                 if self.current_token.kind == TokenKind::Eq {
@@ -559,6 +571,7 @@ impl<'a> Parser<'a> {
             TokenKind::Star | TokenKind::Slash | TokenKind::Percent => 8,
             TokenKind::As => 7,
             TokenKind::Plus | TokenKind::Minus => 6,
+            TokenKind::Range => 5,
             TokenKind::Caret => 5,
             TokenKind::Gt | TokenKind::Lt | TokenKind::GtEq | TokenKind::LtEq | TokenKind::EqEq | TokenKind::NotEq | TokenKind::Inside => 4,
             TokenKind::And => 3,
@@ -749,6 +762,7 @@ impl<'a> Parser<'a> {
                     } else { break; }
                 },
                 TokenKind::DoubleColon => {
+                    if self.peek_at(0).kind == TokenKind::Intent { break; }
                     self.next_token();
                     if let TokenKind::Identifier(variant) = self.current_token.clone().kind {
                         let variant_name = variant;
