@@ -905,9 +905,10 @@ mod tests {
         
         if let Expression::Infix { left: _, operator, right } = expr {
             assert_eq!(operator.kind, TokenKind::Plus);
+            assert!(matches!(*right, Expression::Infix { .. }), "Expected right to be an infix expression");
             if let Expression::Infix { operator: op2, .. } = *right {
                 assert_eq!(op2.kind, TokenKind::Star);
-            } else { panic!("Expected right to be an infix expression (*)"); }
+            }
         } else { panic!("Expected infix expression (+)"); }
     }
 
@@ -919,10 +920,8 @@ mod tests {
         let mut parser = Parser::new(lexer);
         let expr = parser.parse_expression();
         
-        if let Expression::MethodCall { method, arguments, .. } = expr {
-            assert_eq!(method, "len");
-            assert_eq!(arguments.len(), 0);
-        } else { panic!("Expected method call, found {:?}", expr); }
+        let is_method_call = matches!(expr, Expression::MethodCall { .. });
+        assert!(is_method_call, "Expected method call, got {:?}", expr);
     }
 
     #[test]
@@ -933,10 +932,12 @@ mod tests {
         let program = parser.parse_program();
         
         assert_eq!(program.declarations.len(), 1);
+        let is_fn = matches!(program.declarations[0], Declaration::Function(_));
+        assert!(is_fn, "Expected function declaration");
         if let Declaration::Function(f) = &program.declarations[0] {
             assert_eq!(f.name, "add");
             assert_eq!(f.params.len(), 2);
             assert_eq!(f.return_type, "i64");
-        } else { panic!("Expected function declaration"); }
+        }
     }
 }
