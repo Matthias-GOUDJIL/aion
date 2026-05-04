@@ -701,13 +701,17 @@ impl<'ctx> Compiler<'ctx> {
                                     let cv_ptr = cv.into_pointer_value();
                                     self.builder.build_store(pa, cv_ptr).map_err(|e| e.to_string())?;
                                 } else if ctn != "i64" && ctn != "Integer" {
-                                    // For structs and other types, store the pointer directly
+                                    // For structs, store the pointer directly
+                                    // The pointer already points to the struct data
                                     let cv_ptr = cv.into_pointer_value();
                                     self.builder.build_store(pa, cv_ptr).map_err(|e| e.to_string())?;
+                                    // Update type to pointer so member access works
+                                    let ptr_type = self.context.ptr_type(AddressSpace::default());
+                                    av.insert(arm.params[0].clone(), (pa, ptr_type.into(), format!("*{}", ctn)));
                                 } else {
                                     self.builder.build_store(pa, cv).map_err(|e| e.to_string())?;
+                                    av.insert(arm.params[0].clone(), (pa, cv_type, ctn.to_string()));
                                 }
-                                av.insert(arm.params[0].clone(), (pa, cv_type, ctn.to_string()));
                             }
                             
                             // Evaluate guard condition if present
