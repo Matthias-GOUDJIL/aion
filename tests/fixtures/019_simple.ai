@@ -1,0 +1,6 @@
+use std.io
+
+fn main() {
+    io.println("Minimal Test")
+    return 0
+}
