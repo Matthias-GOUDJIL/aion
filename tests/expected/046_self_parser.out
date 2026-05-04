@@ -1,0 +1,37 @@
+--- Starting Self-Hosted Parser ---
+Tokenizing...
+Fn
+ID:add
+LParen
+ID:a
+Other
+ID:i64
+Other
+ID:b
+Other
+ID:i64
+RParen
+Other
+ID:i64
+Other
+Other
+ID:result
+Other
+ID:a
+Other
+ID:b
+Other
+Other
+ID:result
+Other
+Other
+Other
+Tokens: 26
+Initializing Parser...
+Parsing Program...
+Program Parsed Successfully!
+Parsed 1 declarations.
+Function: add
+  Return Type: i64
+  Statements: 2
+--- Success ---

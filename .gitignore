@@ -3,6 +3,7 @@
 *.o
 *.so
 *.out
+!tests/expected/*.out
 *.sql
 
 # Python
