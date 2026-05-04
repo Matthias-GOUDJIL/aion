@@ -205,6 +205,8 @@ impl<'a> Parser<'a> {
                     if self.current_token.kind == TokenKind::RParen { self.next_token(); }
                 }
                 variants.push(EnumVariant { name: v_name, data_types });
+            } else if self.current_token.kind != TokenKind::Comma {
+                self.next_token();
             }
             if self.current_token.kind == TokenKind::Comma { self.next_token(); }
         }
@@ -450,21 +452,40 @@ impl<'a> Parser<'a> {
                 let mut arms = Vec::new();
                 while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
                     let mut pattern = String::new();
-                    if let TokenKind::Identifier(p) = &self.current_token.kind {
-                        pattern = p.clone(); 
-                        self.next_token();
-                        while self.current_token.kind == TokenKind::DoubleColon || self.current_token.kind == TokenKind::Dot {
-                            let op = if self.current_token.kind == TokenKind::DoubleColon { "::" } else { "." };
+                    let mut is_valid_pattern = false;
+                    
+                    match &self.current_token.kind {
+                        TokenKind::Identifier(p) => {
+                            pattern = p.clone(); 
                             self.next_token();
-                            if let TokenKind::Identifier(sub) = &self.current_token.kind {
-                                pattern.push_str(op);
-                                pattern.push_str(sub);
+                            while self.current_token.kind == TokenKind::DoubleColon || self.current_token.kind == TokenKind::Dot {
+                                let op = if self.current_token.kind == TokenKind::DoubleColon { "::" } else { "." };
                                 self.next_token();
+                                if let TokenKind::Identifier(sub) = &self.current_token.kind {
+                                    pattern.push_str(op);
+                                    pattern.push_str(sub);
+                                    self.next_token();
+                                } else { break; }
                             }
+                            is_valid_pattern = true;
+                        },
+                        TokenKind::IntLiteral(n) => {
+                            pattern = n.to_string();
+                            self.next_token();
+                            is_valid_pattern = true;
+                        },
+                        TokenKind::StringLiteral(s) => {
+                            pattern = format!("\"{}\"", s);
+                            self.next_token();
+                            is_valid_pattern = true;
+                        },
+                        _ => {
+                            // Skip unexpected token to avoid infinite loop
+                            self.next_token();
                         }
                     }
 
-                    if !pattern.is_empty() {
+                    if is_valid_pattern {
                         let mut params = Vec::new();
                         
                         if self.current_token.kind == TokenKind::LParen {
@@ -472,6 +493,8 @@ impl<'a> Parser<'a> {
                             while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
                                 if let TokenKind::Identifier(param) = &self.current_token.kind {
                                     params.push(param.clone());
+                                    self.next_token();
+                                } else {
                                     self.next_token();
                                 }
                                 if self.current_token.kind == TokenKind::Comma { self.next_token(); }
@@ -489,8 +512,6 @@ impl<'a> Parser<'a> {
                             };
                             arms.push(MatchArm { pattern, params, body });
                         }
-                    } else if self.current_token.kind != TokenKind::Comma {
-                        self.next_token();
                     }
                     if self.current_token.kind == TokenKind::Comma { self.next_token(); }
                 }

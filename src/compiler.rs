@@ -589,34 +589,78 @@ impl<'ctx> Compiler<'ctx> {
                             }
                             if !is_last { self.builder.position_at_end(nb); }
                         }
-                        self.builder.position_at_end(exit_bb);
-                        if exit_bb.get_terminator().is_none() {
-                            if phis.is_empty() { 
-                                self.builder.build_unreachable().map_err(|e| e.to_string())?; 
-                                lv = None; 
+                    } else {
+                        // Match on primitives (i64, String)
+                        let na = arms.len();
+                        for (i, arm) in arms.iter().enumerate() {
+                            let pattern_clean = arm.pattern.chars().filter(|c| c.is_alphanumeric()).collect::<String>();
+                            let ab = self.context.append_basic_block(function, &format!("arm_{}_{}", i, pattern_clean));
+                            let is_last = i == na - 1;
+                            let nb = if is_last { exit_bb } else { self.context.append_basic_block(function, "match_next") };
+                            
+                            if arm.pattern == "_" {
+                                self.builder.build_unconditional_branch(ab).map_err(|e| e.to_string())?;
+                            } else if ctn == "i64" || ctn == "Integer" {
+                                let val = arm.pattern.parse::<i64>().unwrap_or(0);
+                                let cond = self.builder.build_int_compare(IntPredicate::EQ, cv.into_int_value(), i64_t.const_int(val as u64, false), "match_cond").map_err(|e| e.to_string())?;
+                                self.builder.build_conditional_branch(cond, ab, nb).map_err(|e| e.to_string())?;
+                            } else if ctn == "String" {
+                                let pattern_str = if arm.pattern.starts_with('"') && arm.pattern.ends_with('"') {
+                                    arm.pattern[1..arm.pattern.len()-1].to_string()
+                                } else { arm.pattern.clone() };
+                                
+                                let ps = self.builder.build_global_string_ptr(&pattern_str, "match_pattern").map_err(|e| e.to_string())?;
+                                let fnc = self.module.get_function("aion_str_eq").ok_or("aion_str_eq not found")?;
+                                let cmp = self.builder.build_call(fnc, &[cv.into(), ps.as_basic_value_enum().into()], "streq").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic().into_int_value();
+                                let cond = self.builder.build_int_compare(IntPredicate::NE, cmp, i64_t.const_zero(), "match_cond").map_err(|e| e.to_string())?;
+                                self.builder.build_conditional_branch(cond, ab, nb).map_err(|e| e.to_string())?;
                             } else {
-                                let target_type = phis[0].0.get_type(); 
-                                let mut final_phis = Vec::new();
-                                for (mut v, b) in phis {
-                                    self.builder.position_at_end(b);
-                                    if v.get_type() != target_type {
-                                        if target_type.is_pointer_type() && v.is_int_value() { 
-                                            v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr").map_err(|e| e.to_string())?.into(); 
-                                        } else if target_type.is_int_type() && v.is_pointer_value() { 
-                                            v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int").map_err(|e| e.to_string())?.into(); 
-                                        }
-                                    }
-                                    if b.get_terminator().is_none() {
-                                        self.builder.build_unconditional_branch(exit_bb).map_err(|e| e.to_string())?;
-                                    }
-                                    final_phis.push((v, b));
-                                }
-                                self.builder.position_at_end(exit_bb);
-                                let phi = self.builder.build_phi(target_type, "matchres").map_err(|e| e.to_string())?; 
-                                for (v, b) in final_phis { phi.add_incoming(&[(&v, b)]); } 
-                                lv = Some(phi.as_basic_value());
+                                self.builder.build_unconditional_branch(nb).map_err(|e| e.to_string())?;
                             }
-                        } else { lv = None; }
+                            
+                            if is_last && arm.pattern != "_" {
+                                let test_bb = self.builder.get_insert_block().ok_or("No active insert block")?;
+                                phis.push((i64_t.const_zero().into(), test_bb));
+                            }
+
+                            self.builder.position_at_end(ab);
+                            let ar = self.compile_block(&arm.body, variables, function)?;
+                            let abf = self.builder.get_insert_block().ok_or("No active insert block")?;
+                            if abf.get_terminator().is_none() {
+                                let v = ar.unwrap_or(i64_t.const_zero().into());
+                                phis.push((v, abf));
+                            }
+                            if !is_last { self.builder.position_at_end(nb); }
+                        }
+                    }
+
+                    self.builder.position_at_end(exit_bb);
+                    if exit_bb.get_terminator().is_none() {
+                        if phis.is_empty() { 
+                            self.builder.build_unreachable().map_err(|e| e.to_string())?; 
+                            lv = None; 
+                        } else {
+                            let target_type = phis[0].0.get_type(); 
+                            let mut final_phis = Vec::new();
+                            for (mut v, b) in phis {
+                                self.builder.position_at_end(b);
+                                if v.get_type() != target_type {
+                                    if target_type.is_pointer_type() && v.is_int_value() { 
+                                        v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr").map_err(|e| e.to_string())?.into(); 
+                                    } else if target_type.is_int_type() && v.is_pointer_value() { 
+                                        v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int").map_err(|e| e.to_string())?.into(); 
+                                    }
+                                }
+                                if b.get_terminator().is_none() {
+                                    self.builder.build_unconditional_branch(exit_bb).map_err(|e| e.to_string())?;
+                                }
+                                final_phis.push((v, b));
+                            }
+                            self.builder.position_at_end(exit_bb);
+                            let phi = self.builder.build_phi(target_type, "matchres").map_err(|e| e.to_string())?; 
+                            for (v, b) in final_phis { phi.add_incoming(&[(&v, b)]); } 
+                            lv = Some(phi.as_basic_value());
+                        }
                     } else { lv = None; }
                 },
                 Statement::ExpressionStmt(e) => { lv = Some(self.compile_expr(e, variables, function)?); },
