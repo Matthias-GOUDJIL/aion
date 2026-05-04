@@ -87,6 +87,7 @@ pub enum Statement {
 pub struct MatchArm {
     pub pattern: String,
     pub patterns: Vec<String>,
+    pub guard: Option<Box<Expression>>,
     pub params: Vec<String>,
     pub body: Vec<Statement>,
 }

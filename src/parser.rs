@@ -500,6 +500,21 @@ impl<'a> Parser<'a> {
                         
                         let mut params = Vec::new();
                         
+                        // If pattern is a lowercase identifier and followed by guard or arrow,
+                        // treat it as a binding variable (not a pattern to match)
+                        if patterns.len() == 1 {
+                            let pat = &patterns[0];
+                            let is_lower = !pat.is_empty() && pat.chars().next().unwrap().is_lowercase();
+                            let is_identifier = pat.chars().all(|c| c.is_alphanumeric() || c == '_');
+                            let is_not_underscore = pat != "_";
+                            let followed_by_guard_or_arrow = self.current_token.kind == TokenKind::If || self.current_token.kind == TokenKind::Arrow;
+                            
+                            if is_lower && is_identifier && is_not_underscore && followed_by_guard_or_arrow {
+                                params.push(pat.clone());
+                                patterns.clear();
+                            }
+                        }
+                        
                         if self.current_token.kind == TokenKind::LParen {
                             self.next_token();
                             while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
@@ -514,6 +529,14 @@ impl<'a> Parser<'a> {
                             if self.current_token.kind == TokenKind::RParen { self.next_token(); }
                         }
 
+                        // Parse guard (if condition)
+                        let guard = if self.current_token.kind == TokenKind::If {
+                            self.next_token();
+                            Some(Box::new(self.parse_expression()))
+                        } else {
+                            None
+                        };
+
                         if self.current_token.kind == TokenKind::Arrow {
                             self.next_token();
                             let body = if self.current_token.kind == TokenKind::LBrace { self.parse_block() } else {
@@ -522,7 +545,7 @@ impl<'a> Parser<'a> {
                                     None => vec![],
                                 }
                             };
-                            arms.push(MatchArm { pattern, patterns, params, body });
+                            arms.push(MatchArm { pattern, patterns, guard, params, body });
                         }
                     }
                     if self.current_token.kind == TokenKind::Comma { self.next_token(); }

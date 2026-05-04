@@ -597,6 +597,17 @@ impl<'ctx> Compiler<'ctx> {
                                 self.builder.build_store(pa, lv_val).map_err(|e| e.to_string())?; 
                                 av.insert(arm.params[0].clone(), (pa, lt, ptn));
                             }
+                            
+                            // Evaluate guard condition if present
+                            if let Some(guard_expr) = &arm.guard {
+                                let guard_val = self.compile_expr(guard_expr, &av, function)?.into_int_value();
+                                let guard_pass_bb = self.context.append_basic_block(function, "guard_pass");
+                                let guard_fail_bb = nb;
+                                let guard_cond = self.builder.build_int_compare(IntPredicate::NE, guard_val, i64_t.const_zero(), "guard_cond").map_err(|e| e.to_string())?;
+                                self.builder.build_conditional_branch(guard_cond, guard_pass_bb, guard_fail_bb).map_err(|e| e.to_string())?;
+                                self.builder.position_at_end(guard_pass_bb);
+                            }
+                            
                             let ar = self.compile_block(&arm.body, &mut av, function)?; 
                             let abf = self.builder.get_insert_block().ok_or("No active insert block")?; 
                             if abf.get_terminator().is_none() { 
@@ -614,33 +625,81 @@ impl<'ctx> Compiler<'ctx> {
                             let is_last = i == na - 1;
                             let nb = if is_last { exit_bb } else { self.context.append_basic_block(function, "match_next") };
                             
-                            if arm.pattern == "_" {
+                            // Get all patterns
+                            let all_patterns: Vec<String> = if arm.patterns.is_empty() {
+                                vec![arm.pattern.clone()]
+                            } else {
+                                arm.patterns.clone()
+                            };
+                            
+                            let is_default = all_patterns.iter().any(|p| p == "_");
+                            // If pattern is a binding variable (not a number) and we have params or guard, treat as wildcard
+                            let is_binding_var = arm.params.len() > 0 || arm.guard.is_some();
+                            let mut prim_match_cond: Option<inkwell::values::IntValue<'ctx>> = None;
+                            
+                            if !is_default && !is_binding_var {
+                                if ctn == "i64" || ctn == "Integer" {
+                                    for pat in &all_patterns {
+                                        if let Ok(val) = pat.parse::<i64>() {
+                                            let cond = self.builder.build_int_compare(IntPredicate::EQ, cv.into_int_value(), i64_t.const_int(val as u64, false), "match_cond").map_err(|e| e.to_string())?;
+                                            prim_match_cond = Some(match prim_match_cond {
+                                                Some(prev) => self.builder.build_or(prev, cond, "match_or").map_err(|e| e.to_string())?,
+                                                None => cond,
+                                            });
+                                        }
+                                    }
+                                } else if ctn == "String" {
+                                    for pat in &all_patterns {
+                                        let pattern_str = if pat.starts_with('"') && pat.ends_with('"') {
+                                            pat[1..pat.len()-1].to_string()
+                                        } else { pat.clone() };
+                                        
+                                        let ps = self.builder.build_global_string_ptr(&pattern_str, "match_pattern").map_err(|e| e.to_string())?;
+                                        let fnc = self.module.get_function("aion_str_eq").ok_or("aion_str_eq not found")?;
+                                        let cmp = self.builder.build_call(fnc, &[cv.into(), ps.as_basic_value_enum().into()], "streq").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic().into_int_value();
+                                        let cond = self.builder.build_int_compare(IntPredicate::NE, cmp, i64_t.const_zero(), "match_cond").map_err(|e| e.to_string())?;
+                                        prim_match_cond = Some(match prim_match_cond {
+                                            Some(prev) => self.builder.build_or(prev, cond, "match_or").map_err(|e| e.to_string())?,
+                                            None => cond,
+                                        });
+                                    }
+                                }
+                            }
+                            
+                            if is_default && prim_match_cond.is_none() || is_binding_var {
                                 self.builder.build_unconditional_branch(ab).map_err(|e| e.to_string())?;
-                            } else if ctn == "i64" || ctn == "Integer" {
-                                let val = arm.pattern.parse::<i64>().unwrap_or(0);
-                                let cond = self.builder.build_int_compare(IntPredicate::EQ, cv.into_int_value(), i64_t.const_int(val as u64, false), "match_cond").map_err(|e| e.to_string())?;
-                                self.builder.build_conditional_branch(cond, ab, nb).map_err(|e| e.to_string())?;
-                            } else if ctn == "String" {
-                                let pattern_str = if arm.pattern.starts_with('"') && arm.pattern.ends_with('"') {
-                                    arm.pattern[1..arm.pattern.len()-1].to_string()
-                                } else { arm.pattern.clone() };
-                                
-                                let ps = self.builder.build_global_string_ptr(&pattern_str, "match_pattern").map_err(|e| e.to_string())?;
-                                let fnc = self.module.get_function("aion_str_eq").ok_or("aion_str_eq not found")?;
-                                let cmp = self.builder.build_call(fnc, &[cv.into(), ps.as_basic_value_enum().into()], "streq").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic().into_int_value();
-                                let cond = self.builder.build_int_compare(IntPredicate::NE, cmp, i64_t.const_zero(), "match_cond").map_err(|e| e.to_string())?;
+                            } else if let Some(cond) = prim_match_cond {
                                 self.builder.build_conditional_branch(cond, ab, nb).map_err(|e| e.to_string())?;
                             } else {
                                 self.builder.build_unconditional_branch(nb).map_err(|e| e.to_string())?;
                             }
                             
-                            if is_last && arm.pattern != "_" {
+                            if is_last && !is_default {
                                 let test_bb = self.builder.get_insert_block().ok_or("No active insert block")?;
                                 phis.push((i64_t.const_zero().into(), test_bb));
                             }
 
                             self.builder.position_at_end(ab);
-                            let ar = self.compile_block(&arm.body, variables, function)?;
+                            
+                            // For primitives, bind pattern variable if present and evaluate guard
+                            let mut av = variables.clone();
+                            if !arm.params.is_empty() && ctn == "i64" {
+                                let pa = self.builder.build_alloca(i64_t, &arm.params[0]).map_err(|e| e.to_string())?;
+                                self.builder.build_store(pa, cv).map_err(|e| e.to_string())?;
+                                av.insert(arm.params[0].clone(), (pa, i64_t.into(), "i64".to_string()));
+                            }
+                            
+                            // Evaluate guard condition if present
+                            if let Some(guard_expr) = &arm.guard {
+                                let guard_val = self.compile_expr(guard_expr, &av, function)?.into_int_value();
+                                let guard_pass_bb = self.context.append_basic_block(function, "guard_pass");
+                                let guard_fail_bb = nb;
+                                let guard_cond = self.builder.build_int_compare(IntPredicate::NE, guard_val, i64_t.const_zero(), "guard_cond").map_err(|e| e.to_string())?;
+                                self.builder.build_conditional_branch(guard_cond, guard_pass_bb, guard_fail_bb).map_err(|e| e.to_string())?;
+                                self.builder.position_at_end(guard_pass_bb);
+                            }
+                            
+                            let ar = self.compile_block(&arm.body, &mut av, function)?;
                             let abf = self.builder.get_insert_block().ok_or("No active insert block")?;
                             if abf.get_terminator().is_none() {
                                 let v = ar.unwrap_or(i64_t.const_zero().into());
