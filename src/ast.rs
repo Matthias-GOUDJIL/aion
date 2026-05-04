@@ -40,7 +40,7 @@ pub struct ImplBlock {
 pub struct Function {
     pub name: String,
     pub generic_params: Vec<String>,
-    pub params: Vec<(String, String)>,
+    pub params: Vec<(String, String, Option<Box<Expression>>)>,  // (name, type, default_value)
     pub return_type: String,
     pub body: Option<Vec<Statement>>, 
     pub modifiers: Vec<Token>,        

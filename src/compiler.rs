@@ -190,7 +190,7 @@ impl<'ctx> Compiler<'ctx> {
             for i in 0..ph.len() { 
                 let p = &ph[i]; 
                 let c = &ga[i]; 
-                for (_, pt) in f.params.iter_mut() { *pt = pt.replace(p, c); } 
+                for (_, pt, _) in f.params.iter_mut() { *pt = pt.replace(p, c); } 
                 f.return_type = f.return_type.replace(p, c); 
             }
             if let Some(body) = &mut f.body { self.substitute_types_in_body(body, &ph, ga); }
@@ -215,7 +215,7 @@ impl<'ctx> Compiler<'ctx> {
                     pt.push(self.context.i32_type().into()); 
                     pt.push(ptr_t.into()); 
                 } else { 
-                    for (_, ptn) in &f.params { pt.push(self.aion_type_to_llvm(ptn).into()); } 
+                    for (_, ptn, _) in &f.params { pt.push(self.aion_type_to_llvm(ptn).into()); } 
                 }
                 self.module.add_function(&f.name, self.aion_type_to_llvm(&f.return_type).fn_type(&pt, false), None)
             };
@@ -253,10 +253,16 @@ impl<'ctx> Compiler<'ctx> {
                         if i < f.params.len() { 
                             let an = &f.params[i].0; 
                             let atn = &f.params[i].1; 
+                            let default_val = &f.params[i].2;
                             arg.set_name(an); 
                             let a = self.builder.build_alloca(arg.get_type(), an).map_err(|e| e.to_string())?; 
                             self.builder.build_store(a, arg).map_err(|e| e.to_string())?; 
                             local_vars.insert(an.clone(), (a, arg.get_type(), atn.replace(" ", ""))); 
+                            
+                            // If there's a default value and the arg is zero-initialized, use the default
+                            if default_val.is_some() {
+                                // For now, we'll handle defaults at call site
+                            }
                         } 
                     }
                 }
@@ -307,7 +313,7 @@ impl<'ctx> Compiler<'ctx> {
                     for f in &i.functions { 
                         let mut nf = f.clone(); 
                         nf.name = format!("{}.{}", bt, f.name); 
-                        for (_, pt) in nf.params.iter_mut() { if pt == "Self" { *pt = ftn.clone(); } } 
+                        for (_, pt, _) in nf.params.iter_mut() { if pt == "Self" { *pt = ftn.clone(); } } 
                         if nf.return_type == "Self" { nf.return_type = ftn.clone(); } 
                         let mut cg = i.generic_params.clone(); 
                         cg.extend(f.generic_params.clone()); 
@@ -386,7 +392,7 @@ impl<'ctx> Compiler<'ctx> {
                 if f.generic_params.is_empty() { 
                     let mut pv = Vec::new(); 
                     if f.name == "main" { pv.push(self.context.i32_type().into()); pv.push(pt.into()); } 
-                    else { for (_, ptn) in &f.params { pv.push(self.aion_type_to_llvm(ptn).into()); } } 
+                    else { for (_, ptn, _) in &f.params { pv.push(self.aion_type_to_llvm(ptn).into()); } } 
                     let mut ln = f.name.clone(); 
                     for (an, av) in &f.attributes { if an == "intrinsic" { ln = av.replace("libc.", ""); break; } } 
                     self.module.add_function(&ln, self.aion_type_to_llvm(&f.return_type).fn_type(&pv, false), None); 
@@ -858,7 +864,7 @@ impl<'ctx> Compiler<'ctx> {
                          let tp = self.resolve_fuzzy_name(&self.struct_types, bc).or_else(|| self.resolve_fuzzy_name(&self.enum_types, bc)).unwrap_or(btn.clone()); 
                          let fc = self.resolve_fuzzy_name(&self.decls, &format!("{}.{}", tp, mn)).unwrap_or(format!("{}.{}", tp, mn)); 
                          if let Some(Declaration::Function(f_decl)) = self.decls.get(&fc) { 
-                             let has_self = f_decl.params.get(0).map_or(false, |(n, _)| n == "self");
+                             let has_self = f_decl.params.get(0).map_or(false, |(n, _, _)| n == "self");
                              if has_self {
                                  aa.insert(0, re); 
                                  if aga.is_empty() { aga = tga; } 

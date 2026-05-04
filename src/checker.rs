@@ -150,7 +150,7 @@ impl TypeChecker {
                         if f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe) { self.in_unsafe_context = true; }
                         let enclosed = Environment::new_enclosed(self.env.clone());
                         let old_env = std::mem::replace(&mut self.env, enclosed);
-                        for (p_name, p_type) in &f.params { self.env.set(p_name.clone(), self.resolve_type(p_type)); }
+                        for (p_name, p_type, _) in &f.params { self.env.set(p_name.clone(), self.resolve_type(p_type)); }
                         for stmt in body { self.check_statement(stmt)?; }
                         self.env = old_env;
                         self.in_unsafe_context = was_unsafe;
@@ -163,7 +163,7 @@ impl TypeChecker {
                             if f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe) { self.in_unsafe_context = true; }
                             let enclosed = Environment::new_enclosed(self.env.clone());
                             let old_env = std::mem::replace(&mut self.env, enclosed);
-                            for (p_name, p_type) in &f.params {
+                            for (p_name, p_type, _) in &f.params {
                                 let mut pt = p_type.clone();
                                 if pt == "Self" { pt = i.target_name.clone(); }
                                 self.env.set(p_name.clone(), self.resolve_type(&pt));

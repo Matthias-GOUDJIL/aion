@@ -316,27 +316,36 @@ impl<'a> Parser<'a> {
             self.next_token();
             while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
                 if self.current_token.kind == TokenKind::SelfToken {
-                    params.push(("self".to_string(), "Self".to_string()));
+                    params.push(("self".to_string(), "Self".to_string(), None));
                     self.next_token();
                 } else if self.current_token.kind == TokenKind::Mut {
                     self.next_token();
                     if self.current_token.kind == TokenKind::SelfToken {
-                        params.push(("self".to_string(), "Self".to_string()));
+                        params.push(("self".to_string(), "Self".to_string(), None));
                         self.next_token();
                     } else if let TokenKind::Identifier(p_name) = &self.current_token.kind {
                         let p_name = p_name.clone();
                         self.next_token();
                         if self.current_token.kind == TokenKind::Colon {
                             self.next_token();
-                            params.push((p_name, self.parse_type_name()));
+                            params.push((p_name, self.parse_type_name(), None));
                         }
                     }
                 } else if let TokenKind::Identifier(p_name) = &self.current_token.kind {
                     let p_name = p_name.clone();
                     self.next_token();
+                    let mut default_val: Option<Box<Expression>> = None;
                     if self.current_token.kind == TokenKind::Colon {
                         self.next_token();
-                        params.push((p_name, self.parse_type_name()));
+                        let param_type = self.parse_type_name();
+                        // Check for default value
+                        if self.current_token.kind == TokenKind::Eq {
+                            self.next_token();
+                            default_val = Some(Box::new(self.parse_expression()));
+                        }
+                        params.push((p_name, param_type, default_val));
+                    } else {
+                        params.push((p_name, "i64".to_string(), default_val));  // Default type i64
                     }
                 } else {
                     self.next_token();

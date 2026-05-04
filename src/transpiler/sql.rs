@@ -32,7 +32,7 @@ impl SqlTranspiler {
         let params: Vec<String> = f
             .params
             .iter()
-            .map(|(n, t)| format!("{} {}", n, self.map_type(t)))
+            .map(|(n, t, _)| format!("{} {}", n, self.map_type(t)))
             .collect();
 
         self.buffer.push_str(&params.join(", "));
