@@ -1019,7 +1019,9 @@ mod tests {
             if let Expression::Infix { operator: op2, .. } = *right {
                 assert_eq!(op2.kind, TokenKind::Star);
             }
-        } else { panic!("Expected infix expression (+)"); }
+        } else {
+            assert!(false, "Expected infix expression (+), got {:?}", expr);
+        }
     }
 
     #[test]
