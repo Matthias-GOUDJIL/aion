@@ -887,7 +887,11 @@ impl<'ctx> Compiler<'ctx> {
                         self.compile_expr(arg, variables, function)?
                     } else { 
                         let v = self.compile_expr(arg, variables, function)?; 
-                        if ep && !v.get_type().is_pointer_type() { 
+                        // Auto-convert i64 to string for io.println/io.print
+                        if (fnm == "io.println" || fnm == "io.print") && v.is_int_value() {
+                            let conv_fn = self.module.get_function("aion_int_to_str").ok_or("aion_int_to_str not found")?;
+                            self.builder.build_call(conv_fn, &[v.into()], "to_str").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic()
+                        } else if ep && !v.get_type().is_pointer_type() { 
                             let a = self.builder.build_alloca(v.get_type(), "temp_arg").map_err(|e| e.to_string())?; 
                             self.builder.build_store(a, v).map_err(|e| e.to_string())?; 
                             a.into() 
@@ -1075,7 +1079,21 @@ impl<'ctx> Compiler<'ctx> {
                 let mut ca = Vec::new(); 
                 let rv = self.compile_expr(receiver, variables, function)?;
                 ca.push(rv.into()); 
-                for arg in arguments { ca.push(self.compile_expr(arg, variables, function)?.into()); }
+                for arg in arguments { 
+                    let compiled = self.compile_expr(arg, variables, function)?;
+                    // Auto-convert i64 to string for io.println/io.print
+                    if fm == "io.println" || fm == "io.print" {
+                        if compiled.is_int_value() {
+                            let conv_fn = self.module.get_function("aion_int_to_str").ok_or("aion_int_to_str not found")?;
+                            let converted = self.builder.build_call(conv_fn, &[compiled.into()], "to_str").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic();
+                            ca.push(converted.into());
+                        } else {
+                            ca.push(compiled.into());
+                        }
+                    } else {
+                        ca.push(compiled.into());
+                    }
+                }
                 let call = self.builder.build_call(fv, &ca, "call").map_err(|e| e.to_string())?; 
                 Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() })
             },
