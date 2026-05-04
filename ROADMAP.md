@@ -22,7 +22,7 @@ This document outlines the technical path to transform Aion from its current Rus
 - [x] **PIC Support**: LLVM Relocation model set to PIC for modern Linux.
 - [x] **Global Args**: `aion_argc` and `aion_argv` accessible via `std.env`.
 - [x] **Memory Management**: Integration of Boehm GC for automatic cleanup.
-- [ ] **Compiler Optimization**: Pass manager integration for performance.
+- [x] **Compiler Optimization**: Pass manager integration for performance.
 - [ ] **Self-Hosting Path**: Identify remaining blockers for `aionc.ai`.
 - [ ] **Self-Runtime**: Rewrite `aion_spawn` and the thread scheduler in Aion via `syscalls`.
 - [ ] **GCC/Clang Removal**: Aion will only depend on LLVM for the final binary.
@@ -78,7 +78,7 @@ This document outlines the technical path to transform Aion from its current Rus
 - [x] `lexer.ai` implementation. Validation by the Rust (Bootstrap) compiler.
 
 ### **v0.8: Aion Parser**
-- [ ] `parser.ai` implementation. AST manipulation via Aion `struct` and `match`.
+- [x] `parser.ai` implementation. AST manipulation via Aion `struct` and `match`.
 
 ### **v0.9: Aion LLVM Backend**
 - [ ] Direct generation of `.ll` (LLVM IR) text files from the AST.

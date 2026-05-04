@@ -5,6 +5,7 @@
 | Build + run a file | `./aion build <file.ai> && ./output` |
 | Compile + run (all-in-one) | `./aion run <file.ai>` |
 | Run test suite | `python3 runner.py` |
+| Generate documentation | `./aion doc <file.ai>` |
 | Transpile to SQL | `./aion transpile <file.ai>` |
 
 **CRITICAL**: Never run `cargo build`, `cargo run`, or `cargo test` directly on the host. The `./aion` wrapper runs everything inside a Docker container (`aion-compiler` image based on Ubuntu 22.04 with LLVM 15). The wrapper caches `target/` and `cargo/registry` in Docker volumes to avoid full rebuilds.
