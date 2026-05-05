@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::types::Type;
+use super::types::Type;
 
 #[derive(Clone, Debug)]
 pub struct Environment {

@@ -9,7 +9,7 @@ use inkwell::{AddressSpace, IntPredicate};
 use inkwell::passes::{PassManager, PassManagerBuilder};
 use inkwell::OptimizationLevel;
 use crate::ast::*;
-use crate::token::TokenKind;
+use crate::lexer::token::TokenKind;
 use crate::error::CompileError;
 
 pub struct Compiler<'ctx> {
@@ -98,11 +98,11 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn aion_type_to_llvm(&self, tn: &str) -> BasicTypeEnum<'ctx> {
-        self.type_to_llvm(&crate::types::Type::from_str(tn))
+        self.type_to_llvm(&crate::analysis::types::Type::from_str(tn))
     }
 
-    fn type_to_llvm(&self, ty: &crate::types::Type) -> BasicTypeEnum<'ctx> {
-        use crate::types::Type;
+    fn type_to_llvm(&self, ty: &crate::analysis::types::Type) -> BasicTypeEnum<'ctx> {
+        use crate::analysis::types::Type;
         match ty {
             Type::Integer | Type::Boolean | Type::Date | Type::Duration | Type::Unit => self.context.i64_type().into(),
             Type::Float => self.context.f64_type().into(),

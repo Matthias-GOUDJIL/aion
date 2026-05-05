@@ -1,12 +1,11 @@
-pub mod token;
 pub mod lexer;
 pub mod ast;
 pub mod parser;
-pub mod types;
-pub mod environment;
-pub mod checker;
-pub mod transpiler;
-pub mod compiler;
+pub mod analysis;
+
+
+pub mod codegen;
+
 pub mod error;
 
 use std::fs;
@@ -14,9 +13,9 @@ use std::path::Path;
 use inkwell::context::Context;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
-use crate::checker::TypeChecker;
-use crate::transpiler::sql::SqlTranspiler;
-use crate::compiler::Compiler;
+use crate::analysis::checker::TypeChecker;
+use crate::codegen::transpiler::sql::SqlTranspiler;
+use crate::codegen::compiler::Compiler;
 use crate::ast::Program;
 use crate::error::CompileError;
 
@@ -229,9 +228,9 @@ fn generate_function_signature(f: &ast::Function) -> String {
     let mut sig = String::from("```aion\n");
 
     let modifiers: Vec<&str> = f.modifiers.iter().filter_map(|t| match t.kind {
-        token::TokenKind::Extern => Some("extern"),
-        token::TokenKind::Spawn => Some("spawn"),
-        token::TokenKind::Unsafe => Some("unsafe"),
+        crate::lexer::TokenKind::Extern => Some("extern"),
+        crate::lexer::TokenKind::Spawn => Some("spawn"),
+        crate::lexer::TokenKind::Unsafe => Some("unsafe"),
         _ => None,
     }).collect();
     if !modifiers.is_empty() {

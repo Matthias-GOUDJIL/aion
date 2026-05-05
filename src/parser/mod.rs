@@ -1,4 +1,4 @@
-use crate::token::{Token, TokenKind};
+use crate::lexer::token::{Token, TokenKind};
 use crate::lexer::Lexer;
 use crate::ast::*;
 use crate::error::CompileError;
