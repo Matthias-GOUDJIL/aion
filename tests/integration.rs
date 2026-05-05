@@ -104,6 +104,8 @@ fn test_string_escapes() { assert_snapshot!(run_aion_test("language/string_escap
 fn test_break_continue() { assert_snapshot!(run_aion_test("language/break_continue")); }
 #[test]
 fn test_string_methods() { assert_snapshot!(run_aion_test("stdlib/string_methods")); }
+#[test]
+fn test_loop_basic() { assert_snapshot!(run_aion_test("language/loop_basic")); }
 
 // --- Stdlib Tests ---
 
