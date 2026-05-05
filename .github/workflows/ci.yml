@@ -12,6 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Create tests/tmp directory
+        run: mkdir -p tests/tmp
+
       - name: Build Docker image
         run: docker build -t aion-compiler .
 
