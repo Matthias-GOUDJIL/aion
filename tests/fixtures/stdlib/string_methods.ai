@@ -1,0 +1,55 @@
+use std.string
+use std.io
+
+fn main() {
+    // contains
+    io.print("contains(hello, ell): ")
+    io.println(if string.contains("hello", "ell") { "true" } else { "false" })
+
+    io.print("contains(hello, xyz): ")
+    io.println(if string.contains("hello", "xyz") { "true" } else { "false" })
+
+    io.print("contains(hello, ): ")
+    io.println(if string.contains("hello", "") { "true" } else { "false" })
+
+    // starts_with
+    io.print("starts_with(hello, hel): ")
+    io.println(if string.starts_with("hello", "hel") { "true" } else { "false" })
+
+    io.print("starts_with(hello, world): ")
+    io.println(if string.starts_with("hello", "world") { "true" } else { "false" })
+
+    // ends_with
+    io.print("ends_with(hello, llo): ")
+    io.println(if string.ends_with("hello", "llo") { "true" } else { "false" })
+
+    io.print("ends_with(hello, world): ")
+    io.println(if string.ends_with("hello", "world") { "true" } else { "false" })
+
+    // find
+    io.print("find(hello world, world): ")
+    io.println(string.from_int(string.find("hello world", "world")))
+
+    io.print("find(hello, xyz): ")
+    io.println(string.from_int(string.find("hello", "xyz")))
+
+    // trim
+    io.print("trim(  hello  ): [")
+    io.print(string.trim("  hello  "))
+    io.println("]")
+
+    // replace
+    io.print("replace(hello world, world, Aion): ")
+    io.println(string.replace("hello world", "world", "Aion"))
+
+    // to_upper
+    io.print("to_upper(hello): ")
+    io.println(string.to_upper("hello"))
+
+    // to_lower
+    io.print("to_lower(HELLO): ")
+    io.println(string.to_lower("HELLO"))
+
+    io.println("all string tests done")
+    return 0
+}
