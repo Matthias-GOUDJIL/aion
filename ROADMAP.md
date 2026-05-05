@@ -98,6 +98,6 @@ This document outlines the technical path to transform Aion from its current Rus
 - [x] Lexer / Parser EBNF v0.5.
 - [x] Type Checker (Safety & Temporal & Security Enforcement).
 - [x] CodeGen LLVM (Native & Dynamic Strings & Function Returns).
-- [x] Modular Compiler Architecture (`src/compiler.rs`).
+- [x] Modular Compiler Architecture (`src/codegen/`).
 - [x] **EXHAUSTIVITY GOAL**: Real Enum Tagged Unions and deep Pattern Matching.
 - [x] **CORE STABILITY**: Correct struct pass-by-pointer, string content comparison, and generic unwrap type safety.

@@ -52,4 +52,4 @@ io.println(Duration("P1DT2H")) // Parses string at runtime
 - [x] **Codegen**:
     *   `Duration` stored as milliseconds in `i64`.
     *   `Date` stored as millisecond timestamp in `i64`.
-    *   Arithmetic intrinsics implemented in `src/lib.rs`.
+    *   Arithmetic intrinsics implemented in `src/lib.rs` (orchestration layer).

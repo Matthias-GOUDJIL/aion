@@ -2,9 +2,9 @@
 
 ## 1. Architecture
 Aion is a direct-to-LLVM compiler with a strict safety-first pipeline.
--   **Frontend**: Hand-written Lexer (`lexer.rs`) and Recursive Descent Parser (`parser.rs`).
--   **Middle**: Type Checker (`checker.rs`) with scoped environments, fuzzy resolution, and strict generic validation.
--   **Backend**: Direct LLVM IR generation (`compiler.rs`) using `inkwell` (LLVM 15+ Opaque Pointers).
+-   **Frontend**: Hand-written Lexer (`lexer/`) and Recursive Descent Parser (`parser/`).
+-   **Middle**: Type Checker (`analysis/`) with scoped environments, fuzzy resolution, and strict generic validation.
+-   **Backend**: Direct LLVM IR generation (`codegen/`) using `inkwell` (LLVM 15+ Opaque Pointers).
 -   **Runtime**: Minimal C runtime (`runtime.c`) for I/O, threading, and AI tensor primitives.
 -   **Orchestration**: Docker-first execution via `./aion` wrapper. Host `cargo` commands are strictly forbidden for compilation.
 
