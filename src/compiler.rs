@@ -48,8 +48,8 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn err(&self, msg: impl Into<String>, expr: &Expression) -> CompileError {
-        let (line, col) = expr.span();
-        CompileError::new(msg, line, col).with_snippet(&self.source)
+        let span = expr.span();
+        CompileError::new(msg, span.line, span.col).with_snippet(&self.source)
     }
 
     fn register_builtins(&mut self) {
@@ -113,18 +113,18 @@ impl<'ctx> Compiler<'ctx> {
         for s in b.iter_mut() {
             match s {
                 Statement::Let { value, .. } => self.substitute_types_in_expr(value, ph, conc),
-                Statement::Assignment { target, value } => { 
+                Statement::Assignment { target, value, .. } => { 
                     self.substitute_types_in_expr(target, ph, conc); 
                     self.substitute_types_in_expr(value, ph, conc); 
                 },
                 Statement::Return { value, .. } => self.substitute_types_in_expr(value, ph, conc),
-                Statement::ExpressionStmt(e) => self.substitute_types_in_expr(e, ph, conc),
-                Statement::If { condition, then_branch, else_branch } => { 
+                Statement::ExpressionStmt(e, _) => self.substitute_types_in_expr(e, ph, conc),
+                Statement::If { condition, then_branch, else_branch, .. } => { 
                     self.substitute_types_in_expr(condition, ph, conc); 
                     self.substitute_types_in_body(then_branch, ph, conc); 
                     if let Some(eb) = else_branch { self.substitute_types_in_body(eb, ph, conc); } 
                 },
-                Statement::While { condition, body } => { 
+                Statement::While { condition, body, .. } => { 
                     self.substitute_types_in_expr(condition, ph, conc); 
                     self.substitute_types_in_body(body, ph, conc); 
                 },
@@ -132,8 +132,8 @@ impl<'ctx> Compiler<'ctx> {
                     self.substitute_types_in_expr(range, ph, conc); 
                     self.substitute_types_in_body(body, ph, conc); 
                 },
-                Statement::UnsafeBlock(stmts) | Statement::Spawn(stmts) => self.substitute_types_in_body(stmts, ph, conc),
-                Statement::Match { condition, arms } => { 
+                Statement::UnsafeBlock(stmts, _) | Statement::Spawn(stmts, _) => self.substitute_types_in_body(stmts, ph, conc),
+                Statement::Match { condition, arms, .. } => { 
                     self.substitute_types_in_expr(condition, ph, conc); 
                     for arm in arms { self.substitute_types_in_body(&mut arm.body, ph, conc); } 
                 },
@@ -169,16 +169,16 @@ impl<'ctx> Compiler<'ctx> {
                 } 
                 for (_, val) in fields { self.substitute_types_in_expr(val, ph, conc); } 
             },
-            Expression::Cast { expr, target } => { 
+            Expression::Cast { expr, target, .. } => { 
                 self.substitute_types_in_expr(expr, ph, conc); 
                 for i in 0..ph.len() { *target = target.replace(&ph[i], &conc[i]); } 
             },
-            Expression::Deref { expr } => self.substitute_types_in_expr(expr, ph, conc),
+            Expression::Deref { expr, .. } => self.substitute_types_in_expr(expr, ph, conc),
             Expression::Intrinsic { arguments, .. } => { 
                 for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); } 
             },
             Expression::Block { statements, .. } => self.substitute_types_in_body(statements, ph, conc),
-            Expression::Identifier(n) => { 
+            Expression::Identifier(n, _) => { 
                 for i in 0..ph.len() { *n = n.replace(&ph[i], &conc[i]); } 
             },
             Expression::MemberAccess { receiver, .. } => self.substitute_types_in_expr(receiver, ph, conc),
@@ -439,7 +439,7 @@ impl<'ctx> Compiler<'ctx> {
                     variables.insert(name.clone(), (a, vt, vtn));
                     lv = None;
                 },
-                Statement::Assignment { target, value } => { 
+                Statement::Assignment { target, value, .. } => { 
                     let (ptr, tt) = self.compile_lvalue(target, variables, function)?; 
                     let mut v = self.compile_expr(value, variables, function)?; 
                     if tt.is_struct_type() && v.get_type().is_pointer_type() { 
@@ -465,7 +465,7 @@ impl<'ctx> Compiler<'ctx> {
                     } 
                     lv = Some(v); 
                 },
-                Statement::If { condition, then_branch, else_branch } => {
+                Statement::If { condition, then_branch, else_branch, .. } => {
                     let cv = self.compile_expr(condition, variables, function)?.into_int_value(); 
                     let comp = self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "ifcond")?;
                     let tb = self.context.append_basic_block(function, "then"); 
@@ -519,7 +519,7 @@ impl<'ctx> Compiler<'ctx> {
                         lv = None; 
                     }
                 },
-                Statement::While { condition, body } => {
+                Statement::While { condition, body, .. } => {
                     let cb = self.context.append_basic_block(function, "while_cond"); 
                     let bb = self.context.append_basic_block(function, "while_body"); 
                     let eb = self.context.append_basic_block(function, "while_exit");
@@ -536,7 +536,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.position_at_end(eb); 
                     lv = None;
                 },
-                Statement::Match { condition, arms } => {
+                Statement::Match { condition, arms, .. } => {
                     let cv = self.compile_expr(condition, variables, function)?; 
                     let exit_bb = self.context.append_basic_block(function, "matchexit"); 
                     let mut phis = Vec::new();
@@ -784,8 +784,8 @@ impl<'ctx> Compiler<'ctx> {
                         }
                     } else { lv = None; }
                 },
-                Statement::ExpressionStmt(e) => { lv = Some(self.compile_expr(e, variables, function)?); },
-                Statement::UnsafeBlock(stmts) | Statement::Spawn(stmts) => { lv = self.compile_block(stmts, variables, function)?; },
+                Statement::ExpressionStmt(e, _) => { lv = Some(self.compile_expr(e, variables, function)?); },
+                Statement::UnsafeBlock(stmts, _) | Statement::Spawn(stmts, _) => { lv = self.compile_block(stmts, variables, function)?; },
                 _ => { lv = None; }
             }
         }
@@ -795,7 +795,7 @@ impl<'ctx> Compiler<'ctx> {
     fn compile_lvalue(&mut self, e: &Expression, variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>, function: FunctionValue<'ctx>) -> Result<(PointerValue<'ctx>, BasicTypeEnum<'ctx>), CompileError> {
         let pt = self.context.ptr_type(AddressSpace::default());
         match e {
-            Expression::Identifier(name) => {
+            Expression::Identifier(name, _) => {
                 if let Some((vn, fnm)) = name.split_once('.') { 
                     if let Some((vptr, vt, vtn)) = variables.get(vn) { 
                         let btn = if vtn.contains('<') { vtn.split('<').next().ok_or_else(|| CompileError::Internal("Invalid type name".to_string()))? } else { vtn }; 
@@ -811,7 +811,7 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 if let Some((ptr, vt, _)) = variables.get(name) { Ok((*ptr, *vt)) } else { Err(self.err(format!("variable '{}' not found", name), e)) }
             },
-            Expression::MemberAccess { receiver, member } => {
+            Expression::MemberAccess { receiver, member, .. } => {
                 let (rp, rt_llvm) = self.compile_lvalue(receiver, variables, function)?; 
                 let rtn = self.get_expr_type_name(receiver, variables); 
                 let ftn = self.get_field_type(&rtn, member);
@@ -824,7 +824,7 @@ impl<'ctx> Compiler<'ctx> {
                 let st_ptr = self.builder.build_load(rt_llvm, rp, "st_load")?.into_pointer_value();
                 Ok((self.builder.build_struct_gep(st, st_ptr, idx, member)?, self.aion_type_to_llvm(&ftn)))
             },
-            Expression::Deref { expr } => { 
+            Expression::Deref { expr, .. } => { 
                 let v = self.compile_expr(expr, variables, function)?; 
                 let tn = self.get_expr_type_name(expr, variables); 
                 let et = self.aion_type_to_llvm(if tn.starts_with('*') { &tn[1..] } else { "i64" }); 
@@ -839,11 +839,11 @@ impl<'ctx> Compiler<'ctx> {
         let i64_t = self.context.i64_type(); 
         let pt = self.context.ptr_type(AddressSpace::default());
         match e {
-            Expression::Integer(n) => Ok(i64_t.const_int(*n as u64, false).into()),
-            Expression::Float(f_val) => Ok(self.context.f64_type().const_float(*f_val).into()),
-            Expression::Boolean(b) => Ok(i64_t.const_int(if *b { 1 } else { 0 }, false).into()),
-            Expression::String(s) => Ok(self.builder.build_global_string_ptr(&format!("{}\0", s), "aion_str")?.as_basic_value_enum()),
-            Expression::Identifier(name) => { 
+            Expression::Integer(n, _) => Ok(i64_t.const_int(*n as u64, false).into()),
+            Expression::Float(f_val, _) => Ok(self.context.f64_type().const_float(*f_val).into()),
+            Expression::Boolean(b, _) => Ok(i64_t.const_int(if *b { 1 } else { 0 }, false).into()),
+            Expression::String(s, _) => Ok(self.builder.build_global_string_ptr(&format!("{}\0", s), "aion_str")?.as_basic_value_enum()),
+            Expression::Identifier(name, _) => { 
                 if let Some((ptr, vt, _)) = variables.get(name) { 
                     Ok(self.builder.build_load(*vt, *ptr, name)?) 
                 } else { 
@@ -861,7 +861,7 @@ impl<'ctx> Compiler<'ctx> {
                 let mut aa = arguments.clone(); 
                 let mut is_mc = false;
                 if let Some((rn, mn)) = fnm.rsplit_once('.') {
-                     let re = Expression::Identifier(rn.to_string());
+                     let re = Expression::Identifier(rn.to_string(), Span::zero());
                      let tn = self.get_expr_type_name(&re, variables);
                      if (tn.starts_with('*') || tn.contains("ptr")) && mn == "offset" && arguments.len() == 1 {
                          let idx = self.compile_expr(&arguments[0], variables, function)?.into_int_value();
@@ -927,7 +927,7 @@ impl<'ctx> Compiler<'ctx> {
                 }?; 
                 Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() })
             },
-            Expression::Infix { left, operator, right } => {
+            Expression::Infix { left, operator, right, .. } => {
                 if operator.kind == TokenKind::And || operator.kind == TokenKind::Or { 
                     let lhs = self.compile_expr(left, variables, function)?; 
                     let li = match lhs { BasicValueEnum::IntValue(i) => i, _ => return Err(CompileError::Internal("Expected boolean".to_string())) }; 
@@ -958,7 +958,7 @@ impl<'ctx> Compiler<'ctx> {
 
                 // Special case for 'inside' which needs to peek at 'right' before compiling it
                 if operator.kind == TokenKind::Inside {
-                    if let Expression::Infix { left: r_left, operator: r_op, right: r_right } = &**right {
+                    if let Expression::Infix { left: r_left, operator: r_op, right: r_right, .. } = &**right {
                         if r_op.kind == TokenKind::Range {
                             let l = lhs.into_int_value();
                             let min = self.compile_expr(r_left, variables, function)?.into_int_value();
@@ -1047,7 +1047,7 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 Ok(ptr.into())
             },
-            Expression::EnumInst { name, variant, arguments, generic_args } => {
+            Expression::EnumInst { name, variant, arguments, generic_args, .. } => {
                 if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, name) {
                     let et = *self.enum_types.get(&en).ok_or_else(|| CompileError::Internal(format!("Enum type '{}' not found", en)))?;
                     let pr = match self.builder.build_call(self.module.get_function("aion_malloc").ok_or_else(|| CompileError::Internal("aion_malloc not found".to_string()))?, &[et.size_of().ok_or_else(|| CompileError::Internal("Enum size unknown".to_string()))?.into()], "enum_alloc")?.try_as_basic_value() { 
@@ -1068,7 +1068,7 @@ impl<'ctx> Compiler<'ctx> {
                     }
                     Ok(pr.into())
                 } else {
-                    let call_expr = Expression::Call { function: format!("{}.{}", name, variant), generic_args: generic_args.clone(), arguments: arguments.clone(), line: 0, col: 0 };
+                    let call_expr = Expression::Call { function: format!("{}.{}", name, variant), generic_args: generic_args.clone(), arguments: arguments.clone(), span: Span::zero() };
                     self.compile_expr(&call_expr, variables, function)
                 }
             },
@@ -1118,7 +1118,7 @@ impl<'ctx> Compiler<'ctx> {
                 let call = self.builder.build_call(fv, &ca, "call")?; 
                 Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() })
             },
-            Expression::Cast { target, expr } => {
+            Expression::Cast { target, expr, .. } => {
                 let v = self.compile_expr(expr, variables, function)?;
                 let t_clean = target.replace(" ", "");
                 let dest = self.aion_type_to_llvm(&t_clean);
@@ -1138,14 +1138,14 @@ impl<'ctx> Compiler<'ctx> {
                     Ok(self.builder.build_bit_cast(v, dest, "cast")?)
                 }
             },
-            Expression::Deref { expr } => { 
+            Expression::Deref { expr, .. } => { 
                 let v = self.compile_expr(expr, variables, function)?; 
                 let tn = self.get_expr_type_name(expr, variables); 
                 let et = self.aion_type_to_llvm(if tn.starts_with('*') { &tn[1..] } else { "i64" }); 
                 let p = if v.is_int_value() { self.builder.build_int_to_ptr(v.into_int_value(), pt, "i2p")? } else { v.into_pointer_value() }; 
                 Ok(self.builder.build_load(et, p, "deref")?) 
             },
-            Expression::If { condition, then_branch, else_branch } => {
+            Expression::If { condition, then_branch, else_branch, .. } => {
                 let cv = self.compile_expr(condition, variables, function)?.into_int_value(); 
                 let comp = self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "ifcond")?;
                 let tb = self.context.append_basic_block(function, "then"); 
@@ -1204,15 +1204,15 @@ impl<'ctx> Compiler<'ctx> {
                 let mut lv_vars = variables.clone(); 
                 Ok(self.compile_block(statements, &mut lv_vars, function)?.unwrap_or(i64_t.const_zero().into())) 
             },
-            Expression::Intrinsic { name, arguments } => {
+            Expression::Intrinsic { name, arguments, .. } => {
                 let mut an = name.clone(); 
                 let mut aa = arguments.clone(); 
                 if name == "intrinsic" && !arguments.is_empty() { 
-                    if let Expression::String(s) = &arguments[0] { an = s.clone(); aa.remove(0); } 
+                    if let Expression::String(s, _) = &arguments[0] { an = s.clone(); aa.remove(0); } 
                 }
                 if an == "sizeof" && !aa.is_empty() { 
                     let tnm = match &aa[0] { 
-                        Expression::Identifier(s) => s.clone(), 
+                        Expression::Identifier(s, _) => s.clone(), 
                         Expression::TypeRef { name, .. } => name.clone(), 
                         _ => "i64".to_string() 
                     }; 
@@ -1241,7 +1241,7 @@ impl<'ctx> Compiler<'ctx> {
                 if an == "mem_zero" {
                     if !aa.is_empty() {
                         let tnm = match &aa[0] { 
-                            Expression::Identifier(s) => s.clone(), 
+                            Expression::Identifier(s, _) => s.clone(), 
                             Expression::TypeRef { name, .. } => name.clone(), 
                             _ => "i64".to_string() 
                         };
@@ -1287,11 +1287,11 @@ impl<'ctx> Compiler<'ctx> {
     }
     fn get_expr_type_name(&self, e: &Expression, variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>) -> String {
         let res = match e {
-            Expression::Integer(_) => "i64".to_string(), 
-            Expression::Float(_) => "f64".to_string(), 
-            Expression::Boolean(_) => "bool".to_string(), 
-            Expression::String(_) => "String".to_string(),
-            Expression::Identifier(name) => {
+            Expression::Integer(_, _) => "i64".to_string(), 
+            Expression::Float(_, _) => "f64".to_string(), 
+            Expression::Boolean(_, _) => "bool".to_string(), 
+            Expression::String(_, _) => "String".to_string(),
+            Expression::Identifier(name, _) => {
                 let parts: Vec<&str> = name.split('.').collect();
                 if parts.len() > 1 {
                     let mut ct = if let Some((_, _, t)) = variables.get(parts[0]) { t.clone() } else { "unknown".to_string() };
@@ -1303,10 +1303,10 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Call { function: name, generic_args, .. } => {
                 if let Some((rn, mn)) = name.rsplit_once('.') {
                     if mn == "offset" {
-                        let rt = self.get_expr_type_name(&Expression::Identifier(rn.to_string()), variables);
+                        let rt = self.get_expr_type_name(&Expression::Identifier(rn.to_string(), Span::zero()), variables);
                         if rt.starts_with('*') { return rt.replace(" ", ""); }
                     }
-                    let rt = self.get_expr_type_name(&Expression::Identifier(rn.to_string()), variables);
+                    let rt = self.get_expr_type_name(&Expression::Identifier(rn.to_string(), Span::zero()), variables);
                     if rt != "unknown" {
                         let (btn, tga) = if rt.contains('<') {
                             let p: Vec<&str> = rt.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect();
@@ -1331,7 +1331,7 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 "unknown".to_string()
             },
-            Expression::MemberAccess { receiver, member } => { let rt = self.get_expr_type_name(receiver, variables); self.get_field_type(&rt, member) },
+            Expression::MemberAccess { receiver, member, .. } => { let rt = self.get_expr_type_name(receiver, variables); self.get_field_type(&rt, member) },
             Expression::MethodCall { receiver, method, generic_args, .. } => {
                 let rt = self.get_expr_type_name(receiver, variables); 
                 if method == "offset" && rt.starts_with('*') { return rt.clone(); }
@@ -1357,11 +1357,11 @@ impl<'ctx> Compiler<'ctx> {
                 let sn = self.resolve_fuzzy_name(&self.struct_types, name).unwrap_or(name.clone());
                 if generic_args.is_empty() { sn.replace(" ", "") } else { format!("{}<{}>", sn, generic_args.join(",")).replace(" ", "") }
             },
-            Expression::EnumInst { name, variant, arguments, generic_args } => {
+            Expression::EnumInst { name, variant, arguments, generic_args, .. } => {
                 if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, name) {
                     if generic_args.is_empty() { en.replace(" ", "") } else { format!("{}<{}>", en, generic_args.join(",")).replace(" ", "") }
                 } else {
-                    let call_expr = Expression::Call { function: format!("{}.{}", name, variant), generic_args: generic_args.clone(), arguments: arguments.clone(), line: 0, col: 0 };
+                    let call_expr = Expression::Call { function: format!("{}.{}", name, variant), generic_args: generic_args.clone(), arguments: arguments.clone(), span: Span::zero() };
                     self.get_expr_type_name(&call_expr, variables)
                 }
             },
@@ -1369,16 +1369,16 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Block { statements, .. } => {
                 if let Some(s) = statements.last() {
                     match s {
-                        Statement::ExpressionStmt(e) | Statement::Return { value: e, .. } => self.get_expr_type_name(e, variables),
+                        Statement::ExpressionStmt(e, _) | Statement::Return { value: e, .. } => self.get_expr_type_name(e, variables),
                         _ => "unknown".to_string()
                     }
                 } else { "unknown".to_string() }
             },
-            Expression::Deref { expr } => {
+            Expression::Deref { expr, .. } => {
                 let t = self.get_expr_type_name(expr, variables);
                 if t.starts_with('*') { t[1..].to_string().replace(" ", "") } else { "unknown".to_string() }
             },
-            Expression::TypeRef { name, generic_args } => { if generic_args.is_empty() { name.clone() } else { format!("{}<{}>", name, generic_args.join(",")) } },
+            Expression::TypeRef { name, generic_args, .. } => { if generic_args.is_empty() { name.clone() } else { format!("{}<{}>", name, generic_args.join(",")) } },
             _ => "unknown".to_string(),
         };
         res.replace(" ", "")

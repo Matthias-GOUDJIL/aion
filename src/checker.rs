@@ -1,4 +1,4 @@
-use crate::ast::{Statement, Expression, Program, Declaration};
+use crate::ast::{Span, Statement, Expression, Program, Declaration};
 use crate::types::Type;
 use crate::environment::Environment;
 use crate::token::{Token, TokenKind};
@@ -40,8 +40,8 @@ impl TypeChecker {
     }
 
     fn err(&self, msg: impl Into<String>, expr: &Expression) -> CompileError {
-        let (line, col) = expr.span();
-        CompileError::new(msg, line, col).with_snippet(&self.source)
+        let span = expr.span();
+        CompileError::new(msg, span.line, span.col).with_snippet(&self.source)
     }
 
     fn resolve_type(&self, name: &str) -> Type {
@@ -200,30 +200,30 @@ impl TypeChecker {
                 self.env.set(name.clone(), val_type);
                 Ok(Type::Unit)
             },
-            Statement::Assignment { target, value } => {
+            Statement::Assignment { target, value, .. } => {
                 self.check_expression(target)?;
                 self.check_expression(value)?;
                 Ok(Type::Unit)
             },
             Statement::Return { value, .. } => { self.check_expression(value)?; Ok(Type::Unit) },
-            Statement::ExpressionStmt(expr) => self.check_expression(expr),
-            Statement::If { condition, then_branch, else_branch } => {
+            Statement::ExpressionStmt(expr, _) => self.check_expression(expr),
+            Statement::If { condition, then_branch, else_branch, .. } => {
                 self.check_expression(condition)?;
                 for s in then_branch { self.check_statement(s)?; }
                 if let Some(eb) = else_branch { for s in eb { self.check_statement(s)?; } }
                 Ok(Type::Unit)
             },
-            Statement::While { condition, body } => {
+            Statement::While { condition, body, .. } => {
                 self.check_expression(condition)?;
                 for s in body { self.check_statement(s)?; }
                 Ok(Type::Unit)
             },
-            Statement::UnsafeBlock(body) => {
+            Statement::UnsafeBlock(body, _) => {
                 let was = self.in_unsafe_context; self.in_unsafe_context = true;
                 for s in body { self.check_statement(s)?; }
                 self.in_unsafe_context = was; Ok(Type::Unit)
             },
-            Statement::Match { condition, arms } => {
+            Statement::Match { condition, arms, .. } => {
                 let cond_type = self.check_expression(condition)?;
                 let cond_name = match &cond_type {
                     Type::Enum { name } => name.clone(),
@@ -294,21 +294,21 @@ impl TypeChecker {
 
     fn check_expression(&mut self, expr: &Expression) -> Result<Type, CompileError> {
         match expr {
-            Expression::Integer(_) => Ok(Type::Integer),
-            Expression::Float(_) => Ok(Type::Float),
-            Expression::Boolean(_) => Ok(Type::Boolean),
-            Expression::String(_) => Ok(Type::String),
-            Expression::Duration(_, _) => Ok(Type::Duration),
-            Expression::Date(_) => Ok(Type::Date),
-            Expression::TypeRef { name, generic_args } => {
+            Expression::Integer(..) => Ok(Type::Integer),
+            Expression::Float(..) => Ok(Type::Float),
+            Expression::Boolean(..) => Ok(Type::Boolean),
+            Expression::String(..) => Ok(Type::String),
+            Expression::Duration(..) => Ok(Type::Duration),
+            Expression::Date(..) => Ok(Type::Date),
+            Expression::TypeRef { name, generic_args, .. } => {
                 let mut ga = Vec::new();
                 for arg in generic_args { ga.push(self.env.get(arg).unwrap_or(Type::Unknown)); }
                 Ok(Type::GenericInstance(name.clone(), ga))
             },
-            Expression::Identifier(name) => {
+            Expression::Identifier(name, _) => {
                 if let Some(t) = self.env.get(name) { return Ok(t); }
                 if let Some((var, field)) = name.split_once('.')
-                    && let Ok(rt) = self.check_expression(&Expression::Identifier(var.to_string())) {
+                    && let Ok(rt) = self.check_expression(&Expression::Identifier(var.to_string(), Span::zero())) {
                         let tn = match rt { Type::GenericInstance(n, _) | Type::Struct { name: n } => n, _ => "".to_string() };
                         if !tn.is_empty() {
                             let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
@@ -317,15 +317,16 @@ impl TypeChecker {
                     }
                 Ok(Type::Unknown)
             },
-            Expression::Infix { left, operator, right } => {
+            Expression::Infix { left, operator, right, .. } => {
                 let t1 = self.check_expression(left)?;
                 let t2 = self.check_expression(right)?;
                 self.check_compatibility(t1, t2, operator)
             },
-            Expression::Call { function, arguments, line, col, .. } => {
-                let call_expr = Expression::Call { function: function.clone(), generic_args: vec![], arguments: arguments.clone(), line: *line, col: *col };
+            Expression::Call { function, arguments, .. } => {
+                let span = expr.span();
+                let call_expr = Expression::Call { function: function.clone(), generic_args: vec![], arguments: arguments.clone(), span };
                 if let Some((receiver_name, method_name)) = function.rsplit_once('.') {
-                    let receiver_expr = Expression::Identifier(receiver_name.to_string());
+                    let receiver_expr = Expression::Identifier(receiver_name.to_string(), Span::zero());
                     if let Ok(rt) = self.check_expression(&receiver_expr) {
                         let mut is_ptr = false;
                         if let Type::Pointer(_) = rt { is_ptr = true; }
@@ -368,16 +369,16 @@ impl TypeChecker {
                     Ok(*return_type.clone())
                 } else { Err(self.err(format!("'{}' is not a function", function), &call_expr)) }
             },
-            Expression::MemberAccess { receiver, member } => {
+            Expression::MemberAccess { receiver, member, .. } => {
                 let rt = self.check_expression(receiver)?;
-                let (line, col) = receiver.span();
-                let tn = match rt { Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } => n.clone(), _ => return Err(CompileError::new(format!("member access on {:?}", rt), line, col).with_snippet(&self.source)) };
+                let span = receiver.span();
+                let tn = match rt { Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } => n.clone(), _ => return Err(CompileError::new(format!("member access on {:?}", rt), span.line, span.col).with_snippet(&self.source)) };
                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
                 self.env.get(&format!("{}.{}", full, member))
-                    .ok_or_else(|| CompileError::new(format!("field '{}' not found on struct '{}'", member, full), line, col).with_snippet(&self.source))
+                    .ok_or_else(|| CompileError::new(format!("field '{}' not found on struct '{}'", member, full), span.line, span.col).with_snippet(&self.source))
             },
-            Expression::MethodCall { receiver, method, generic_args: _, arguments, line, col } => {
-                let method_expr = Expression::MethodCall { receiver: receiver.clone(), method: method.clone(), generic_args: vec![], arguments: arguments.clone(), line: *line, col: *col };
+            Expression::MethodCall { receiver, method, generic_args: _, arguments, .. } => {
+                let method_expr = Expression::MethodCall { receiver: receiver.clone(), method: method.clone(), generic_args: vec![], arguments: arguments.clone(), span: expr.span() };
                 let rt = self.check_expression(receiver)?;
                 
                 // Special case for Pointer.offset()
@@ -418,15 +419,15 @@ impl TypeChecker {
                 let full = self.resolve_fuzzy_name(&self.decls, name).unwrap_or(name.clone());
                 Ok(Type::Enum { name: full })
             },
-            Expression::Deref { expr } => {
+            Expression::Deref { expr, .. } => {
                 let rt = self.check_expression(expr)?;
                 if let Type::Pointer(t) = rt { Ok(*t) } else { Ok(Type::Integer) }
             },
-            Expression::Intrinsic { name, arguments } => {
+            Expression::Intrinsic { name, arguments, .. } => {
                 let mut actual_name = name.clone();
                 let mut args = arguments.as_slice();
                 if name == "intrinsic" && !arguments.is_empty()
-                    && let Expression::String(s) = &arguments[0] {
+                    && let Expression::String(s, _) = &arguments[0] {
                         actual_name = s.clone();
                         args = &arguments[1..];
                     }
@@ -438,14 +439,14 @@ impl TypeChecker {
                 else if actual_name.starts_with("ai_tensor_") { Ok(Type::Struct { name: "std.ai.tensor.Tensor".to_string() }) }
                 else { Ok(Type::Integer) }
             },
-            Expression::If { condition, then_branch, else_branch } => {
+            Expression::If { condition, then_branch, else_branch, .. } => {
                 self.check_expression(condition)?;
                 let mut lt = Type::Unit;
                 for s in then_branch { lt = self.check_statement(s)?; }
                 if let Some(eb) = else_branch { for s in eb { self.check_statement(s)?; } }
                 Ok(lt)
             },
-            Expression::Block { statements, is_unsafe } => {
+            Expression::Block { statements, is_unsafe, .. } => {
                 let was = self.in_unsafe_context;
                 if *is_unsafe { self.in_unsafe_context = true; }
                 let mut lt = Type::Unit;

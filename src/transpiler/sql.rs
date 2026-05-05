@@ -94,7 +94,7 @@ impl SqlTranspiler {
                         self.collect_vars_from_stmts(&arm.body, vars);
                     }
                 }
-                Statement::UnsafeBlock(stmts) | Statement::Spawn(stmts) => {
+                Statement::UnsafeBlock(stmts, _) | Statement::Spawn(stmts, _) => {
                     self.collect_vars_from_stmts(stmts, vars);
                 }
                 _ => {}
@@ -104,11 +104,11 @@ impl SqlTranspiler {
 
     fn infer_type(&self, expr: &Expression) -> String {
         match expr {
-            Expression::Integer(_) => "i64",
-            Expression::Float(_) => "f64",
-            Expression::Boolean(_) => "bool",
-            Expression::String(_) => "String",
-            Expression::Identifier(_) => "i64",
+            Expression::Integer(..) => "i64",
+            Expression::Float(..) => "f64",
+            Expression::Boolean(..) => "bool",
+            Expression::String(..) => "String",
+            Expression::Identifier(..) => "i64",
             Expression::Infix { .. } => "i64",
             Expression::Call { function, .. } => {
                 if function.contains("println") || function.contains("print") {
@@ -128,8 +128,8 @@ impl SqlTranspiler {
             Expression::Deref { .. } => "i64",
             Expression::Intrinsic { .. } => "i64",
             Expression::TypeRef { .. } => "i64",
-            Expression::Duration(_, _) => "Duration",
-            Expression::Date(_) => "Date",
+            Expression::Duration(..) => "Duration",
+            Expression::Date(..) => "Date",
         }
         .to_string()
     }
@@ -161,7 +161,7 @@ impl SqlTranspiler {
                 self.transpile_expression(value);
                 self.buffer.push_str(";\n");
             }
-            Statement::Assignment { target, value } => {
+            Statement::Assignment { target, value, .. } => {
                 self.buffer.push_str("    ");
                 self.transpile_expression(target);
                 self.buffer.push_str(" := ");
@@ -172,6 +172,7 @@ impl SqlTranspiler {
                 condition,
                 then_branch,
                 else_branch,
+                ..
             } => {
                 self.buffer.push_str("    IF ");
                 self.transpile_expression(condition);
@@ -187,7 +188,7 @@ impl SqlTranspiler {
                 }
                 self.buffer.push_str("    END IF;\n");
             }
-            Statement::While { condition, body } => {
+            Statement::While { condition, body, .. } => {
                 self.buffer.push_str("    WHILE ");
                 self.transpile_expression(condition);
                 self.buffer.push_str(" LOOP\n");
@@ -196,12 +197,12 @@ impl SqlTranspiler {
                 }
                 self.buffer.push_str("    END LOOP;\n");
             }
-            Statement::ExpressionStmt(expr) => {
+            Statement::ExpressionStmt(expr, _) => {
                 self.buffer.push_str("    PERFORM ");
                 self.transpile_expression(expr);
                 self.buffer.push_str(";\n");
             }
-            Statement::Match { condition, arms } => {
+            Statement::Match { condition, arms, .. } => {
                 self.buffer.push_str("    CASE ");
                 self.transpile_expression(condition);
                 self.buffer.push('\n');
@@ -215,7 +216,7 @@ impl SqlTranspiler {
                 self.buffer.push_str("        ELSE NULL;\n");
                 self.buffer.push_str("    END CASE;\n");
             }
-            Statement::UnsafeBlock(stmts) => {
+            Statement::UnsafeBlock(stmts, _) => {
                 self.buffer.push_str("    -- UNSAFE BLOCK\n");
                 for s in stmts {
                     self.transpile_statement(s);
@@ -228,15 +229,16 @@ impl SqlTranspiler {
 
     fn transpile_expression(&mut self, expr: &Expression) {
         match expr {
-            Expression::Integer(n) => self.buffer.push_str(&n.to_string()),
-            Expression::Float(f_val) => self.buffer.push_str(&f_val.to_string()),
-            Expression::Boolean(b) => self.buffer.push_str(&b.to_string().to_uppercase()),
-            Expression::String(s) => self.buffer.push_str(&format!("'{}'", s)),
-            Expression::Identifier(s) => self.buffer.push_str(s),
+            Expression::Integer(n, _) => self.buffer.push_str(&n.to_string()),
+            Expression::Float(f_val, _) => self.buffer.push_str(&f_val.to_string()),
+            Expression::Boolean(b, _) => self.buffer.push_str(&b.to_string().to_uppercase()),
+            Expression::String(s, _) => self.buffer.push_str(&format!("'{}'", s)),
+            Expression::Identifier(s, _) => self.buffer.push_str(s),
             Expression::Infix {
                 left,
                 operator,
                 right,
+                ..
             } => {
                 self.transpile_expression(left);
                 let op = match &operator.kind {
@@ -274,12 +276,13 @@ impl SqlTranspiler {
             Expression::MemberAccess {
                 receiver,
                 member,
+                ..
             } => {
                 self.transpile_expression(receiver);
                 self.buffer.push('.');
                 self.buffer.push_str(member);
             }
-            Expression::Cast { expr, target } => {
+            Expression::Cast { expr, target, .. } => {
                 self.transpile_expression(expr);
                 self.buffer
                     .push_str(&format!("::{}", self.map_type(target)));
@@ -304,7 +307,7 @@ impl SqlTranspiler {
             Statement::Let { value, .. } => {
                 self.transpile_expression(value);
             }
-            Statement::ExpressionStmt(expr) => {
+            Statement::ExpressionStmt(expr, _) => {
                 self.transpile_expression(expr);
             }
             _ => self.buffer.push_str("NULL"),
