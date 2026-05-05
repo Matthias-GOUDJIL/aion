@@ -1,17 +1,19 @@
 use crate::token::{Token, TokenKind};
 use crate::lexer::Lexer;
 use crate::ast::*;
+use crate::error::CompileError;
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current_token: Token,
     peek_buffer: Vec<Token>,
+    errors: Vec<CompileError>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(mut lexer: Lexer<'a>) -> Self {
         let current_token = lexer.next_token();
-        Self { lexer, current_token, peek_buffer: Vec::new() }
+        Self { lexer, current_token, peek_buffer: Vec::new(), errors: Vec::new() }
     }
 
     fn next_token(&mut self) {
@@ -26,6 +28,15 @@ impl<'a> Parser<'a> {
         format!("{} at line {}, col {}", message, self.current_token.line, self.current_token.col)
     }
 
+    fn push_error(&mut self, message: impl Into<String>) {
+        self.errors.push(CompileError::Type {
+            message: message.into(),
+            line: self.current_token.line,
+            col: self.current_token.col,
+            snippet: None,
+        });
+    }
+
     fn peek_at(&mut self, n: usize) -> Token {
         while self.peek_buffer.len() <= n {
             self.peek_buffer.push(self.lexer.next_token());
@@ -33,7 +44,7 @@ impl<'a> Parser<'a> {
         self.peek_buffer[n].clone()
     }
 
-    pub fn parse_program(&mut self) -> Program {
+    pub fn parse_program(&mut self) -> Result<Program, Vec<CompileError>> {
         let mut module_name = None;
         let mut imports = Vec::new();
         let mut declarations = Vec::new();
@@ -49,13 +60,13 @@ impl<'a> Parser<'a> {
                 TokenKind::Use => imports.push(self.parse_import()),
                 TokenKind::DoubleColon => {
                     if self.peek_at(0).kind == TokenKind::Intent {
-                        self.next_token(); // consume ::
-                        self.next_token(); // consume intent
+                        self.next_token();
+                        self.next_token();
                         if let TokenKind::StringLiteral(_) = self.current_token.kind {
                             self.next_token();
                         }
                     } else {
-                        eprintln!("{}", self.error("Syntax Error: Unexpected :: at top level"));
+                        self.push_error("Syntax Error: Unexpected :: at top level");
                         self.next_token();
                     }
                 },
@@ -63,13 +74,17 @@ impl<'a> Parser<'a> {
                     if let Some(decl) = self.parse_declaration() {
                         declarations.push(decl);
                     } else {
-                        eprintln!("{}", self.error("Syntax Error: Unexpected token in declaration"));
+                        self.push_error("Syntax Error: Unexpected token in declaration");
                         self.next_token();
                     }
                 },
             }
         }
-        Program { module_name, imports, declarations }
+        if self.errors.is_empty() {
+            Ok(Program { module_name, imports, declarations })
+        } else {
+            Err(std::mem::take(&mut self.errors))
+        }
     }
 
     fn parse_path(&mut self) -> Vec<String> {
@@ -1086,7 +1101,7 @@ mod tests {
         let input = "fn add(a: i64, b: i64) -> i64 { return a + b; }";
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
-        let program = parser.parse_program();
+        let program = parser.parse_program().expect("parse should succeed");
         
         assert_eq!(program.declarations.len(), 1);
         let is_fn = matches!(program.declarations[0], Declaration::Function(_));

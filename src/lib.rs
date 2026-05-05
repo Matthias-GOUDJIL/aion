@@ -52,7 +52,10 @@ fn process_imports(program: &mut Program, visited: &mut HashSet<PathBuf>) -> Res
         let source = fs::read_to_string(&path).map_err(|e| CompileError::Io(format!("Failed to read {:?}: {}", path, e)))?;
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
-        let mut imported_program = parser.parse_program();
+        let mut imported_program = parser.parse_program().map_err(|e| {
+            let msgs: Vec<String> = e.iter().map(|e| e.to_string()).collect();
+            CompileError::Import(format!("Import parse errors in {:?}: {}", path, msgs.join("; ")))
+        })?;
         
         // Rename local declarations before recursion to avoid double-prefixing
         let prefix = import.path.join(".");
@@ -78,7 +81,10 @@ pub fn transpile_sql(input_path: &str) -> Result<String, CompileError> {
     let source = fs::read_to_string(input_path).map_err(|e| CompileError::Io(e.to_string()))?;
     let lexer = Lexer::new(&source);
     let mut parser = Parser::new(lexer);
-    let program = parser.parse_program();
+    let program = parser.parse_program().map_err(|e| CompileError::Type {
+        message: format!("Parse errors: {}", e.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; ")),
+        line: 0, col: 0, snippet: None,
+    })?;
     
     let mut transpiler = SqlTranspiler::new();
     Ok(transpiler.transpile(&program))
@@ -88,7 +94,10 @@ pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), CompileEr
     let source = fs::read_to_string(input_path).map_err(|e| CompileError::Io(e.to_string()))?;
     let lexer = Lexer::new(&source);
     let mut parser = Parser::new(lexer);
-    let mut program = parser.parse_program();
+    let mut program = parser.parse_program().map_err(|e| CompileError::Type {
+        message: format!("Parse errors: {}", e.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; ")),
+        line: 0, col: 0, snippet: None,
+    })?;
 
     // 0. Resolve Imports
     let mut visited = HashSet::new();
