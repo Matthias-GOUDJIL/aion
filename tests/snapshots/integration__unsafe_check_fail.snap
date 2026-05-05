@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/unsafe_check_fail\")"
+---
+Type Error: call to unsafe function 'dangerous' requires unsafe block

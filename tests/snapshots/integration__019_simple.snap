@@ -1,5 +1,0 @@
----
-source: tests/integration.rs
-expression: "run_aion_test(\"language/019_simple\")"
----
-

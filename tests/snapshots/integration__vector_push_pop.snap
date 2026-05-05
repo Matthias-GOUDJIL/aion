@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/vector_push_pop\")"
+---
+
