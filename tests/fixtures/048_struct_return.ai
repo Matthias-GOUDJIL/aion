@@ -1,0 +1,47 @@
+use std.io
+
+struct Point {
+    x: i64,
+    y: i64,
+}
+
+fn make_point(x: i64, y: i64) -> Point {
+    Point { x: x, y: y }
+}
+
+fn translate(p: Point, dx: i64, dy: i64) -> Point {
+    Point { x: p.x + dx, y: p.y + dy }
+}
+
+fn main() {
+    // Test 1: Basic struct return
+    let p1 = make_point(3, 4)
+    io.print("p1.x: ")
+    io.println(string.from_int(p1.x))
+    io.print("p1.y: ")
+    io.println(string.from_int(p1.y))
+
+    // Test 2: Struct return with modification
+    let p2 = translate(p1, 10, 20)
+    io.print("p2.x: ")
+    io.println(string.from_int(p2.x))
+    io.print("p2.y: ")
+    io.println(string.from_int(p2.y))
+
+    // Test 3: Original should be unchanged
+    io.print("p1.x after: ")
+    io.println(string.from_int(p1.x))
+    io.print("p1.y after: ")
+    io.println(string.from_int(p1.y))
+
+    // Test 4: Nested struct return
+    let p3 = make_point(100, 200)
+    let p4 = translate(p3, -50, -50)
+    io.print("p4.x: ")
+    io.println(string.from_int(p4.x))
+    io.print("p4.y: ")
+    io.println(string.from_int(p4.y))
+
+    io.println("struct return tests done")
+    return 0
+}
