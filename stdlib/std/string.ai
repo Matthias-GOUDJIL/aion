@@ -27,15 +27,150 @@ pub fn equals(s1: String, s2: String) -> bool {
     return @intrinsic("str_eq", s1, s2)
 }
 
-pub fn contains(haystack: String, needle: String) -> bool {
-    // Basic implementation for now
-    false 
-}
-
 pub fn at(s: String, i: i64) -> i64 {
     @intrinsic("str_at", s, i)
 }
 
 pub fn substr(s: String, start: i64, len: i64) -> String {
     @intrinsic("str_substr", s, start, len)
+}
+
+pub fn contains(haystack: String, needle: String) -> bool {
+    let h_len = std.string.len(haystack)
+    let n_len = std.string.len(needle)
+    if n_len == 0 { return true }
+    if n_len > h_len { return false }
+    let mut i = 0
+    let mut found = false
+    let mut done = false
+    while i <= h_len - n_len && !done {
+        let chunk = std.string.substr(haystack, i, n_len)
+        if std.string.equals(chunk, needle) {
+            found = true
+            done = true
+        } else {
+            i = i + 1
+        }
+    }
+    return found
+}
+
+pub fn starts_with(s: String, prefix: String) -> bool {
+    let p_len = std.string.len(prefix)
+    let s_len = std.string.len(s)
+    if p_len > s_len { return false }
+    let chunk = std.string.substr(s, 0, p_len)
+    return std.string.equals(chunk, prefix)
+}
+
+pub fn ends_with(s: String, suffix: String) -> bool {
+    let sf_len = std.string.len(suffix)
+    let s_len = std.string.len(s)
+    if sf_len > s_len { return false }
+    let chunk = std.string.substr(s, s_len - sf_len, sf_len)
+    return std.string.equals(chunk, suffix)
+}
+
+pub fn find(haystack: String, needle: String) -> i64 {
+    let h_len = std.string.len(haystack)
+    let n_len = std.string.len(needle)
+    if n_len == 0 { return 0 }
+    if n_len > h_len { return -1 }
+    let mut i = 0
+    let mut result = -1
+    let mut done = false
+    while i <= h_len - n_len && !done {
+        let chunk = std.string.substr(haystack, i, n_len)
+        if std.string.equals(chunk, needle) {
+            result = i
+            done = true
+        } else {
+            i = i + 1
+        }
+    }
+    return result
+}
+
+pub fn trim(s: String) -> String {
+    let s_len = std.string.len(s)
+    let mut start = 0
+    let mut done = false
+    while start < s_len && !done {
+        let c = std.string.at(s, start)
+        if c == 32 || c == 9 || c == 10 || c == 13 {
+            start = start + 1
+        } else {
+            done = true
+        }
+    }
+    let mut end = s_len - 1
+    done = false
+    while end >= start && !done {
+        let c = std.string.at(s, end)
+        if c == 32 || c == 9 || c == 10 || c == 13 {
+            end = end - 1
+        } else {
+            done = true
+        }
+    }
+    if start > end { return "" }
+    return std.string.substr(s, start, end - start + 1)
+}
+
+pub fn to_upper(s: String) -> String {
+    let s_len = std.string.len(s)
+    let mut result = ""
+    let mut i = 0
+    while i < s_len {
+        let c = std.string.at(s, i)
+        if c >= 97 && c <= 122 {
+            result = std.string.concat(result, @intrinsic("char_to_str", c - 32))
+        } else {
+            result = std.string.concat(result, std.string.substr(s, i, 1))
+        }
+        i = i + 1
+    }
+    return result
+}
+
+pub fn to_lower(s: String) -> String {
+    let s_len = std.string.len(s)
+    let mut result = ""
+    let mut i = 0
+    while i < s_len {
+        let c = std.string.at(s, i)
+        if c >= 65 && c <= 90 {
+            result = std.string.concat(result, @intrinsic("char_to_str", c + 32))
+        } else {
+            result = std.string.concat(result, std.string.substr(s, i, 1))
+        }
+        i = i + 1
+    }
+    return result
+}
+
+pub fn replace(s: String, from: String, to: String) -> String {
+    let s_len = std.string.len(s)
+    let f_len = std.string.len(from)
+    if f_len == 0 { return s }
+    let mut result = ""
+    let mut i = 0
+    let mut done = false
+    while i < s_len && !done {
+        if i <= s_len - f_len {
+            let chunk = std.string.substr(s, i, f_len)
+            if std.string.equals(chunk, from) {
+                result = std.string.concat(result, to)
+                i = i + f_len
+            } else {
+                result = std.string.concat(result, std.string.substr(s, i, 1))
+                i = i + 1
+            }
+        } else {
+            result = std.string.concat(result, std.string.substr(s, i, 1))
+            i = i + 1
+            if i >= s_len { done = true }
+        }
+    }
+    return result
 }

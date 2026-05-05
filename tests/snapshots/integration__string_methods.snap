@@ -1,0 +1,18 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/string_methods\")"
+---
+contains(hello, ell): true
+contains(hello, xyz): false
+contains(hello, ): true
+starts_with(hello, hel): true
+starts_with(hello, world): false
+ends_with(hello, llo): true
+ends_with(hello, world): false
+find(hello world, world): 6
+find(hello, xyz): -1
+trim(  hello  ): [hello]
+replace(hello world, world, Aion): hello Aion
+to_upper(hello): HELLO
+to_lower(HELLO): hello
+all string tests done
