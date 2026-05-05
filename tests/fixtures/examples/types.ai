@@ -1,0 +1,17 @@
+enum Status {
+    Idle,
+    Running(i64),
+    Error(String)
+}
+
+fn main() {
+    let s = 1
+    
+    ::intent "Simple match logic"
+    match s {
+        1 => io.println("One"),
+        2 => io.println("Two")
+    }
+    
+    return 0
+}

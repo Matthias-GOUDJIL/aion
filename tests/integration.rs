@@ -152,3 +152,16 @@ fn test_optimization_check() { assert_snapshot!(run_aion_test("compiler/optimiza
 fn test_self_lexer_loop() { assert_snapshot!(run_aion_test("compiler/self_lexer_loop")); }
 #[test]
 fn test_self_parser() { assert_snapshot!(run_aion_test("compiler/self_parser")); }
+
+// --- Example Tests ---
+
+#[test]
+fn test_example_hello() { assert_snapshot!(run_aion_test("examples/hello")); }
+#[test]
+fn test_example_types() { assert_snapshot!(run_aion_test("examples/types")); }
+#[test]
+fn test_example_logic() { assert_snapshot!(run_aion_test("examples/logic")); }
+#[test]
+fn test_example_generics() { assert_snapshot!(run_aion_test("examples/generics")); }
+#[test]
+fn test_example_interface_impl() { assert_snapshot!(run_aion_test("examples/interface_impl")); }
