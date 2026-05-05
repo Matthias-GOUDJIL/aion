@@ -1,0 +1,8 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/break_continue\")"
+---
+5
+25
+100
+all break/continue tests done

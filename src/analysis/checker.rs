@@ -188,6 +188,8 @@ impl TypeChecker {
                 for s in body { self.check_statement(s)?; }
                 Ok(Type::Unit)
             },
+            Statement::Break(_) => Ok(Type::Unit),
+            Statement::Continue(_) => Ok(Type::Unit),
             Statement::UnsafeBlock(body, _) => {
                 let was = self.in_unsafe_context; self.in_unsafe_context = true;
                 for s in body { self.check_statement(s)?; }

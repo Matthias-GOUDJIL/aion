@@ -492,6 +492,16 @@ impl<'a> Parser<'a> {
                 let body = self.parse_block();
                 Some(Statement::While { condition, body, span })
             },
+            TokenKind::Break => {
+                let span = Span::from_token(&self.current_token);
+                self.next_token();
+                Some(Statement::Break(span))
+            },
+            TokenKind::Continue => {
+                let span = Span::from_token(&self.current_token);
+                self.next_token();
+                Some(Statement::Continue(span))
+            },
             TokenKind::Match => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
