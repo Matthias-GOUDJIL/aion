@@ -25,10 +25,11 @@ Aion is a direct-to-LLVM compiler with a strict safety-first pipeline.
 -   **Safety**: `unsafe` blocks required for pointer dereferences, FFI, and specific intrinsics.
 
 ## 4. Compiler Robustness (v0.3 Additions)
--   **Error Handling**: Zero `unwrap()` in production code. All compiler stages return `Result<T, String>` or typed errors.
+-   **Error Handling**: Zero `unwrap()` in production code. All compiler stages return `Result<T, CompileError>` with typed error variants (Type, Unsafe, NotFound, NotFunction, InvalidOperator, Inkwell, Io, Import, Internal).
 -   **Block Termination**: Every LLVM basic block is guaranteed to be terminated. The compiler injects `ret` or `unreachable` if `get_terminator().is_none()`.
 -   **Type Safety**: `Type::Unknown` is never returned silently. Fallbacks are explicit and validated.
 -   **Debug Hygiene**: No `println!`/`eprintln!` in production builds. Conditional logging only.
+-   **Span Tracking**: All AST nodes carry `Span` (line, col) for precise error reporting.
 
 ## 5. Environment & Build
 -   **Docker-First**: LLVM 15+ dependencies are isolated in `aion-compiler` Docker image.
@@ -43,6 +44,5 @@ Aion is a direct-to-LLVM compiler with a strict safety-first pipeline.
 
 ## 7. Known Limitations (Phase 1.7)
 -   No RAII/Destructors (GC-only memory model).
--   Pattern matching is limited to enum variants (no structural/guard matching yet).
 -   LLVM opaque pointers require explicit type casting in some edge cases.
 -   Cross-compilation targets are not yet supported (x86_64-linux only).

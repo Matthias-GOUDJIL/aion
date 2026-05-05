@@ -1,4 +1,4 @@
-# Aion Standard Library (v0.4)
+# Aion Standard Library
 
 This document provides a comprehensive overview of the Aion Standard Library (`stdlib`), organized by domain.
 
@@ -36,6 +36,9 @@ Full string and character manipulation suite.
 ### `std.hash`
 `Hashable` interface and FNV-1a implementation.
 
+### `std.bits`
+Bitwise operations on integers.
+
 ---
 
 ## 3. System, OS & I/O
@@ -55,6 +58,9 @@ Environment variables (`args`, `var`) and OS primitives (`exit`, `cpu_count`).
 ### `std.flags`
 Command-line argument parsing (CLI builder).
 
+### `std.error`
+Error handling types and utilities.
+
 ---
 
 ## 4. Network & Web
@@ -68,8 +74,16 @@ HTTP Client/Server structures (`Request`, `Response`, `Client`).
 ### `std.net.tls`
 Secure networking (`TlsContext`, `TlsStream`) for HTTPS support.
 
+### `std.net.websocket`
+Real-time web communication.
+- **Struct** `WebSocket`: `connect`, `send`, `receive`.
+- **Enum** `Message`: `Text`, `Binary`, `Ping`, `Close`.
+
 ### `std.uri`
 URI parsing and construction.
+
+### `web.dom`
+DOM manipulation primitives.
 
 ---
 
@@ -88,7 +102,7 @@ Async runtime primitives (`Poll`, `Context`).
 
 ### `std.distrib`
 Native Clustering.
-- `join` (gossip), `spawn_remote` (remote actors).
+- `node` (gossip), `spawn_remote` (remote actors).
 
 ---
 
@@ -109,8 +123,9 @@ The core of Aion.
 
 ## 7. Data Science & Formats
 
-### `std.data.dataframe`
-Native Dataframes (`read_csv`, `select`, `filter`).
+### `std.data`
+- **`dataframe`**: Native Dataframes (`read_csv`, `select`, `filter`).
+- **`series`**: Typed column arrays.
 
 ### `std.json`
 JSON parsing and stringification.
@@ -120,6 +135,15 @@ Hex and Base64 encoding.
 
 ### `std.text.template`
 Text templating engine (Jinja-like).
+
+### `std.archive`
+- **`zip`**: ZIP archive creation and extraction.
+
+### `std.compress`
+- **`gzip`**: Gzip compression and decompression.
+
+### `std.sql`
+- **`driver`**: SQL database driver interface.
 
 ---
 
@@ -157,6 +181,15 @@ C Interop (`CString`, `c_malloc`).
 ### `std.reflect`
 Runtime Introspection (`type_of`, `type_name`, `has_field`).
 
+### `std.regex`
+Regular expression matching.
+
+### `std.convert`
+Type conversion utilities.
+
+### `std.fmt`
+Formatting utilities.
+
 ---
 
 ## 10. User Interface & Real-time
@@ -166,12 +199,17 @@ Native Declarative UI.
 - **Widgets**: `Window`, `Text`, `Button`, `Column`, `Row`.
 - `Window::run()`: Starts the UI event loop.
 
-### `std.net.websocket`
-Real-time web communication.
-- **Struct** `WebSocket`: `connect`, `send`, `receive`.
-- **Enum** `Message`: `Text`, `Binary`, `Ping`, `Close`.
-
 ### `std.uuid`
 Universally Unique Identifiers.
 - `new_v4()`: Random based.
 - `new_v7()`: Time-ordered.
+
+---
+
+## 11. Time & Date
+
+### `std.time`
+Duration and Date types with arithmetic operations.
+
+### `std.date`
+Date utilities and formatting.
