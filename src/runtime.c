@@ -82,6 +82,14 @@ char* aion_float_to_str(double f) {
     return buf;
 }
 
+double aion_str_to_float(const char* s) {
+    if (!s) return 0.0;
+    char* end;
+    double result = strtod(s, &end);
+    if (end == s) return 0.0;
+    return result;
+}
+
 long long aion_str_eq(const char* s1, const char* s2) {
     if (!s1 || !s2) return s1 == s2;
     return strcmp(s1, s2) == 0;

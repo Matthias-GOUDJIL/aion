@@ -75,6 +75,7 @@ impl TypeChecker {
         self.env.set("string.concat".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
         self.env.set("string.from_int".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
         self.env.set("string.from_float".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
+        self.env.set("string.to_float".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Float) });
         
         // i64 methods as functions
         self.env.set("i64.abs".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
