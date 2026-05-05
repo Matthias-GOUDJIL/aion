@@ -113,6 +113,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_declaration(&mut self) -> Option<Declaration> {
+        let mut doc_comment = None;
+        while let TokenKind::DocComment(_) = &self.current_token.kind {
+            if let TokenKind::DocComment(text) = &self.current_token.kind {
+                doc_comment = Some(text.clone());
+            }
+            self.next_token();
+        }
+
         let mut attributes = Vec::new();
         while self.current_token.kind == TokenKind::At {
             self.next_token();
@@ -139,10 +147,10 @@ impl<'a> Parser<'a> {
             self.next_token();
         }
         match self.current_token.kind {
-            TokenKind::Fn => self.parse_function(modifiers, attributes).map(Declaration::Function),
-            TokenKind::Struct => self.parse_struct(attributes).map(Declaration::Struct),
-            TokenKind::Enum => self.parse_enum().map(Declaration::Enum),
-            TokenKind::Interface => self.parse_interface().map(Declaration::Interface),
+            TokenKind::Fn => self.parse_function(modifiers, attributes, doc_comment).map(Declaration::Function),
+            TokenKind::Struct => self.parse_struct(attributes, doc_comment).map(Declaration::Struct),
+            TokenKind::Enum => self.parse_enum(doc_comment).map(Declaration::Enum),
+            TokenKind::Interface => self.parse_interface(doc_comment).map(Declaration::Interface),
             TokenKind::Impl => self.parse_impl().map(Declaration::Impl),
             _ => None,
         }
@@ -168,13 +176,20 @@ impl<'a> Parser<'a> {
         self.next_token();
         let mut functions = Vec::new();
         while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+            let mut method_doc = None;
+            while let TokenKind::DocComment(_) = &self.current_token.kind {
+                if let TokenKind::DocComment(text) = &self.current_token.kind {
+                    method_doc = Some(text.clone());
+                }
+                self.next_token();
+            }
             let mut modifiers = Vec::new();
             while matches!(self.current_token.kind, TokenKind::Pub | TokenKind::Async | TokenKind::Unsafe) {
                 modifiers.push(self.current_token.clone());
                 self.next_token();
             }
             if self.current_token.kind == TokenKind::Fn {
-                if let Some(f) = self.parse_function(modifiers, vec![]) { functions.push(f); }
+                if let Some(f) = self.parse_function(modifiers, vec![], method_doc) { functions.push(f); }
             } else {
                 self.next_token();
             }
@@ -196,7 +211,7 @@ impl<'a> Parser<'a> {
         params
     }
 
-    fn parse_enum(&mut self) -> Option<Enum> {
+    fn parse_enum(&mut self, doc_comment: Option<String>) -> Option<Enum> {
         self.next_token();
         let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
         self.next_token();
@@ -223,10 +238,10 @@ impl<'a> Parser<'a> {
             if self.current_token.kind == TokenKind::Comma { self.next_token(); }
         }
         if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
-        Some(Enum { name, generic_params, variants })
+        Some(Enum { name, generic_params, variants, doc_comment })
     }
 
-    fn parse_interface(&mut self) -> Option<Interface> {
+    fn parse_interface(&mut self, doc_comment: Option<String>) -> Option<Interface> {
         self.next_token();
         let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
         self.next_token();
@@ -234,14 +249,21 @@ impl<'a> Parser<'a> {
         self.next_token();
         let mut methods = Vec::new();
         while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
-            if let Some(f) = self.parse_function(vec![], vec![]) { methods.push(f); }
+            let mut method_doc = None;
+            while let TokenKind::DocComment(_) = &self.current_token.kind {
+                if let TokenKind::DocComment(text) = &self.current_token.kind {
+                    method_doc = Some(text.clone());
+                }
+                self.next_token();
+            }
+            if let Some(f) = self.parse_function(vec![], vec![], method_doc) { methods.push(f); }
             if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
         }
         if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
-        Some(Interface { name, methods })
+        Some(Interface { name, methods, doc_comment })
     }
 
-    fn parse_struct(&mut self, attributes: Vec<(String, String)>) -> Option<Struct> {
+    fn parse_struct(&mut self, attributes: Vec<(String, String)>, doc_comment: Option<String>) -> Option<Struct> {
         self.next_token();
         let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
         self.next_token();
@@ -261,7 +283,7 @@ impl<'a> Parser<'a> {
         }
         if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
         let attrs = attributes.into_iter().map(|(k,_)| k).collect();
-        Some(Struct { name, generic_params, fields, attributes: attrs })
+        Some(Struct { name, generic_params, fields, attributes: attrs, doc_comment })
     }
 
     fn parse_type_name(&mut self) -> String {
@@ -317,7 +339,7 @@ impl<'a> Parser<'a> {
         full_type
     }
 
-    fn parse_function(&mut self, modifiers: Vec<Token>, attributes: Vec<(String, String)>) -> Option<Function> {
+    fn parse_function(&mut self, modifiers: Vec<Token>, attributes: Vec<(String, String)>, doc_comment: Option<String>) -> Option<Function> {
         self.next_token();
         let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
         self.next_token();
@@ -383,7 +405,7 @@ impl<'a> Parser<'a> {
             if (is_extern || is_intrinsic)
                 && self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
         }
-        Some(Function { name, generic_params, params, return_type, body, modifiers, attributes })
+        Some(Function { name, generic_params, params, return_type, body, modifiers, attributes, doc_comment })
     }
 
     fn parse_block(&mut self) -> Vec<Statement> {

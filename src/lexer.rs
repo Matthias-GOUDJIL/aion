@@ -52,7 +52,11 @@ impl<'a> Lexer<'a> {
                 '^' => TokenKind::Caret,
                 '/' => {
                     if self.peek_char() == '/' {
-                        self.read_char(); // consume /
+                        self.read_char(); // consume first /
+                        if self.peek_char() == '/' {
+                            self.read_char(); // consume second /
+                            return self.read_doc_comment(line, col);
+                        }
                         self.read_line_comment();
                         return self.next_token();
                     } else if self.peek_char() == '*' {
@@ -162,6 +166,15 @@ impl<'a> Lexer<'a> {
             if ch == '\n' { break; }
             self.read_char();
         }
+    }
+
+    fn read_doc_comment(&mut self, line: usize, col: usize) -> Token {
+        let mut text = String::new();
+        while let Some(&ch) = self.input.peek() {
+            if ch == '\n' { break; }
+            if let Some(c) = self.read_char() { text.push(c); }
+        }
+        Token::new(TokenKind::DocComment(text.trim().to_string()), line, col)
     }
 
     fn read_block_comment(&mut self) {

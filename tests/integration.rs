@@ -152,3 +152,44 @@ fn test_optimization_check() { assert_snapshot!(run_aion_test("compiler/optimiza
 fn test_self_lexer_loop() { assert_snapshot!(run_aion_test("compiler/self_lexer_loop")); }
 #[test]
 fn test_self_parser() { assert_snapshot!(run_aion_test("compiler/self_parser")); }
+
+// --- Example Tests ---
+
+#[test]
+fn test_example_hello() { assert_snapshot!(run_aion_test("examples/hello")); }
+#[test]
+fn test_example_types() { assert_snapshot!(run_aion_test("examples/types")); }
+#[test]
+fn test_example_logic() { assert_snapshot!(run_aion_test("examples/logic")); }
+#[test]
+fn test_example_generics() { assert_snapshot!(run_aion_test("examples/generics")); }
+#[test]
+fn test_example_interface_impl() { assert_snapshot!(run_aion_test("examples/interface_impl")); }
+
+// --- Doc Generation Tests ---
+
+fn run_aion_doc(path: &str) -> String {
+    let root = project_root();
+    let fixture = format!("tests/fixtures/{}.ai", path);
+    let output_file = format!("tests/fixtures/{}.ai.doc", path);
+
+    let output = Command::new("cargo")
+        .args(["run", "--quiet", "--", "doc", &fixture, "-o", &output_file])
+        .current_dir(&root)
+        .timeout(std::time::Duration::from_secs(60))
+        .output()
+        .expect("failed to execute cargo run doc");
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return stderr.trim().to_string();
+    }
+
+    let doc = std::fs::read_to_string(&output_file)
+        .unwrap_or_else(|e| format!("Failed to read doc output: {}", e));
+    let _ = std::fs::remove_file(&output_file);
+    doc
+}
+
+#[test]
+fn test_doc_gen() { assert_snapshot!(run_aion_doc("compiler/doc_gen")); }

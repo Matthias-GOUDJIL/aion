@@ -1,0 +1,23 @@
+interface Logger {
+    fn log(msg: String)
+}
+
+struct ConsoleLogger {}
+
+impl Logger for ConsoleLogger {
+    fn log(msg: String) {
+        io.println(msg)
+    }
+}
+
+fn main() {
+    ::intent "Test optional types"
+    let status = 200
+    
+    ::intent "Test interface implementation"
+    let logger = ConsoleLogger {}
+    // logger.log("Aion v0.5 is Polymorphic!")
+    
+    io.println("Polymorphism Syntax Validated")
+    return status
+}

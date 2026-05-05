@@ -1,0 +1,27 @@
+/// A 2D point with generic coordinates.
+struct Point<T> {
+    x: T,
+    y: T
+}
+
+/// Represents application status codes.
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+/// Interface for drawable objects.
+interface Drawable {
+    /// Renders the object to screen.
+    fn draw()
+}
+
+/// Adds two integers together.
+fn add(a: i64, b: i64) -> i64 {
+    return a + b
+}
+
+fn main() {
+    return 0
+}

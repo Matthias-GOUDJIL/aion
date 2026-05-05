@@ -1,0 +1,11 @@
+struct Box<T> {
+    value: T
+}
+
+fn main() {
+    ::intent "Instanciation d'une structure générique"
+    let b = Box<i64> { value: 100 }
+    
+    io.println("Box value is set")
+    return 0
+}
