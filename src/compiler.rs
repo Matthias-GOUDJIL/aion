@@ -47,9 +47,9 @@ impl<'ctx> Compiler<'ctx> {
         compiler
     }
 
-    fn err(&self, msg: impl Into<String>, expr: &Expression) -> String {
+    fn err(&self, msg: impl Into<String>, expr: &Expression) -> CompileError {
         let (line, col) = expr.span();
-        CompileError::new(msg, line, col).with_snippet(&self.source).to_string()
+        CompileError::new(msg, line, col).with_snippet(&self.source)
     }
 
     fn register_builtins(&mut self) {
@@ -193,8 +193,8 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn instantiate_function(&mut self, bn: &str, ga: &[String]) -> Result<FunctionValue<'ctx>, String> {
-        let d = self.decls.get(bn).cloned().ok_or(format!("Generic function '{}' not found", bn))?;
+    fn instantiate_function(&mut self, bn: &str, ga: &[String]) -> Result<FunctionValue<'ctx>, CompileError> {
+        let d = self.decls.get(bn).cloned().ok_or_else(|| CompileError::Internal(format!("Generic function '{}' not found", bn)))?;
         if let Declaration::Function(mut f) = d {
             let ph = f.generic_params.clone(); 
             let nn = format!("{}_{}", bn, ga.join("_"));
@@ -214,11 +214,11 @@ impl<'ctx> Compiler<'ctx> {
             self.compiled_instances.insert(nn.clone()); 
             self.compile_function(&Declaration::Function(f))
         } else { 
-            Err(format!("'{}' is not a function", bn)) 
+            Err(CompileError::Internal(format!("'{}' is not a function", bn))) 
         }
     }
 
-    fn compile_function(&mut self, decl: &Declaration) -> Result<FunctionValue<'ctx>, String> {
+    fn compile_function(&mut self, decl: &Declaration) -> Result<FunctionValue<'ctx>, CompileError> {
         if let Declaration::Function(f) = decl {
             let function = if let Some(e) = self.module.get_function(&f.name) { 
                 if e.get_first_basic_block().is_some() { return Ok(e); } 
@@ -243,24 +243,24 @@ impl<'ctx> Compiler<'ctx> {
                 let i64_t = self.context.i64_type();
                 
                 if f.name == "main" {
-                    let gc_init = self.module.get_function("GC_init").ok_or("GC_init function not found")?;
-                    self.builder.build_call(gc_init, &[], "").map_err(|e| e.to_string())?;
+                    let gc_init = self.module.get_function("GC_init").ok_or_else(|| CompileError::Internal("GC_init function not found".to_string()))?;
+                    self.builder.build_call(gc_init, &[], "")?;
                     
                     if let Some(argc) = function.get_nth_param(0) { 
-                        let av = self.builder.build_int_z_extend(argc.into_int_value(), i64_t, "argc_ext").map_err(|e| e.to_string())?; 
-                        let a = self.builder.build_alloca(i64_t, "argc").map_err(|e| e.to_string())?; 
-                        self.builder.build_store(a, av).map_err(|e| e.to_string())?; 
+                        let av = self.builder.build_int_z_extend(argc.into_int_value(), i64_t, "argc_ext")?; 
+                        let a = self.builder.build_alloca(i64_t, "argc")?; 
+                        self.builder.build_store(a, av)?; 
                         local_vars.insert("argc".to_string(), (a, i64_t.into(), "i64".to_string())); 
                         if let Some(g) = self.module.get_global("aion_argc") { 
-                            self.builder.build_store(g.as_pointer_value(), av).map_err(|e| e.to_string())?; 
+                            self.builder.build_store(g.as_pointer_value(), av)?; 
                         } 
                     }
                     if let Some(argv) = function.get_nth_param(1) { 
-                        let a = self.builder.build_alloca(self.context.ptr_type(AddressSpace::default()), "argv").map_err(|e| e.to_string())?; 
-                        self.builder.build_store(a, argv).map_err(|e| e.to_string())?; 
+                        let a = self.builder.build_alloca(self.context.ptr_type(AddressSpace::default()), "argv")?; 
+                        self.builder.build_store(a, argv)?; 
                         local_vars.insert("argv".to_string(), (a, self.context.ptr_type(AddressSpace::default()).into(), "ptr".to_string())); 
                         if let Some(g) = self.module.get_global("aion_argv") { 
-                            self.builder.build_store(g.as_pointer_value(), argv).map_err(|e| e.to_string())?; 
+                            self.builder.build_store(g.as_pointer_value(), argv)?; 
                         } 
                     }
                 } else {
@@ -270,8 +270,8 @@ impl<'ctx> Compiler<'ctx> {
                             let atn = &f.params[i].1; 
                             let default_val = &f.params[i].2;
                             arg.set_name(an); 
-                            let a = self.builder.build_alloca(arg.get_type(), an).map_err(|e| e.to_string())?; 
-                            self.builder.build_store(a, arg).map_err(|e| e.to_string())?; 
+                            let a = self.builder.build_alloca(arg.get_type(), an)?; 
+                            self.builder.build_store(a, arg)?; 
                             local_vars.insert(an.clone(), (a, arg.get_type(), atn.replace(" ", ""))); 
                             
                             // If there's a default value and the arg is zero-initialized, use the default
@@ -290,20 +290,20 @@ impl<'ctx> Compiler<'ctx> {
                             if let Some(tt) = rt { 
                                 if v.get_type() != tt { 
                                     if tt.is_pointer_type() && v.is_int_value() { 
-                                        v = self.builder.build_int_to_ptr(v.into_int_value(), self.context.ptr_type(AddressSpace::default()), "ret_ptr").map_err(|e| e.to_string())?.into(); 
+                                        v = self.builder.build_int_to_ptr(v.into_int_value(), self.context.ptr_type(AddressSpace::default()), "ret_ptr")?.into(); 
                                     } else if tt.is_int_type() && v.is_pointer_value() { 
-                                        v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "ret_int").map_err(|e| e.to_string())?.into(); 
+                                        v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "ret_int")?.into(); 
                                     } 
                                 } 
                             }
-                            self.builder.build_return(Some(&v)).map_err(|e| e.to_string())?;
+                            self.builder.build_return(Some(&v))?;
                         } else { 
                             let def: BasicValueEnum = if rt.map_or(false, |t| t.is_pointer_type()) { 
                                 self.context.ptr_type(AddressSpace::default()).const_null().into() 
                             } else { 
                                 i64_t.const_zero().into() 
                             }; 
-                            self.builder.build_return(Some(&def)).map_err(|e| e.to_string())?; 
+                            self.builder.build_return(Some(&def))?; 
                         }
                     }
                 }
@@ -311,11 +311,11 @@ impl<'ctx> Compiler<'ctx> {
             }
             Ok(function)
         } else { 
-            Err("Not a function".to_string()) 
+            Err(CompileError::Internal("Not a function".to_string())) 
         }
     }
 
-    pub fn compile(&mut self, program: &Program) -> Result<(), String> {
+    pub fn compile(&mut self, program: &Program) -> Result<(), CompileError> {
         for d in &program.declarations {
             match d {
                 Declaration::Function(f) => { self.decls.insert(f.name.clone(), d.clone()); },
@@ -324,7 +324,7 @@ impl<'ctx> Compiler<'ctx> {
                 Declaration::Impl(i) => {
                     let mut ftn = i.target_name.clone(); 
                     if !i.generic_params.is_empty() { ftn = format!("{}<{}>", i.target_name, i.generic_params.join(",")); }
-                    let bt = if i.target_name.contains('<') { i.target_name.split('<').next().ok_or("Invalid target name")? } else { &i.target_name };
+                    let bt = if i.target_name.contains('<') { i.target_name.split('<').next().ok_or_else(|| CompileError::Internal("Invalid target name".to_string()))? } else { &i.target_name };
                     for f in &i.functions { 
                         let mut nf = f.clone(); 
                         nf.name = format!("{}.{}", bt, f.name); 
@@ -390,7 +390,7 @@ impl<'ctx> Compiler<'ctx> {
                 let mut fm = HashMap::new(); 
                 for (i, (n, _)) in s.fields.iter().enumerate() { fm.insert(n.clone(), i as u32); } 
                 self.struct_fields.insert(s.name.clone(), fm); 
-                let st = *self.struct_types.get(&s.name).ok_or(format!("Struct type '{}' not found", s.name))?; 
+                let st = *self.struct_types.get(&s.name).ok_or_else(|| CompileError::Internal(format!("Struct type '{}' not found", s.name)))?; 
                 let mut ft_list = Vec::new(); 
                 for (_, tnm) in &s.fields { ft_list.push(self.aion_type_to_llvm(tnm)); } 
                 st.set_body(&ft_list, false); 
@@ -423,7 +423,7 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
-    fn compile_block(&mut self, body: &[Statement], variables: &mut HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>, function: FunctionValue<'ctx>) -> Result<Option<BasicValueEnum<'ctx>>, String> {
+    fn compile_block(&mut self, body: &[Statement], variables: &mut HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>, function: FunctionValue<'ctx>) -> Result<Option<BasicValueEnum<'ctx>>, CompileError> {
         let mut lv = None; 
         let i64_t = self.context.i64_type(); 
         let pt = self.context.ptr_type(AddressSpace::default());
@@ -434,8 +434,8 @@ impl<'ctx> Compiler<'ctx> {
                     let v = self.compile_expr(value, variables, function)?;
                     let vt = v.get_type();
                     let vtn = self.get_expr_type_name(value, variables).replace(" ", "");
-                    let a = self.builder.build_alloca(vt, name).map_err(|e| e.to_string())?;
-                    self.builder.build_store(a, v).map_err(|e| e.to_string())?;
+                    let a = self.builder.build_alloca(vt, name)?;
+                    self.builder.build_store(a, v)?;
                     variables.insert(name.clone(), (a, vt, vtn));
                     lv = None;
                 },
@@ -443,41 +443,41 @@ impl<'ctx> Compiler<'ctx> {
                     let (ptr, tt) = self.compile_lvalue(target, variables, function)?; 
                     let mut v = self.compile_expr(value, variables, function)?; 
                     if tt.is_struct_type() && v.get_type().is_pointer_type() { 
-                        v = self.builder.build_load(tt, v.into_pointer_value(), "ld_assign").map_err(|e| e.to_string())?; 
+                        v = self.builder.build_load(tt, v.into_pointer_value(), "ld_assign")?; 
                     } 
-                    self.builder.build_store(ptr, v).map_err(|e| e.to_string())?; 
+                    self.builder.build_store(ptr, v)?; 
                     lv = None; 
                 },
                 Statement::Return { value, .. } => { 
                     let mut v = self.compile_expr(value, variables, function)?; 
-                    if self.builder.get_insert_block().ok_or("No active insert block")?.get_terminator().is_none() { 
+                    if self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?.get_terminator().is_none() { 
                         let rt = function.get_type().get_return_type();
                         if let Some(tt) = rt { 
                             if v.get_type() != tt { 
                                 if tt.is_pointer_type() && v.is_int_value() { 
-                                    v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "ret_ptr").map_err(|e| e.to_string())?.into(); 
+                                    v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "ret_ptr")?.into(); 
                                 } else if tt.is_int_type() && v.is_pointer_value() { 
-                                    v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "ret_int").map_err(|e| e.to_string())?.into(); 
+                                    v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "ret_int")?.into(); 
                                 } 
                             } 
                         }
-                        self.builder.build_return(Some(&v)).map_err(|e| e.to_string())?; 
+                        self.builder.build_return(Some(&v))?; 
                     } 
                     lv = Some(v); 
                 },
                 Statement::If { condition, then_branch, else_branch } => {
                     let cv = self.compile_expr(condition, variables, function)?.into_int_value(); 
-                    let comp = self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "ifcond").map_err(|e| e.to_string())?;
+                    let comp = self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "ifcond")?;
                     let tb = self.context.append_basic_block(function, "then"); 
                     let eb = self.context.append_basic_block(function, "else"); 
                     let mb = self.context.append_basic_block(function, "ifcont");
-                    self.builder.build_conditional_branch(comp, tb, eb).map_err(|e| e.to_string())?; 
+                    self.builder.build_conditional_branch(comp, tb, eb)?; 
                     let mut phis = Vec::new();
                     
                     self.builder.position_at_end(tb); 
                     let mut tv = variables.clone(); 
                     let tr = self.compile_block(then_branch, &mut tv, function)?; 
-                    let tf = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                    let tf = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?; 
                     if tf.get_terminator().is_none() { 
                         let v = tr.unwrap_or(i64_t.const_zero().into()); 
                         phis.push((v, tf)); 
@@ -486,7 +486,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.position_at_end(eb); 
                     let mut ev = variables.clone(); 
                     let er = if let Some(e) = else_branch { self.compile_block(e, &mut ev, function)? } else { None }; 
-                    let ef = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                    let ef = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?; 
                     if ef.get_terminator().is_none() { 
                         let v = er.unwrap_or(i64_t.const_zero().into()); 
                         phis.push((v, ef)); 
@@ -500,21 +500,21 @@ impl<'ctx> Compiler<'ctx> {
                             self.builder.position_at_end(b);
                             if v.get_type() != target_type {
                                 if target_type.is_pointer_type() && v.is_int_value() { 
-                                    v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr").map_err(|e| e.to_string())?.into(); 
+                                    v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr")?.into(); 
                                 } else if target_type.is_int_type() && v.is_pointer_value() { 
-                                    v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int").map_err(|e| e.to_string())?.into(); 
+                                    v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int")?.into(); 
                                 }
                             }
-                            self.builder.build_unconditional_branch(mb).map_err(|e| e.to_string())?;
+                            self.builder.build_unconditional_branch(mb)?;
                             final_phis.push((v, b));
                         }
                         self.builder.position_at_end(mb);
-                        let phi = self.builder.build_phi(target_type, "ifres").map_err(|e| e.to_string())?; 
+                        let phi = self.builder.build_phi(target_type, "ifres")?; 
                         for (v, b) in final_phis { phi.add_incoming(&[(&v, b)]); } 
                         lv = Some(phi.as_basic_value());
                     } else { 
-                        if self.builder.get_insert_block().ok_or("No active insert block")?.get_terminator().is_none() { 
-                            self.builder.build_unreachable().map_err(|e| e.to_string())?; 
+                        if self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?.get_terminator().is_none() { 
+                            self.builder.build_unreachable()?; 
                         } 
                         lv = None; 
                     }
@@ -523,15 +523,15 @@ impl<'ctx> Compiler<'ctx> {
                     let cb = self.context.append_basic_block(function, "while_cond"); 
                     let bb = self.context.append_basic_block(function, "while_body"); 
                     let eb = self.context.append_basic_block(function, "while_exit");
-                    self.builder.build_unconditional_branch(cb).map_err(|e| e.to_string())?; 
+                    self.builder.build_unconditional_branch(cb)?; 
                     self.builder.position_at_end(cb); 
                     let cv = self.compile_expr(condition, variables, function)?.into_int_value(); 
-                    self.builder.build_conditional_branch(self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "loopcond").map_err(|e| e.to_string())?, bb, eb).map_err(|e| e.to_string())?;
+                    self.builder.build_conditional_branch(self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "loopcond")?, bb, eb)?;
                     self.builder.position_at_end(bb); 
                     let mut bvars = variables.clone(); 
                     self.compile_block(body, &mut bvars, function)?; 
-                    if self.builder.get_insert_block().ok_or("No active insert block")?.get_terminator().is_none() { 
-                        self.builder.build_unconditional_branch(cb).map_err(|e| e.to_string())?; 
+                    if self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?.get_terminator().is_none() { 
+                        self.builder.build_unconditional_branch(cb)?; 
                     } 
                     self.builder.position_at_end(eb); 
                     lv = None;
@@ -541,13 +541,13 @@ impl<'ctx> Compiler<'ctx> {
                     let exit_bb = self.context.append_basic_block(function, "matchexit"); 
                     let mut phis = Vec::new();
                     let ctn = self.get_expr_type_name(condition, variables); 
-                    let cbn = if ctn.contains('<') { ctn.split('<').next().ok_or("Invalid type name")?.to_string() } else { ctn.clone() };
+                    let cbn = if ctn.contains('<') { ctn.split('<').next().ok_or_else(|| CompileError::Internal("Invalid type name".to_string()))?.to_string() } else { ctn.clone() };
                     let fen = self.resolve_fuzzy_name(&self.enum_types, &cbn).unwrap_or(cbn.clone());
                     
                     if let Some(et_ref) = self.enum_types.get(&fen) {
                         let et = *et_ref; 
                         let ep = cv.into_pointer_value(); 
-                        let tag = self.builder.build_load(i64_t, self.builder.build_struct_gep(et, ep, 0, "tagptr").map_err(|e| e.to_string())?, "tag").map_err(|e| e.to_string())?.into_int_value();
+                        let tag = self.builder.build_load(i64_t, self.builder.build_struct_gep(et, ep, 0, "tagptr")?, "tag")?.into_int_value();
                         let na = arms.len();
                         for (i, arm) in arms.iter().enumerate() {
                             let ab = self.context.append_basic_block(function, &format!("arm_{}_{}", i, arm.pattern)); 
@@ -578,9 +578,9 @@ impl<'ctx> Compiler<'ctx> {
                                         if at == i as u64 && (pat == "Some" || pat == "Ok" || pat.ends_with(".Some") || pat.ends_with("::Some")) { at = 0; }
                                         if at == i as u64 && (pat == "None" || pat == "Err" || pat.ends_with(".None") || pat.ends_with("::None")) { at = 1; }
                                         
-                                        let cond = self.builder.build_int_compare(IntPredicate::EQ, tag, i64_t.const_int(at, false), "is_arm").map_err(|e| e.to_string())?;
+                                        let cond = self.builder.build_int_compare(IntPredicate::EQ, tag, i64_t.const_int(at, false), "is_arm")?;
                                         arm_match_cond = Some(match arm_match_cond {
-                                            Some(prev) => self.builder.build_or(prev, cond, "arm_or").map_err(|e| e.to_string())?,
+                                            Some(prev) => self.builder.build_or(prev, cond, "arm_or")?,
                                             None => cond,
                                         });
                                     }
@@ -588,20 +588,20 @@ impl<'ctx> Compiler<'ctx> {
                             }
                             
                             if is_default && arm_match_cond.is_none() {
-                                self.builder.build_unconditional_branch(ab).map_err(|e| e.to_string())?;
+                                self.builder.build_unconditional_branch(ab)?;
                             } else if let Some(cond) = arm_match_cond {
-                                self.builder.build_conditional_branch(cond, ab, nb).map_err(|e| e.to_string())?;
+                                self.builder.build_conditional_branch(cond, ab, nb)?;
                             } else {
-                                self.builder.build_unconditional_branch(nb).map_err(|e| e.to_string())?;
+                                self.builder.build_unconditional_branch(nb)?;
                             }
                             if is_last && !is_default { 
-                                let test_bb = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                                let test_bb = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?; 
                                 phis.push((i64_t.const_zero().into(), test_bb)); 
                             }
                             self.builder.position_at_end(ab); 
                             let mut av = variables.clone();
                             if !arm.params.is_empty() {
-                                let dp = self.builder.build_struct_gep(et, ep, 1, "arm_dataptr").map_err(|e| e.to_string())?; 
+                                let dp = self.builder.build_struct_gep(et, ep, 1, "arm_dataptr")?; 
                                 let mut ptn = "i64".to_string();
                                 if let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen) { 
                                     for v in &e_decl.variants { 
@@ -612,10 +612,10 @@ impl<'ctx> Compiler<'ctx> {
                                     } 
                                 }
                                 let lt = self.aion_type_to_llvm(&ptn); 
-                                let cp = self.builder.build_bit_cast(dp, self.context.ptr_type(AddressSpace::default()), "arm_datacast").map_err(|e| e.to_string())?; 
-                                let lv_val = self.builder.build_load(lt, cp.into_pointer_value(), &arm.params[0]).map_err(|e| e.to_string())?;
-                                let pa = self.builder.build_alloca(lt, &arm.params[0]).map_err(|e| e.to_string())?; 
-                                self.builder.build_store(pa, lv_val).map_err(|e| e.to_string())?; 
+                                let cp = self.builder.build_bit_cast(dp, self.context.ptr_type(AddressSpace::default()), "arm_datacast")?; 
+                                let lv_val = self.builder.build_load(lt, cp.into_pointer_value(), &arm.params[0])?;
+                                let pa = self.builder.build_alloca(lt, &arm.params[0])?; 
+                                self.builder.build_store(pa, lv_val)?; 
                                 av.insert(arm.params[0].clone(), (pa, lt, ptn));
                             }
                             
@@ -624,13 +624,13 @@ impl<'ctx> Compiler<'ctx> {
                                 let guard_val = self.compile_expr(guard_expr, &av, function)?.into_int_value();
                                 let guard_pass_bb = self.context.append_basic_block(function, "guard_pass");
                                 let guard_fail_bb = nb;
-                                let guard_cond = self.builder.build_int_compare(IntPredicate::NE, guard_val, i64_t.const_zero(), "guard_cond").map_err(|e| e.to_string())?;
-                                self.builder.build_conditional_branch(guard_cond, guard_pass_bb, guard_fail_bb).map_err(|e| e.to_string())?;
+                                let guard_cond = self.builder.build_int_compare(IntPredicate::NE, guard_val, i64_t.const_zero(), "guard_cond")?;
+                                self.builder.build_conditional_branch(guard_cond, guard_pass_bb, guard_fail_bb)?;
                                 self.builder.position_at_end(guard_pass_bb);
                             }
                             
                             let ar = self.compile_block(&arm.body, &mut av, function)?; 
-                            let abf = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                            let abf = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?; 
                             if abf.get_terminator().is_none() { 
                                 let v = ar.unwrap_or(i64_t.const_zero().into()); 
                                 phis.push((v, abf)); 
@@ -664,18 +664,18 @@ impl<'ctx> Compiler<'ctx> {
                                         if let Some((start_str, end_str)) = pat.split_once("..") {
                                             if let (Ok(start), Ok(end)) = (start_str.parse::<i64>(), end_str.parse::<i64>()) {
                                                 let cv_val = cv.into_int_value();
-                                                let cond_start = self.builder.build_int_compare(IntPredicate::SGE, cv_val, i64_t.const_int(start as u64, false), "range_start").map_err(|e| e.to_string())?;
-                                                let cond_end = self.builder.build_int_compare(IntPredicate::SLE, cv_val, i64_t.const_int(end as u64, false), "range_end").map_err(|e| e.to_string())?;
-                                                let range_cond = self.builder.build_and(cond_start, cond_end, "range_cond").map_err(|e| e.to_string())?;
+                                                let cond_start = self.builder.build_int_compare(IntPredicate::SGE, cv_val, i64_t.const_int(start as u64, false), "range_start")?;
+                                                let cond_end = self.builder.build_int_compare(IntPredicate::SLE, cv_val, i64_t.const_int(end as u64, false), "range_end")?;
+                                                let range_cond = self.builder.build_and(cond_start, cond_end, "range_cond")?;
                                                 prim_match_cond = Some(match prim_match_cond {
-                                                    Some(prev) => self.builder.build_or(prev, range_cond, "range_or").map_err(|e| e.to_string())?,
+                                                    Some(prev) => self.builder.build_or(prev, range_cond, "range_or")?,
                                                     None => range_cond,
                                                 });
                                             }
                                         } else if let Ok(val) = pat.parse::<i64>() {
-                                            let cond = self.builder.build_int_compare(IntPredicate::EQ, cv.into_int_value(), i64_t.const_int(val as u64, false), "match_cond").map_err(|e| e.to_string())?;
+                                            let cond = self.builder.build_int_compare(IntPredicate::EQ, cv.into_int_value(), i64_t.const_int(val as u64, false), "match_cond")?;
                                             prim_match_cond = Some(match prim_match_cond {
-                                                Some(prev) => self.builder.build_or(prev, cond, "match_or").map_err(|e| e.to_string())?,
+                                                Some(prev) => self.builder.build_or(prev, cond, "match_or")?,
                                                 None => cond,
                                             });
                                         }
@@ -686,12 +686,12 @@ impl<'ctx> Compiler<'ctx> {
                                             pat[1..pat.len()-1].to_string()
                                         } else { pat.clone() };
                                         
-                                        let ps = self.builder.build_global_string_ptr(&pattern_str, "match_pattern").map_err(|e| e.to_string())?;
-                                        let fnc = self.module.get_function("aion_str_eq").ok_or("aion_str_eq not found")?;
-                                        let cmp = self.builder.build_call(fnc, &[cv.into(), ps.as_basic_value_enum().into()], "streq").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic().into_int_value();
-                                        let cond = self.builder.build_int_compare(IntPredicate::NE, cmp, i64_t.const_zero(), "match_cond").map_err(|e| e.to_string())?;
+                                        let ps = self.builder.build_global_string_ptr(&pattern_str, "match_pattern")?;
+                                        let fnc = self.module.get_function("aion_str_eq").ok_or_else(|| CompileError::Internal("aion_str_eq not found".to_string()))?;
+                                        let cmp = self.builder.build_call(fnc, &[cv.into(), ps.as_basic_value_enum().into()], "streq")?.try_as_basic_value().unwrap_basic().into_int_value();
+                                        let cond = self.builder.build_int_compare(IntPredicate::NE, cmp, i64_t.const_zero(), "match_cond")?;
                                         prim_match_cond = Some(match prim_match_cond {
-                                            Some(prev) => self.builder.build_or(prev, cond, "match_or").map_err(|e| e.to_string())?,
+                                            Some(prev) => self.builder.build_or(prev, cond, "match_or")?,
                                             None => cond,
                                         });
                                     }
@@ -699,15 +699,15 @@ impl<'ctx> Compiler<'ctx> {
                             }
                             
                             if is_default && prim_match_cond.is_none() || is_binding_var {
-                                self.builder.build_unconditional_branch(ab).map_err(|e| e.to_string())?;
+                                self.builder.build_unconditional_branch(ab)?;
                             } else if let Some(cond) = prim_match_cond {
-                                self.builder.build_conditional_branch(cond, ab, nb).map_err(|e| e.to_string())?;
+                                self.builder.build_conditional_branch(cond, ab, nb)?;
                             } else {
-                                self.builder.build_unconditional_branch(nb).map_err(|e| e.to_string())?;
+                                self.builder.build_unconditional_branch(nb)?;
                             }
                             
                             if is_last && !is_default {
-                                let test_bb = self.builder.get_insert_block().ok_or("No active insert block")?;
+                                let test_bb = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?;
                                 phis.push((i64_t.const_zero().into(), test_bb));
                             }
 
@@ -717,20 +717,20 @@ impl<'ctx> Compiler<'ctx> {
                             let mut av = variables.clone();
                             if !arm.params.is_empty() {
                                 let cv_type = cv.get_type();
-                                let pa = self.builder.build_alloca(cv_type, &arm.params[0]).map_err(|e| e.to_string())?;
+                                let pa = self.builder.build_alloca(cv_type, &arm.params[0])?;
                                 if ctn == "String" {
                                     let cv_ptr = cv.into_pointer_value();
-                                    self.builder.build_store(pa, cv_ptr).map_err(|e| e.to_string())?;
+                                    self.builder.build_store(pa, cv_ptr)?;
                                 } else if ctn != "i64" && ctn != "Integer" {
                                     // For structs, store the pointer directly
                                     // The pointer already points to the struct data
                                     let cv_ptr = cv.into_pointer_value();
-                                    self.builder.build_store(pa, cv_ptr).map_err(|e| e.to_string())?;
+                                    self.builder.build_store(pa, cv_ptr)?;
                                     // Update type to pointer so member access works
                                     let ptr_type = self.context.ptr_type(AddressSpace::default());
                                     av.insert(arm.params[0].clone(), (pa, ptr_type.into(), format!("*{}", ctn)));
                                 } else {
-                                    self.builder.build_store(pa, cv).map_err(|e| e.to_string())?;
+                                    self.builder.build_store(pa, cv)?;
                                     av.insert(arm.params[0].clone(), (pa, cv_type, ctn.to_string()));
                                 }
                             }
@@ -740,13 +740,13 @@ impl<'ctx> Compiler<'ctx> {
                                 let guard_val = self.compile_expr(guard_expr, &av, function)?.into_int_value();
                                 let guard_pass_bb = self.context.append_basic_block(function, "guard_pass");
                                 let guard_fail_bb = nb;
-                                let guard_cond = self.builder.build_int_compare(IntPredicate::NE, guard_val, i64_t.const_zero(), "guard_cond").map_err(|e| e.to_string())?;
-                                self.builder.build_conditional_branch(guard_cond, guard_pass_bb, guard_fail_bb).map_err(|e| e.to_string())?;
+                                let guard_cond = self.builder.build_int_compare(IntPredicate::NE, guard_val, i64_t.const_zero(), "guard_cond")?;
+                                self.builder.build_conditional_branch(guard_cond, guard_pass_bb, guard_fail_bb)?;
                                 self.builder.position_at_end(guard_pass_bb);
                             }
                             
                             let ar = self.compile_block(&arm.body, &mut av, function)?;
-                            let abf = self.builder.get_insert_block().ok_or("No active insert block")?;
+                            let abf = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?;
                             if abf.get_terminator().is_none() {
                                 let v = ar.unwrap_or(i64_t.const_zero().into());
                                 phis.push((v, abf));
@@ -758,7 +758,7 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.position_at_end(exit_bb);
                     if exit_bb.get_terminator().is_none() {
                         if phis.is_empty() { 
-                            self.builder.build_unreachable().map_err(|e| e.to_string())?; 
+                            self.builder.build_unreachable()?; 
                             lv = None; 
                         } else {
                             let target_type = phis[0].0.get_type(); 
@@ -767,18 +767,18 @@ impl<'ctx> Compiler<'ctx> {
                                 self.builder.position_at_end(b);
                                 if v.get_type() != target_type {
                                     if target_type.is_pointer_type() && v.is_int_value() { 
-                                        v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr").map_err(|e| e.to_string())?.into(); 
+                                        v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr")?.into(); 
                                     } else if target_type.is_int_type() && v.is_pointer_value() { 
-                                        v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int").map_err(|e| e.to_string())?.into(); 
+                                        v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int")?.into(); 
                                     }
                                 }
                                 if b.get_terminator().is_none() {
-                                    self.builder.build_unconditional_branch(exit_bb).map_err(|e| e.to_string())?;
+                                    self.builder.build_unconditional_branch(exit_bb)?;
                                 }
                                 final_phis.push((v, b));
                             }
                             self.builder.position_at_end(exit_bb);
-                            let phi = self.builder.build_phi(target_type, "matchres").map_err(|e| e.to_string())?; 
+                            let phi = self.builder.build_phi(target_type, "matchres")?; 
                             for (v, b) in final_phis { phi.add_incoming(&[(&v, b)]); } 
                             lv = Some(phi.as_basic_value());
                         }
@@ -792,19 +792,19 @@ impl<'ctx> Compiler<'ctx> {
         Ok(lv)
     }
 
-    fn compile_lvalue(&mut self, e: &Expression, variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>, function: FunctionValue<'ctx>) -> Result<(PointerValue<'ctx>, BasicTypeEnum<'ctx>), String> {
+    fn compile_lvalue(&mut self, e: &Expression, variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>, function: FunctionValue<'ctx>) -> Result<(PointerValue<'ctx>, BasicTypeEnum<'ctx>), CompileError> {
         let pt = self.context.ptr_type(AddressSpace::default());
         match e {
             Expression::Identifier(name) => {
                 if let Some((vn, fnm)) = name.split_once('.') { 
                     if let Some((vptr, vt, vtn)) = variables.get(vn) { 
-                        let btn = if vtn.contains('<') { vtn.split('<').next().ok_or("Invalid type name")? } else { vtn }; 
+                        let btn = if vtn.contains('<') { vtn.split('<').next().ok_or_else(|| CompileError::Internal("Invalid type name".to_string()))? } else { vtn }; 
                         let ftn = self.resolve_fuzzy_name(&self.struct_types, btn).unwrap_or(btn.to_string()); 
                         if let Some(flds) = self.struct_fields.get(ftn.as_str()) { 
                             if let Some(&idx) = flds.get(fnm) { 
-                                let st = *self.struct_types.get(&ftn).ok_or(format!("LLVM struct type '{}' not found", ftn))?; 
-                                let st_ptr = self.builder.build_load(*vt, *vptr, "st_load").map_err(|e| e.to_string())?.into_pointer_value();
-                                return Ok((self.builder.build_struct_gep(st, st_ptr, idx, "fldptr").map_err(|e| e.to_string())?, self.aion_type_to_llvm(&self.get_field_type(vtn, fnm)))); 
+                                let st = *self.struct_types.get(&ftn).ok_or_else(|| CompileError::Internal(format!("LLVM struct type '{}' not found", ftn)))?; 
+                                let st_ptr = self.builder.build_load(*vt, *vptr, "st_load")?.into_pointer_value();
+                                return Ok((self.builder.build_struct_gep(st, st_ptr, idx, "fldptr")?, self.aion_type_to_llvm(&self.get_field_type(vtn, fnm)))); 
                             } 
                         } 
                     } 
@@ -815,43 +815,43 @@ impl<'ctx> Compiler<'ctx> {
                 let (rp, rt_llvm) = self.compile_lvalue(receiver, variables, function)?; 
                 let rtn = self.get_expr_type_name(receiver, variables); 
                 let ftn = self.get_field_type(&rtn, member);
-                let mut bc = if rtn.contains('<') { rtn.split('<').next().ok_or("Invalid type name")? } else { &rtn }; 
+                let mut bc = if rtn.contains('<') { rtn.split('<').next().ok_or_else(|| CompileError::Internal("Invalid type name".to_string()))? } else { &rtn }; 
                 while bc.starts_with('*') { bc = &bc[1..]; }
-                let ft = self.resolve_fuzzy_name(&self.decls, bc).ok_or_else(|| format!("Struct '{}' not found (rec_type={}, receiver={:?})", bc, rtn, receiver))?;
-                let st = *self.struct_types.get(&ft).ok_or_else(|| format!("LLVM type not found for '{}'", ft))?;
-                let idx = *self.struct_fields.get(&ft).ok_or_else(|| format!("Fields for struct '{}' not found", ft))?.get(member).ok_or_else(|| format!("Field '{}' not found", member))?;
+                let ft = self.resolve_fuzzy_name(&self.decls, bc).ok_or_else(|| CompileError::Internal(format!("Struct '{}' not found (rec_type={}, receiver={:?})", bc, rtn, receiver)))?;
+                let st = *self.struct_types.get(&ft).ok_or_else(|| CompileError::Internal(format!("LLVM type not found for '{}'", ft)))?;
+                let idx = *self.struct_fields.get(&ft).ok_or_else(|| CompileError::Internal(format!("Fields for struct '{}' not found", ft)))?.get(member).ok_or_else(|| CompileError::Internal(format!("Field '{}' not found", member)))?;
                 
-                let st_ptr = self.builder.build_load(rt_llvm, rp, "st_load").map_err(|e| e.to_string())?.into_pointer_value();
-                Ok((self.builder.build_struct_gep(st, st_ptr, idx, member).map_err(|e| e.to_string())?, self.aion_type_to_llvm(&ftn)))
+                let st_ptr = self.builder.build_load(rt_llvm, rp, "st_load")?.into_pointer_value();
+                Ok((self.builder.build_struct_gep(st, st_ptr, idx, member)?, self.aion_type_to_llvm(&ftn)))
             },
             Expression::Deref { expr } => { 
                 let v = self.compile_expr(expr, variables, function)?; 
                 let tn = self.get_expr_type_name(expr, variables); 
                 let et = self.aion_type_to_llvm(if tn.starts_with('*') { &tn[1..] } else { "i64" }); 
-                let p = if v.is_int_value() { self.builder.build_int_to_ptr(v.into_int_value(), pt, "i2p").map_err(|e| e.to_string())? } else { v.into_pointer_value() }; 
+                let p = if v.is_int_value() { self.builder.build_int_to_ptr(v.into_int_value(), pt, "i2p")? } else { v.into_pointer_value() }; 
                 Ok((p, et)) 
             },
-            _ => Err(format!("Not an lvalue: {:?}", e)),
+            _ => Err(CompileError::Internal(format!("Not an lvalue: {:?}", e))),
         }
     }
 
-    fn compile_expr(&mut self, e: &Expression, variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>, function: FunctionValue<'ctx>) -> Result<BasicValueEnum<'ctx>, String> {
+    fn compile_expr(&mut self, e: &Expression, variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>, function: FunctionValue<'ctx>) -> Result<BasicValueEnum<'ctx>, CompileError> {
         let i64_t = self.context.i64_type(); 
         let pt = self.context.ptr_type(AddressSpace::default());
         match e {
             Expression::Integer(n) => Ok(i64_t.const_int(*n as u64, false).into()),
             Expression::Float(f_val) => Ok(self.context.f64_type().const_float(*f_val).into()),
             Expression::Boolean(b) => Ok(i64_t.const_int(if *b { 1 } else { 0 }, false).into()),
-            Expression::String(s) => Ok(self.builder.build_global_string_ptr(&format!("{}\0", s), "aion_str").map_err(|e| e.to_string())?.as_basic_value_enum()),
+            Expression::String(s) => Ok(self.builder.build_global_string_ptr(&format!("{}\0", s), "aion_str")?.as_basic_value_enum()),
             Expression::Identifier(name) => { 
                 if let Some((ptr, vt, _)) = variables.get(name) { 
-                    Ok(self.builder.build_load(*vt, *ptr, name).map_err(|e| e.to_string())?) 
+                    Ok(self.builder.build_load(*vt, *ptr, name)?) 
                 } else { 
                     if let Ok((ptr, vt)) = self.compile_lvalue(e, variables, function) { 
-                        return Ok(self.builder.build_load(vt, ptr, name).map_err(|e| e.to_string())?); 
+                        return Ok(self.builder.build_load(vt, ptr, name)?); 
                     } 
-                    if name == "argc" { if let Some(g) = self.module.get_global("aion_argc") { return Ok(self.builder.build_load(i64_t, g.as_pointer_value(), "argc").map_err(|e| e.to_string())?); } } 
-                    if name == "argv" { if let Some(g) = self.module.get_global("aion_argv") { return Ok(self.builder.build_load(pt, g.as_pointer_value(), "argv").map_err(|e| e.to_string())?); } } 
+                    if name == "argc" { if let Some(g) = self.module.get_global("aion_argc") { return Ok(self.builder.build_load(i64_t, g.as_pointer_value(), "argc")?); } } 
+                    if name == "argv" { if let Some(g) = self.module.get_global("aion_argv") { return Ok(self.builder.build_load(pt, g.as_pointer_value(), "argv")?); } } 
                     Err(self.err(format!("variable '{}' not found", name), e)) 
                 } 
             },
@@ -866,12 +866,12 @@ impl<'ctx> Compiler<'ctx> {
                      if (tn.starts_with('*') || tn.contains("ptr")) && mn == "offset" && arguments.len() == 1 {
                          let idx = self.compile_expr(&arguments[0], variables, function)?.into_int_value();
                          let ptr = if let Ok((p, _)) = self.compile_lvalue(&re, variables, function) {
-                             self.builder.build_load(self.context.ptr_type(AddressSpace::default()), p, "ptrload").map_err(|e| e.to_string())?.into_pointer_value()
+                             self.builder.build_load(self.context.ptr_type(AddressSpace::default()), p, "ptrload")?.into_pointer_value()
                          } else {
                              self.compile_expr(&re, variables, function)?.into_pointer_value()
                          };
                          let element_type = if tn.starts_with('*') { self.aion_type_to_llvm(&tn[1..]) } else { self.context.i64_type().into() };
-                         return Ok(unsafe { self.builder.build_gep(element_type, ptr, &[idx], "offset_ptr").map_err(|e| e.to_string())? }.into());
+                         return Ok(unsafe { self.builder.build_gep(element_type, ptr, &[idx], "offset_ptr")? }.into());
                      }
                      if tn != "unknown" { 
                          let (btn, tga) = if tn.contains('<') { let p: Vec<&str> = tn.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect(); (p[0].to_string(), p[1..].iter().map(|s| s.trim().to_string()).collect()) } else { (tn.clone(), vec![]) }; 
@@ -910,11 +910,11 @@ impl<'ctx> Compiler<'ctx> {
                         let v = self.compile_expr(arg, variables, function)?; 
                         // Auto-convert i64 to string for io.println/io.print
                         if (fnm == "io.println" || fnm == "io.print") && v.is_int_value() {
-                            let conv_fn = self.module.get_function("aion_int_to_str").ok_or("aion_int_to_str not found")?;
-                            self.builder.build_call(conv_fn, &[v.into()], "to_str").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic()
+                            let conv_fn = self.module.get_function("aion_int_to_str").ok_or_else(|| CompileError::Internal("aion_int_to_str not found".to_string()))?;
+                            self.builder.build_call(conv_fn, &[v.into()], "to_str")?.try_as_basic_value().unwrap_basic()
                         } else if ep && !v.get_type().is_pointer_type() { 
-                            let a = self.builder.build_alloca(v.get_type(), "temp_arg").map_err(|e| e.to_string())?; 
-                            self.builder.build_store(a, v).map_err(|e| e.to_string())?; 
+                            let a = self.builder.build_alloca(v.get_type(), "temp_arg")?; 
+                            self.builder.build_store(a, v)?; 
                             a.into() 
                         } else { v } 
                     }; 
@@ -924,31 +924,31 @@ impl<'ctx> Compiler<'ctx> {
                     self.builder.build_call(fv, &ca, "") 
                 } else { 
                     self.builder.build_call(fv, &ca, "calltmp") 
-                }.map_err(|e| e.to_string())?; 
+                }?; 
                 Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() })
             },
             Expression::Infix { left, operator, right } => {
                 if operator.kind == TokenKind::And || operator.kind == TokenKind::Or { 
                     let lhs = self.compile_expr(left, variables, function)?; 
-                    let li = match lhs { BasicValueEnum::IntValue(i) => i, _ => return Err("Expected boolean".to_string()) }; 
+                    let li = match lhs { BasicValueEnum::IntValue(i) => i, _ => return Err(CompileError::Internal("Expected boolean".to_string())) }; 
                     let rb = self.context.append_basic_block(function, "logic_rhs"); 
                     let mb = self.context.append_basic_block(function, "logic_merge"); 
                     let cond = if operator.kind == TokenKind::And { 
-                        self.builder.build_int_compare(IntPredicate::NE, li, i64_t.const_zero(), "and_cond").map_err(|e| e.to_string())? 
+                        self.builder.build_int_compare(IntPredicate::NE, li, i64_t.const_zero(), "and_cond")? 
                     } else { 
-                        self.builder.build_int_compare(IntPredicate::EQ, li, i64_t.const_zero(), "or_cond").map_err(|e| e.to_string())? 
+                        self.builder.build_int_compare(IntPredicate::EQ, li, i64_t.const_zero(), "or_cond")? 
                     }; 
-                    self.builder.build_conditional_branch(cond, rb, mb).map_err(|e| e.to_string())?; 
-                    let lfb = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                    self.builder.build_conditional_branch(cond, rb, mb)?; 
+                    let lfb = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?; 
                     self.builder.position_at_end(rb); 
                     let rhs = self.compile_expr(right, variables, function)?; 
-                    let ri = match rhs { BasicValueEnum::IntValue(i) => i, _ => return Err("Expected boolean".to_string()) }; 
-                    if self.builder.get_insert_block().ok_or("No active insert block")?.get_terminator().is_none() { 
-                        self.builder.build_unconditional_branch(mb).map_err(|e| e.to_string())?; 
+                    let ri = match rhs { BasicValueEnum::IntValue(i) => i, _ => return Err(CompileError::Internal("Expected boolean".to_string())) }; 
+                    if self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?.get_terminator().is_none() { 
+                        self.builder.build_unconditional_branch(mb)?; 
                     } 
-                    let rfb = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                    let rfb = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?; 
                     self.builder.position_at_end(mb); 
-                    let phi = self.builder.build_phi(i64_t, "logic_res").map_err(|e| e.to_string())?; 
+                    let phi = self.builder.build_phi(i64_t, "logic_res")?; 
                     let lv_v = if operator.kind == TokenKind::And { i64_t.const_zero() } else { i64_t.const_int(1, false) }; 
                     phi.add_incoming(&[(&lv_v, lfb), (&ri, rfb)]); 
                     return Ok(phi.as_basic_value().into()); 
@@ -963,39 +963,39 @@ impl<'ctx> Compiler<'ctx> {
                             let l = lhs.into_int_value();
                             let min = self.compile_expr(r_left, variables, function)?.into_int_value();
                             let max = self.compile_expr(r_right, variables, function)?.into_int_value();
-                            let c1 = self.builder.build_int_compare(IntPredicate::SGE, l, min, "in_ge").map_err(|e| e.to_string())?;
-                            let c2 = self.builder.build_int_compare(IntPredicate::SLT, l, max, "in_lt").map_err(|e| e.to_string())?;
-                            let res = self.builder.build_and(c1, c2, "in_res").map_err(|e| e.to_string())?;
-                            return Ok(self.builder.build_int_z_extend(res, i64_t, "bool").map_err(|e| e.to_string())?.into());
+                            let c1 = self.builder.build_int_compare(IntPredicate::SGE, l, min, "in_ge")?;
+                            let c2 = self.builder.build_int_compare(IntPredicate::SLT, l, max, "in_lt")?;
+                            let res = self.builder.build_and(c1, c2, "in_res")?;
+                            return Ok(self.builder.build_int_z_extend(res, i64_t, "bool")?.into());
                         }
                     }
-                    return Err("Operator 'inside' currently only supports ranges (min..max)".to_string());
+                    return Err(CompileError::Internal("Operator 'inside' currently only supports ranges (min..max)".to_string()));
                 }
 
                 let rhs = self.compile_expr(right, variables, function)?;
                 if lhs.is_int_value() && rhs.is_int_value() {
                     let mut l = lhs.into_int_value(); 
                     let mut r = rhs.into_int_value(); 
-                    if l.get_type().get_bit_width() < 64 { l = self.builder.build_int_s_extend(l, i64_t, "l_ext").map_err(|e| e.to_string())?; } 
-                    if r.get_type().get_bit_width() < 64 { r = self.builder.build_int_s_extend(r, i64_t, "r_ext").map_err(|e| e.to_string())?; }
+                    if l.get_type().get_bit_width() < 64 { l = self.builder.build_int_s_extend(l, i64_t, "l_ext")?; } 
+                    if r.get_type().get_bit_width() < 64 { r = self.builder.build_int_s_extend(r, i64_t, "r_ext")?; }
                     match &operator.kind {
-                        TokenKind::Plus => Ok(self.builder.build_int_add(l, r, "add").map_err(|e| e.to_string())?.into()), 
-                        TokenKind::Minus => Ok(self.builder.build_int_sub(l, r, "sub").map_err(|e| e.to_string())?.into()), 
-                        TokenKind::Star => Ok(self.builder.build_int_mul(l, r, "mul").map_err(|e| e.to_string())?.into()), 
-                        TokenKind::Slash => Ok(self.builder.build_int_signed_div(l, r, "div").map_err(|e| e.to_string())?.into()),
-                        TokenKind::EqEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::EQ, l, r, "eq").map_err(|e| e.to_string())?, i64_t, "bool").map_err(|e| e.to_string())?.into()), 
-                        TokenKind::NotEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::NE, l, r, "ne").map_err(|e| e.to_string())?, i64_t, "bool").map_err(|e| e.to_string())?.into()),
-                        TokenKind::Lt => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SLT, l, r, "lt").map_err(|e| e.to_string())?, i64_t, "bool").map_err(|e| e.to_string())?.into()), 
-                        TokenKind::Gt => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SGT, l, r, "gt").map_err(|e| e.to_string())?, i64_t, "bool").map_err(|e| e.to_string())?.into()),
-                        TokenKind::LtEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SLE, l, r, "lteq").map_err(|e| e.to_string())?, i64_t, "bool").map_err(|e| e.to_string())?.into()), 
-                        TokenKind::GtEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SGE, l, r, "gteq").map_err(|e| e.to_string())?, i64_t, "bool").map_err(|e| e.to_string())?.into()),
-                        TokenKind::Percent => Ok(self.builder.build_int_signed_rem(l, r, "rem").map_err(|e| e.to_string())?.into()), 
-                        TokenKind::Caret => Ok(self.builder.build_xor(l, r, "xor").map_err(|e| e.to_string())?.into()), 
-                        _ => Err(format!("Operator {:?} not supported", operator.kind)),
+                        TokenKind::Plus => Ok(self.builder.build_int_add(l, r, "add")?.into()), 
+                        TokenKind::Minus => Ok(self.builder.build_int_sub(l, r, "sub")?.into()), 
+                        TokenKind::Star => Ok(self.builder.build_int_mul(l, r, "mul")?.into()), 
+                        TokenKind::Slash => Ok(self.builder.build_int_signed_div(l, r, "div")?.into()),
+                        TokenKind::EqEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::EQ, l, r, "eq")?, i64_t, "bool")?.into()), 
+                        TokenKind::NotEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::NE, l, r, "ne")?, i64_t, "bool")?.into()),
+                        TokenKind::Lt => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SLT, l, r, "lt")?, i64_t, "bool")?.into()), 
+                        TokenKind::Gt => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SGT, l, r, "gt")?, i64_t, "bool")?.into()),
+                        TokenKind::LtEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SLE, l, r, "lteq")?, i64_t, "bool")?.into()), 
+                        TokenKind::GtEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SGE, l, r, "gteq")?, i64_t, "bool")?.into()),
+                        TokenKind::Percent => Ok(self.builder.build_int_signed_rem(l, r, "rem")?.into()), 
+                        TokenKind::Caret => Ok(self.builder.build_xor(l, r, "xor")?.into()), 
+                        _ => Err(CompileError::Internal(format!("Operator {:?} not supported", operator.kind))),
                     }
                 } else if (lhs.is_pointer_value() || lhs.is_int_value()) && (rhs.is_pointer_value() || rhs.is_int_value()) {
-                    let l = if lhs.is_int_value() { self.builder.build_int_to_ptr(lhs.into_int_value(), pt, "i2p").map_err(|e| e.to_string())?.into() } else { lhs };
-                    let r = if rhs.is_int_value() { self.builder.build_int_to_ptr(rhs.into_int_value(), pt, "i2p").map_err(|e| e.to_string())?.into() } else { rhs };
+                    let l = if lhs.is_int_value() { self.builder.build_int_to_ptr(lhs.into_int_value(), pt, "i2p")?.into() } else { lhs };
+                    let r = if rhs.is_int_value() { self.builder.build_int_to_ptr(rhs.into_int_value(), pt, "i2p")?.into() } else { rhs };
                     let lp = l.into_pointer_value(); 
                     let rp = r.into_pointer_value();
                     match &operator.kind { 
@@ -1003,56 +1003,56 @@ impl<'ctx> Compiler<'ctx> {
                             let ltn = self.get_expr_type_name(left, variables);
                             let rtn = self.get_expr_type_name(right, variables);
                             if ltn == "String" && rtn == "String" {
-                                let fnc = self.module.get_function("aion_str_eq").ok_or("aion_str_eq not found")?;
-                                let cmp = self.builder.build_call(fnc, &[lp.into(), rp.into()], "streq").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic().into_int_value();
+                                let fnc = self.module.get_function("aion_str_eq").ok_or_else(|| CompileError::Internal("aion_str_eq not found".to_string()))?;
+                                let cmp = self.builder.build_call(fnc, &[lp.into(), rp.into()], "streq")?.try_as_basic_value().unwrap_basic().into_int_value();
                                 let res = if operator.kind == TokenKind::EqEq {
-                                    self.builder.build_int_compare(IntPredicate::NE, cmp, i64_t.const_zero(), "eq").map_err(|e| e.to_string())?
+                                    self.builder.build_int_compare(IntPredicate::NE, cmp, i64_t.const_zero(), "eq")?
                                 } else {
-                                    self.builder.build_int_compare(IntPredicate::EQ, cmp, i64_t.const_zero(), "ne").map_err(|e| e.to_string())?
+                                    self.builder.build_int_compare(IntPredicate::EQ, cmp, i64_t.const_zero(), "ne")?
                                 };
-                                Ok(self.builder.build_int_z_extend(res, i64_t, "bool").map_err(|e| e.to_string())?.into())
+                                Ok(self.builder.build_int_z_extend(res, i64_t, "bool")?.into())
                             } else {
                                 let pred = if operator.kind == TokenKind::EqEq { IntPredicate::EQ } else { IntPredicate::NE }; 
-                                let cmp = self.builder.build_int_compare(pred, lp, rp, "ptrcmp").map_err(|e| e.to_string())?; 
-                                Ok(self.builder.build_int_z_extend(cmp, i64_t, "bool").map_err(|e| e.to_string())?.into()) 
+                                let cmp = self.builder.build_int_compare(pred, lp, rp, "ptrcmp")?; 
+                                Ok(self.builder.build_int_z_extend(cmp, i64_t, "bool")?.into()) 
                             }
                         }, 
                         TokenKind::Plus if lhs.is_pointer_value() && rhs.is_pointer_value() => { 
-                            let fnc = self.module.get_function("aion_str_concat").ok_or("aion_str_concat not found")?; 
-                            let call = self.builder.build_call(fnc, &[lp.into(), rp.into()], "strconcat").map_err(|e| e.to_string())?; 
+                            let fnc = self.module.get_function("aion_str_concat").ok_or_else(|| CompileError::Internal("aion_str_concat not found".to_string()))?; 
+                            let call = self.builder.build_call(fnc, &[lp.into(), rp.into()], "strconcat")?; 
                             Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() }) 
                         },
                         TokenKind::Plus if lhs.is_pointer_value() && rhs.is_int_value() => { 
-                            let c2s = self.module.get_function("aion_char_to_str").ok_or("aion_char_to_str not found")?; 
-                            let s2 = self.builder.build_call(c2s, &[rhs.into()], "char2str").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic(); 
-                            let fnc = self.module.get_function("aion_str_concat").ok_or("aion_str_concat not found")?; 
-                            let call = self.builder.build_call(fnc, &[lp.into(), s2.into()], "strconcat").map_err(|e| e.to_string())?; 
+                            let c2s = self.module.get_function("aion_char_to_str").ok_or_else(|| CompileError::Internal("aion_char_to_str not found".to_string()))?; 
+                            let s2 = self.builder.build_call(c2s, &[rhs.into()], "char2str")?.try_as_basic_value().unwrap_basic(); 
+                            let fnc = self.module.get_function("aion_str_concat").ok_or_else(|| CompileError::Internal("aion_str_concat not found".to_string()))?; 
+                            let call = self.builder.build_call(fnc, &[lp.into(), s2.into()], "strconcat")?; 
                             Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() }) 
                         }, 
-                        _ => Err(format!("Mixed operator {:?} not supported", operator.kind)),
+                        _ => Err(CompileError::Internal(format!("Mixed operator {:?} not supported", operator.kind))),
                     }
-                } else { Err("Type mismatch".to_string()) }
+                } else { Err(CompileError::Internal("Type mismatch".to_string())) }
             },
             Expression::StructInst { name, fields, .. } => {
-                let sn = self.resolve_fuzzy_name(&self.struct_types, name).ok_or_else(|| format!("Struct type '{}' not found in StructInst", name))?; 
-                let st = *self.struct_types.get(&sn).ok_or_else(|| format!("LLVM struct type '{}' not found", sn))?; 
-                let fm = self.struct_fields.get(&sn).ok_or_else(|| format!("Fields for struct '{}' not found", sn))?.clone();
-                let mfn = self.module.get_function("aion_malloc").ok_or("aion_malloc not found")?; 
-                let pr = self.builder.build_call(mfn, &[st.size_of().ok_or("Struct size unknown")?.into()], "struct_alloc").map_err(|e| e.to_string())?.try_as_basic_value();
-                let ptr = match pr { ValueKind::Basic(v) => v.into_pointer_value(), _ => return Err("malloc failed".to_string()) };
+                let sn = self.resolve_fuzzy_name(&self.struct_types, name).ok_or_else(|| CompileError::Internal(format!("Struct type '{}' not found in StructInst", name)))?; 
+                let st = *self.struct_types.get(&sn).ok_or_else(|| CompileError::Internal(format!("LLVM struct type '{}' not found", sn)))?; 
+                let fm = self.struct_fields.get(&sn).ok_or_else(|| CompileError::Internal(format!("Fields for struct '{}' not found", sn)))?.clone();
+                let mfn = self.module.get_function("aion_malloc").ok_or_else(|| CompileError::Internal("aion_malloc not found".to_string()))?; 
+                let pr = self.builder.build_call(mfn, &[st.size_of().ok_or_else(|| CompileError::Internal("Struct size unknown".to_string()))?.into()], "struct_alloc")?.try_as_basic_value();
+                let ptr = match pr { ValueKind::Basic(v) => v.into_pointer_value(), _ => return Err(CompileError::Internal("malloc failed".to_string())) };
                 for (fnm, fe) in fields { 
                     let val = self.compile_expr(fe, variables, function)?; 
-                    let idx = *fm.get(fnm).ok_or_else(|| format!("Field '{}' not found in struct '{}'", fnm, sn))?; 
-                    self.builder.build_store(self.builder.build_struct_gep(st, ptr, idx, fnm).map_err(|e| e.to_string())?, val).map_err(|e| e.to_string())?; 
+                    let idx = *fm.get(fnm).ok_or_else(|| CompileError::Internal(format!("Field '{}' not found in struct '{}'", fnm, sn)))?; 
+                    self.builder.build_store(self.builder.build_struct_gep(st, ptr, idx, fnm)?, val)?; 
                 }
                 Ok(ptr.into())
             },
             Expression::EnumInst { name, variant, arguments, generic_args } => {
                 if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, name) {
-                    let et = *self.enum_types.get(&en).ok_or_else(|| format!("Enum type '{}' not found", en))?;
-                    let pr = match self.builder.build_call(self.module.get_function("aion_malloc").ok_or("aion_malloc not found")?, &[et.size_of().ok_or("Enum size unknown")?.into()], "enum_alloc").map_err(|e| e.to_string())?.try_as_basic_value() { 
+                    let et = *self.enum_types.get(&en).ok_or_else(|| CompileError::Internal(format!("Enum type '{}' not found", en)))?;
+                    let pr = match self.builder.build_call(self.module.get_function("aion_malloc").ok_or_else(|| CompileError::Internal("aion_malloc not found".to_string()))?, &[et.size_of().ok_or_else(|| CompileError::Internal("Enum size unknown".to_string()))?.into()], "enum_alloc")?.try_as_basic_value() { 
                         ValueKind::Basic(v) => v.into_pointer_value(), 
-                        _ => return Err("malloc failed".to_string()) 
+                        _ => return Err(CompileError::Internal("malloc failed".to_string())) 
                     };
                     let mut tv = 0; 
                     if let Some(Declaration::Enum(e_decl)) = self.decls.get(&en) { 
@@ -1060,11 +1060,11 @@ impl<'ctx> Compiler<'ctx> {
                             if v.name == *variant { tv = idx as u64; break; } 
                         } 
                     }
-                    self.builder.build_store(self.builder.build_struct_gep(et, pr, 0, "tag").map_err(|e| e.to_string())?, i64_t.const_int(tv, false)).map_err(|e| e.to_string())?;
+                    self.builder.build_store(self.builder.build_struct_gep(et, pr, 0, "tag")?, i64_t.const_int(tv, false))?;
                     if !arguments.is_empty() { 
                         let val = self.compile_expr(&arguments[0], variables, function)?; 
-                        let cp = self.builder.build_bit_cast(self.builder.build_struct_gep(et, pr, 1, "data").map_err(|e| e.to_string())?, pt, "datacast").map_err(|e| e.to_string())?; 
-                        self.builder.build_store(cp.into_pointer_value(), val).map_err(|e| e.to_string())?; 
+                        let cp = self.builder.build_bit_cast(self.builder.build_struct_gep(et, pr, 1, "data")?, pt, "datacast")?; 
+                        self.builder.build_store(cp.into_pointer_value(), val)?; 
                     }
                     Ok(pr.into())
                 } else {
@@ -1074,14 +1074,14 @@ impl<'ctx> Compiler<'ctx> {
             },
             Expression::MemberAccess { .. } => {
                 let (rp, rt_llvm) = self.compile_lvalue(e, variables, function)?; 
-                Ok(self.builder.build_load(rt_llvm, rp, "load_member").map_err(|e| e.to_string())?)
+                Ok(self.builder.build_load(rt_llvm, rp, "load_member")?)
             },
             Expression::MethodCall { receiver, method, generic_args, arguments, .. } => {
                 let rtn = self.get_expr_type_name(receiver, variables);
                 if method == "offset" && rtn.starts_with('*') { 
                     let p = self.compile_expr(receiver, variables, function)?.into_pointer_value(); 
                     let o = self.compile_expr(&arguments[0], variables, function)?.into_int_value(); 
-                    return Ok(unsafe { self.builder.build_gep(self.aion_type_to_llvm(&rtn[1..]), p, &[o], "offset_ptr").map_err(|e| e.to_string())? }.into()); 
+                    return Ok(unsafe { self.builder.build_gep(self.aion_type_to_llvm(&rtn[1..]), p, &[o], "offset_ptr")? }.into()); 
                 }
                 let (btn, tga) = if rtn.contains('<') { 
                     let p: Vec<&str> = rtn.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect(); 
@@ -1095,7 +1095,7 @@ impl<'ctx> Compiler<'ctx> {
                     let gn = format!("{}_{}", fm, cg.join("_")); 
                     if let Some(e) = self.module.get_function(&gn) { e } else { self.instantiate_function(&fm, &cg)? } 
                 } else { 
-                    self.module.get_function(&fm).ok_or_else(|| format!("Method '{}' not found", fm))? 
+                    self.module.get_function(&fm).ok_or_else(|| CompileError::Internal(format!("Method '{}' not found", fm)))? 
                 };
                 let mut ca = Vec::new(); 
                 let rv = self.compile_expr(receiver, variables, function)?;
@@ -1105,8 +1105,8 @@ impl<'ctx> Compiler<'ctx> {
                     // Auto-convert i64 to string for io.println/io.print
                     if fm == "io.println" || fm == "io.print" {
                         if compiled.is_int_value() {
-                            let conv_fn = self.module.get_function("aion_int_to_str").ok_or("aion_int_to_str not found")?;
-                            let converted = self.builder.build_call(conv_fn, &[compiled.into()], "to_str").map_err(|e| e.to_string())?.try_as_basic_value().unwrap_basic();
+                            let conv_fn = self.module.get_function("aion_int_to_str").ok_or_else(|| CompileError::Internal("aion_int_to_str not found".to_string()))?;
+                            let converted = self.builder.build_call(conv_fn, &[compiled.into()], "to_str")?.try_as_basic_value().unwrap_basic();
                             ca.push(converted.into());
                         } else {
                             ca.push(compiled.into());
@@ -1115,7 +1115,7 @@ impl<'ctx> Compiler<'ctx> {
                         ca.push(compiled.into());
                     }
                 }
-                let call = self.builder.build_call(fv, &ca, "call").map_err(|e| e.to_string())?; 
+                let call = self.builder.build_call(fv, &ca, "call")?; 
                 Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() })
             },
             Expression::Cast { target, expr } => {
@@ -1125,39 +1125,39 @@ impl<'ctx> Compiler<'ctx> {
                 if v.is_int_value() && dest.is_int_type() {
                     let sw = v.into_int_value().get_type().get_bit_width();
                     let dw = dest.into_int_type().get_bit_width();
-                    if sw < dw { Ok(self.builder.build_int_z_extend(v.into_int_value(), dest.into_int_type(), "ext").map_err(|e| e.to_string())?.into()) }
-                    else if sw > dw { Ok(self.builder.build_int_truncate(v.into_int_value(), dest.into_int_type(), "trunc").map_err(|e| e.to_string())?.into()) }
+                    if sw < dw { Ok(self.builder.build_int_z_extend(v.into_int_value(), dest.into_int_type(), "ext")?.into()) }
+                    else if sw > dw { Ok(self.builder.build_int_truncate(v.into_int_value(), dest.into_int_type(), "trunc")?.into()) }
                     else { Ok(v) }
                 } else if v.is_pointer_value() && dest.is_int_type() {
-                    Ok(self.builder.build_ptr_to_int(v.into_pointer_value(), dest.into_int_type(), "p2i").map_err(|e| e.to_string())?.into())
+                    Ok(self.builder.build_ptr_to_int(v.into_pointer_value(), dest.into_int_type(), "p2i")?.into())
                 } else if v.is_int_value() && dest.is_pointer_type() {
-                    Ok(self.builder.build_int_to_ptr(v.into_int_value(), dest.into_pointer_type(), "i2p").map_err(|e| e.to_string())?.into())
+                    Ok(self.builder.build_int_to_ptr(v.into_int_value(), dest.into_pointer_type(), "i2p")?.into())
                 } else if v.get_type() == dest {
                     Ok(v)
                 } else {
-                    Ok(self.builder.build_bit_cast(v, dest, "cast").map_err(|e| e.to_string())?)
+                    Ok(self.builder.build_bit_cast(v, dest, "cast")?)
                 }
             },
             Expression::Deref { expr } => { 
                 let v = self.compile_expr(expr, variables, function)?; 
                 let tn = self.get_expr_type_name(expr, variables); 
                 let et = self.aion_type_to_llvm(if tn.starts_with('*') { &tn[1..] } else { "i64" }); 
-                let p = if v.is_int_value() { self.builder.build_int_to_ptr(v.into_int_value(), pt, "i2p").map_err(|e| e.to_string())? } else { v.into_pointer_value() }; 
-                Ok(self.builder.build_load(et, p, "deref").map_err(|e| e.to_string())?) 
+                let p = if v.is_int_value() { self.builder.build_int_to_ptr(v.into_int_value(), pt, "i2p")? } else { v.into_pointer_value() }; 
+                Ok(self.builder.build_load(et, p, "deref")?) 
             },
             Expression::If { condition, then_branch, else_branch } => {
                 let cv = self.compile_expr(condition, variables, function)?.into_int_value(); 
-                let comp = self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "ifcond").map_err(|e| e.to_string())?;
+                let comp = self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "ifcond")?;
                 let tb = self.context.append_basic_block(function, "then"); 
                 let eb = self.context.append_basic_block(function, "else"); 
                 let mb = self.context.append_basic_block(function, "ifcont");
-                self.builder.build_conditional_branch(comp, tb, eb).map_err(|e| e.to_string())?; 
+                self.builder.build_conditional_branch(comp, tb, eb)?; 
                 let mut phis = Vec::new();
                 
                 self.builder.position_at_end(tb); 
                 let mut tv = variables.clone(); 
                 let tr = self.compile_block(then_branch, &mut tv, function)?; 
-                let tf = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                let tf = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?; 
                 if tf.get_terminator().is_none() { 
                     let v = tr.unwrap_or(i64_t.const_zero().into()); 
                     phis.push((v, tf)); 
@@ -1166,7 +1166,7 @@ impl<'ctx> Compiler<'ctx> {
                 self.builder.position_at_end(eb); 
                 let mut ev = variables.clone(); 
                 let er = if let Some(e) = else_branch { self.compile_block(e, &mut ev, function)? } else { None }; 
-                let ef = self.builder.get_insert_block().ok_or("No active insert block")?; 
+                let ef = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?; 
                 if ef.get_terminator().is_none() { 
                     let v = er.unwrap_or(i64_t.const_zero().into()); 
                     phis.push((v, ef)); 
@@ -1180,21 +1180,21 @@ impl<'ctx> Compiler<'ctx> {
                         self.builder.position_at_end(b);
                         if v.get_type() != target_type {
                             if target_type.is_pointer_type() && v.is_int_value() { 
-                                v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr").map_err(|e| e.to_string())?.into(); 
+                                v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr")?.into(); 
                             } else if target_type.is_int_type() && v.is_pointer_value() { 
-                                v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int").map_err(|e| e.to_string())?.into(); 
+                                v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int")?.into(); 
                             }
                         }
-                        self.builder.build_unconditional_branch(mb).map_err(|e| e.to_string())?;
+                        self.builder.build_unconditional_branch(mb)?;
                         final_phis.push((v, b));
                     }
                     self.builder.position_at_end(mb);
-                    let phi = self.builder.build_phi(target_type, "ifres").map_err(|e| e.to_string())?; 
+                    let phi = self.builder.build_phi(target_type, "ifres")?; 
                     for (v, b) in final_phis { phi.add_incoming(&[(&v, b)]); } 
                     Ok(phi.as_basic_value())
                 } else { 
-                    if self.builder.get_insert_block().ok_or("No active insert block")?.get_terminator().is_none() { 
-                        self.builder.build_unconditional_branch(mb).map_err(|e| e.to_string())?; 
+                    if self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?.get_terminator().is_none() { 
+                        self.builder.build_unconditional_branch(mb)?; 
                     } 
                     self.builder.position_at_end(mb);
                     Ok(i64_t.const_zero().into())
@@ -1217,15 +1217,15 @@ impl<'ctx> Compiler<'ctx> {
                         _ => "i64".to_string() 
                     }; 
                     let clean = tnm.replace(" ", "");
-                    let btn = if clean.contains('<') { clean.split('<').next().ok_or("Invalid type name")? } else { &clean };
+                    let btn = if clean.contains('<') { clean.split('<').next().ok_or_else(|| CompileError::Internal("Invalid type name".to_string()))? } else { &clean };
                     if let Some(sn) = self.resolve_fuzzy_name(&self.struct_types, btn) {
                         if let Some(st) = self.struct_types.get(&sn) {
-                            return Ok(st.size_of().ok_or("Struct size unknown")?.into());
+                            return Ok(st.size_of().ok_or_else(|| CompileError::Internal("Struct size unknown".to_string()))?.into());
                         }
                     }
                     if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, btn) {
                         if let Some(et) = self.enum_types.get(&en) {
-                            return Ok(et.size_of().ok_or("Enum size unknown")?.into());
+                            return Ok(et.size_of().ok_or_else(|| CompileError::Internal("Enum size unknown".to_string()))?.into());
                         }
                     }
                     let lt = self.aion_type_to_llvm(&tnm);
@@ -1235,8 +1235,8 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 if an == "mem_is_null" && !aa.is_empty() {
                     let ptr = self.compile_expr(&aa[0], variables, function)?.into_pointer_value();
-                    let cmp = self.builder.build_int_compare(IntPredicate::EQ, self.builder.build_ptr_to_int(ptr, i64_t, "p2i").map_err(|e| e.to_string())?, i64_t.const_zero(), "isnull").map_err(|e| e.to_string())?;
-                    return Ok(self.builder.build_int_z_extend(cmp, i64_t, "zext").map_err(|e| e.to_string())?.into());
+                    let cmp = self.builder.build_int_compare(IntPredicate::EQ, self.builder.build_ptr_to_int(ptr, i64_t, "p2i")?, i64_t.const_zero(), "isnull")?;
+                    return Ok(self.builder.build_int_z_extend(cmp, i64_t, "zext")?.into());
                 }
                 if an == "mem_zero" {
                     if !aa.is_empty() {
@@ -1253,10 +1253,10 @@ impl<'ctx> Compiler<'ctx> {
                     return Ok(pt.const_null().into());
                 }
                 let lnm = match an.as_str() { "str_len" => "strlen".to_string(), "str_ptr" => return Ok(self.compile_expr(&aa[0], variables, function)?), "fs_read_to_string" => "aion_read_file".to_string(), "fs_write" => "aion_write_file".to_string(), "fs_append" => "aion_append_file".to_string(), "exit" => "exit".to_string(), _ if an.starts_with("libc.") => an.replace("libc.", ""), _ => format!("aion_{}", an) };
-                let fv = self.module.get_function(&lnm).ok_or(format!("Intrinsic '{}' not found", lnm))?; 
+                let fv = self.module.get_function(&lnm).ok_or_else(|| CompileError::Internal(format!("Intrinsic '{}' not found", lnm)))?; 
                 let mut cargs = Vec::new(); 
                 for arg in aa { cargs.push(self.compile_expr(&arg, variables, function)?.into()); }
-                let call = self.builder.build_call(fv, &cargs, "intrinsic_call").map_err(|e| e.to_string())?; 
+                let call = self.builder.build_call(fv, &cargs, "intrinsic_call")?; 
                 Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() })
             },
             _ => Ok(i64_t.const_zero().into()),
@@ -1384,7 +1384,7 @@ impl<'ctx> Compiler<'ctx> {
         res.replace(" ", "")
     }
 
-    pub fn optimize(&self) -> Result<(), String> {
+    pub fn optimize(&self) -> Result<(), CompileError> {
         let builder = PassManagerBuilder::create();
         builder.set_optimization_level(OptimizationLevel::Aggressive);
 
@@ -1402,7 +1402,7 @@ impl<'ctx> Compiler<'ctx> {
         Ok(())
     }
 
-    pub fn print_to_file(&self, path: &Path) -> Result<(), String> { 
-        self.module.print_to_file(path).map_err(|e| e.to_string()) 
+    pub fn print_to_file(&self, path: &Path) -> Result<(), CompileError> { 
+        self.module.print_to_file(path).map_err(|e| CompileError::Io(e.to_string())) 
     }
 }

@@ -39,9 +39,9 @@ impl TypeChecker {
         checker
     }
 
-    fn err(&self, msg: impl Into<String>, expr: &Expression) -> String {
+    fn err(&self, msg: impl Into<String>, expr: &Expression) -> CompileError {
         let (line, col) = expr.span();
-        CompileError::new(msg, line, col).with_snippet(&self.source).to_string()
+        CompileError::new(msg, line, col).with_snippet(&self.source)
     }
 
     fn resolve_type(&self, name: &str) -> Type {
@@ -116,7 +116,7 @@ impl TypeChecker {
         self.env.set("argv".to_string(), Type::String);
     }
 
-    pub fn check_program(&mut self, program: &Program) -> Result<(), String> {
+    pub fn check_program(&mut self, program: &Program) -> Result<(), CompileError> {
         self.current_module = program.module_name.clone();
         for decl in &program.declarations {
             match decl {
@@ -193,7 +193,7 @@ impl TypeChecker {
         Ok(())
     }
 
-    fn check_statement(&mut self, stmt: &Statement) -> Result<Type, String> {
+    fn check_statement(&mut self, stmt: &Statement) -> Result<Type, CompileError> {
         match stmt {
             Statement::Let { name, value, .. } => {
                 let val_type = self.check_expression(value)?;
@@ -292,7 +292,7 @@ impl TypeChecker {
         }
     }
 
-    fn check_expression(&mut self, expr: &Expression) -> Result<Type, String> {
+    fn check_expression(&mut self, expr: &Expression) -> Result<Type, CompileError> {
         match expr {
             Expression::Integer(_) => Ok(Type::Integer),
             Expression::Float(_) => Ok(Type::Float),
@@ -371,10 +371,10 @@ impl TypeChecker {
             Expression::MemberAccess { receiver, member } => {
                 let rt = self.check_expression(receiver)?;
                 let (line, col) = receiver.span();
-                let tn = match rt { Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } => n.clone(), _ => return Err(CompileError::new(format!("member access on {:?}", rt), line, col).with_snippet(&self.source).to_string()) };
+                let tn = match rt { Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } => n.clone(), _ => return Err(CompileError::new(format!("member access on {:?}", rt), line, col).with_snippet(&self.source)) };
                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
                 self.env.get(&format!("{}.{}", full, member))
-                    .ok_or_else(|| CompileError::new(format!("field '{}' not found on struct '{}'", member, full), line, col).with_snippet(&self.source).to_string())
+                    .ok_or_else(|| CompileError::new(format!("field '{}' not found on struct '{}'", member, full), line, col).with_snippet(&self.source))
             },
             Expression::MethodCall { receiver, method, generic_args: _, arguments, line, col } => {
                 let method_expr = Expression::MethodCall { receiver: receiver.clone(), method: method.clone(), generic_args: vec![], arguments: arguments.clone(), line: *line, col: *col };
@@ -453,11 +453,11 @@ impl TypeChecker {
                 if *is_unsafe { self.in_unsafe_context = was; }
                 Ok(lt)
             },
-            _ => Err(format!("Type Error: Unsupported expression {:?}", expr)),
+            _ => Err(CompileError::Internal(format!("Unsupported expression {:?}", expr))),
         }
     }
 
-    fn check_compatibility(&self, t1: Type, t2: Type, op: &Token) -> Result<Type, String> {
+    fn check_compatibility(&self, t1: Type, t2: Type, op: &Token) -> Result<Type, CompileError> {
         match t1 {
             Type::Integer => {
                 if t2 == Type::Integer {
@@ -498,7 +498,14 @@ impl TypeChecker {
             }
         }
         if let Type::Placeholder(_) = t2 { return Ok(t1.clone()); }
-        Err(format!("Type Error: Incompatible types {:?} and {:?} for operator {:?} at line {}, col {}", t1, t2, op.kind, op.line, op.col))
+        Err(CompileError::InvalidOperator {
+            op: format!("{:?}", op.kind),
+            left: format!("{:?}", t1),
+            right: format!("{:?}", t2),
+            line: op.line,
+            col: op.col,
+            snippet: None,
+        })
     }
 
     fn resolve_fuzzy_name<T>(&self, map: &HashMap<String, T>, name: &str) -> Option<String> {
