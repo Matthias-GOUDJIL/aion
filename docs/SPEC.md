@@ -33,7 +33,8 @@ Aion is a direct-to-LLVM compiler with a strict safety-first pipeline.
 
 ## 5. Environment & Build
 -   **Docker-First**: LLVM 15+ dependencies are isolated in `aion-compiler` Docker image.
--   **Wrapper**: `./aion` is the primary entry point. `python3 runner.py` handles integration testing.
+-   **Wrapper**: `./aion` is the primary entry point for compilation and execution.
+-   **Testing**: `cargo test` with insta snapshot tests, run inside Docker.
 -   **Import Resolution**: Recursive import processing with automatic namespace prefixing to prevent symbol collisions.
 
 ## 6. Concurrency & AI-Native Features
