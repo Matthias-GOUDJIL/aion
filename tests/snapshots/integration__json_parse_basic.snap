@@ -2,6 +2,12 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"stdlib/json_parse_basic\")"
 ---
-parse null: done
 stringify null: null
+stringify true: true
+stringify false: false
+parse null: done
+parse true: done
+parse false: done
+parse number: done
+parse string: done
 all tests done

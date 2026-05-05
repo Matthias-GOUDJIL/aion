@@ -32,14 +32,12 @@ pub fn stringify(value: Value) -> String
 ## Implementation Status
 
 - [x] Basic module structure with `Value` enum
-- [x] `stringify` for all types (Null, Bool, Number, String, Array, Object)
-- [ ] Recursive descent parser
-- [ ] Whitespace handling
+- [x] `stringify` for all types (Null, Bool, Number, String)
+- [x] Recursive descent parser for primitives (null, true, false, numbers, strings)
+- [x] Whitespace handling
+- [ ] Array parsing (blocked: type checker cannot resolve Vector methods on non-generic `vector.Vector`)
+- [ ] Object parsing (blocked: same as Array)
 - [ ] Escape sequence support (`\"`, `\\`, `\n`, `\t`, `\uXXXX`)
-- [ ] Number parsing (integers, floats, scientific notation)
-- [ ] Object parsing with key-value pairs
-- [ ] Array parsing
-- [ ] Nested structure support
 - [ ] Error reporting (position, type)
 
 ## Language Requirements
@@ -58,11 +56,11 @@ The following Aion features are required for a robust implementation:
 
 ### Nice-to-Have (Non-Blocking)
 
-1. **Pattern matching on strings**: Would simplify keyword parsing (e.g., `match chunk { "null" => ..., "true" => ... }`).
+1. ~~**Pattern matching on strings**: Would simplify keyword parsing (e.g., `match chunk { "null" => ..., "true" => ... }`).~~ **VERIFIED**: String pattern matching works. Tested in `tests/fixtures/language/string_match.ai`.
 
-2. **Character literals**: `'{'` instead of `123` for readability.
+2. ~~**Character literals**: `'{'` instead of `123` for readability.~~ **VERIFIED**: Char literals work. Tested in `tests/fixtures/language/char_literal.ai`.
 
-3. **Float parsing from string**: Currently `parse_number` returns `0.0` as placeholder. Need `string.to_float()` or similar.
+3. **Float parsing from string**: `string.to_float()` exists and works for number parsing.
 
 ## Design Decisions
 
