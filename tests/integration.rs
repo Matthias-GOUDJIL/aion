@@ -94,6 +94,8 @@ fn test_struct_return() { assert_snapshot!(run_aion_test("language/struct_return
 fn test_parse_result() { assert_snapshot!(run_aion_test("language/parse_result")); }
 #[test]
 fn test_char_literal() { assert_snapshot!(run_aion_test("language/char_literal")); }
+#[test]
+fn test_string_match() { assert_snapshot!(run_aion_test("language/string_match")); }
 
 // --- Stdlib Tests ---
 
