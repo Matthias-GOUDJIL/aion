@@ -18,6 +18,7 @@ use crate::checker::TypeChecker;
 use crate::transpiler::sql::SqlTranspiler;
 use crate::compiler::Compiler;
 use crate::ast::Program;
+use crate::error::CompileError;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -36,21 +37,19 @@ fn resolve_import_path(import_path: &[String]) -> PathBuf {
     path
 }
 
-fn process_imports(program: &mut Program, visited: &mut HashSet<PathBuf>) -> Result<(), String> {
+fn process_imports(program: &mut Program, visited: &mut HashSet<PathBuf>) -> Result<(), CompileError> {
     let imports = std::mem::take(&mut program.imports);
     for import in imports {
         let path = resolve_import_path(&import.path);
         if visited.contains(&path) { 
-            eprintln!("Visited: {:?}", path);
             continue; 
         }
         
         if !path.exists() {
-            return Err(format!("Import not found: {:?}", path));
+            return Err(CompileError::Import(format!("Import not found: {:?}", path)));
         }
 
-        eprintln!("Reading: {:?}", path);
-        let source = fs::read_to_string(&path).map_err(|e| format!("Failed to read {:?}: {}", path, e))?;
+        let source = fs::read_to_string(&path).map_err(|e| CompileError::Io(format!("Failed to read {:?}: {}", path, e)))?;
         let lexer = Lexer::new(&source);
         let mut parser = Parser::new(lexer);
         let mut imported_program = parser.parse_program();
@@ -75,8 +74,8 @@ fn process_imports(program: &mut Program, visited: &mut HashSet<PathBuf>) -> Res
     Ok(())
 }
 
-pub fn transpile_sql(input_path: &str) -> Result<String, String> {
-    let source = fs::read_to_string(input_path).map_err(|e| e.to_string())?;
+pub fn transpile_sql(input_path: &str) -> Result<String, CompileError> {
+    let source = fs::read_to_string(input_path).map_err(|e| CompileError::Io(e.to_string()))?;
     let lexer = Lexer::new(&source);
     let mut parser = Parser::new(lexer);
     let program = parser.parse_program();
@@ -85,8 +84,8 @@ pub fn transpile_sql(input_path: &str) -> Result<String, String> {
     Ok(transpiler.transpile(&program))
 }
 
-pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), String> {
-    let source = fs::read_to_string(input_path).map_err(|e| e.to_string())?;
+pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), CompileError> {
+    let source = fs::read_to_string(input_path).map_err(|e| CompileError::Io(e.to_string()))?;
     let lexer = Lexer::new(&source);
     let mut parser = Parser::new(lexer);
     let mut program = parser.parse_program();
@@ -97,9 +96,7 @@ pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), String> {
 
     // 1. Run Type Checker (Safety Pass)
     let mut checker = TypeChecker::with_source(&source);
-    if let Err(e) = checker.check_program(&program) {
-        return Err(format!("Type/Safety Error: {}", e));
-    }
+    checker.check_program(&program)?;
 
     // 2. Run Code Generation
     let context = Context::create();
@@ -114,4 +111,4 @@ pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn generate_docs(_: &str) -> Result<String, String> { Ok("Documentation placeholder".to_string()) }
+pub fn generate_docs(_: &str) -> Result<String, CompileError> { Ok("Documentation placeholder".to_string()) }
