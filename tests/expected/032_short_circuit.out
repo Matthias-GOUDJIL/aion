@@ -1,3 +1,0 @@
-Testing short-circuiting...
-Success: (false && crash) did not crash
-Success: (true || crash) did not crash

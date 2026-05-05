@@ -4,11 +4,11 @@
 |--------|---------|
 | Build + run a file | `./aion build <file.ai> && ./output` |
 | Compile + run (all-in-one) | `./aion run <file.ai>` |
-| Run test suite | `python3 runner.py` |
+| Run test suite | `docker run --rm -v "$(pwd)":/workspace -w /workspace aion-compiler cargo test -- --test-threads=1` |
 | Generate documentation | `./aion doc <file.ai>` |
 | Transpile to SQL | `./aion transpile <file.ai>` |
 
-**CRITICAL**: Never run `cargo build`, `cargo run`, or `cargo test` directly on the host. The `./aion` wrapper runs everything inside a Docker container (`aion-compiler` image based on Ubuntu 22.04 with LLVM 15). The wrapper caches `target/` and `cargo/registry` in Docker volumes to avoid full rebuilds.
+**CRITICAL**: The `./aion` wrapper and `cargo test` run inside a Docker container (`aion-compiler` image based on Ubuntu 22.04 with LLVM 15). The wrapper caches `target/` and `cargo/registry` in Docker volumes to avoid full rebuilds.
 
 ## Git Workflow
 
@@ -42,7 +42,7 @@
 
 ### Issue Workflow
 
-- Check [.github/ISSUES.md](.github/ISSUES.md) for the full issue list
+- Check [GitHub Issues](https://github.com/Matthias-GOUDJIL/aion/issues) for the full issue list
 - Pick an issue, create a branch named after it: `feat/issue-2-spanned-ast`
 - Reference the issue in commits: `feat: add Span (#2)`
 - PR description should include `Closes #N` to auto-close

@@ -1,5 +1,0 @@
----
-source: tests/integration.rs
-expression: "run_aion_test(\"032_short_circuit\")"
----
-

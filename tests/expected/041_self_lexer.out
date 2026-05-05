@@ -1,6 +1,0 @@
-Token 1: Let
-Token 2: Identifier(x)
-Token 3: Eq
-Token 4: Identifier(42)
-Token 5: Semicolon
-Token 6: EOF

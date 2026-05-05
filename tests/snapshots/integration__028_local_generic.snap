@@ -1,5 +1,0 @@
----
-source: tests/integration.rs
-expression: "run_aion_test(\"028_local_generic\")"
----
-

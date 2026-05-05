@@ -1,8 +1,0 @@
-Starting vector test...
-Created vector
-Pushed 3 elements
-Vector len: 3
-v[0] is Some: Hello
-v[1]: World
-v[2]: Aion
-Vector<String> len works

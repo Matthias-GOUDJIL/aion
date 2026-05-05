@@ -22,9 +22,12 @@ stdlib/           — Aion standard library (written in Aion, .ai files)
   std/            — Standard library modules (io, fs, collections, math, etc.)
   web/            — Web primitives (dom.ai)
 tests/
-  fixtures/       — .ai test files (001_hello.ai … 046_primitive_methods.ai)
-  expected/       — .out files with expected program output
-  runner.py       — Python test runner (parses stdout between --- delimiters)
+  fixtures/
+    language/     — Language features (if, while, match, generics, etc.)
+    stdlib/       — Standard library tests (io, fs, collections, etc.)
+    compiler/     — Compiler tests (self-hosting, optimization, FFI, etc.)
+  snapshots/      — insta snapshot files (committed to git)
+  tmp/            — Temporary test artifacts (gitignored)
 compiler/         — Self-hosting compiler (lexer.ai, token.ai, ast.ai, parser.ai)
 examples/         — Example Aion programs
 editors/          — Editor integrations (vscode/)
