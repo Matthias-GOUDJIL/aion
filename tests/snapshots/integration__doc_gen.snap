@@ -1,0 +1,53 @@
+---
+source: tests/integration.rs
+assertion_line: 195
+expression: "run_aion_doc(\"compiler/doc_gen\")"
+---
+# Module
+
+## Struct `Point`
+
+A 2D point with generic coordinates.
+
+**Generics:** `<T>`
+
+| Field | Type |
+|-------|------|
+| `x` | `T` |
+| `y` | `T` |
+
+## Enum `Color`
+
+Represents application status codes.
+
+| Variant | Data |
+|---------|------|
+| `Red` |  |
+| `Green` |  |
+| `Blue` |  |
+
+## Interface `Drawable`
+
+Interface for drawable objects.
+
+### Method `draw`
+
+Renders the object to screen.
+
+```aion
+fn draw();
+```
+
+## Function `add`
+
+Adds two integers together.
+
+```aion
+fn add(a: i64, b: i64) -> i64
+```
+
+## Function `main`
+
+```aion
+fn main()
+```

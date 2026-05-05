@@ -76,7 +76,8 @@ impl<'ctx> Compiler<'ctx> {
                 return_type: rt.to_string(), 
                 body: None, 
                 modifiers: vec![], 
-                attributes: vec![("intrinsic".to_string(), ln.to_string())] 
+                attributes: vec![("intrinsic".to_string(), ln.to_string())],
+                doc_comment: None,
             });
             self.decls.insert(an.to_string(), d);
         }

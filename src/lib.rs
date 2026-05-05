@@ -120,4 +120,148 @@ pub fn compile_file(input_path: &str, output_path: &str) -> Result<(), CompileEr
     Ok(())
 }
 
-pub fn generate_docs(_: &str) -> Result<String, CompileError> { Ok("Documentation placeholder".to_string()) }
+pub fn generate_docs(input_path: &str) -> Result<String, CompileError> {
+    let source = fs::read_to_string(input_path).map_err(|e| CompileError::Io(e.to_string()))?;
+    let lexer = Lexer::new(&source);
+    let mut parser = Parser::new(lexer);
+    let program = parser.parse_program().map_err(|e| CompileError::Type {
+        message: format!("Parse errors: {}", e.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; ")),
+        line: 0, col: 0, snippet: None,
+    })?;
+
+    let mut doc = String::new();
+    let module_name = program.module_name.as_deref().unwrap_or("Module");
+    doc.push_str(&format!("# {}\n\n", module_name));
+
+    if !program.imports.is_empty() {
+        doc.push_str("## Imports\n\n");
+        for imp in &program.imports {
+            let path = imp.path.join(".");
+            doc.push_str(&format!("- `{}`\n", path));
+        }
+        doc.push_str("\n");
+    }
+
+    for decl in &program.declarations {
+        match decl {
+            ast::Declaration::Function(f) => {
+                doc.push_str(&format!("## Function `{}`\n\n", f.name));
+                if let Some(ref comment) = f.doc_comment {
+                    doc.push_str(&format!("{}\n\n", comment));
+                }
+                doc.push_str(&generate_function_signature(f));
+                doc.push_str("\n");
+            }
+            ast::Declaration::Struct(s) => {
+                doc.push_str(&format!("## Struct `{}`\n\n", s.name));
+                if let Some(ref comment) = s.doc_comment {
+                    doc.push_str(&format!("{}\n\n", comment));
+                }
+                if !s.generic_params.is_empty() {
+                    doc.push_str(&format!("**Generics:** `<{}>`\n\n", s.generic_params.join(", ")));
+                }
+                if !s.fields.is_empty() {
+                    doc.push_str("| Field | Type |\n|-------|------|\n");
+                    for (name, ty) in &s.fields {
+                        doc.push_str(&format!("| `{}` | `{}` |\n", name, ty));
+                    }
+                    doc.push_str("\n");
+                }
+            }
+            ast::Declaration::Enum(e) => {
+                doc.push_str(&format!("## Enum `{}`\n\n", e.name));
+                if let Some(ref comment) = e.doc_comment {
+                    doc.push_str(&format!("{}\n\n", comment));
+                }
+                if !e.generic_params.is_empty() {
+                    doc.push_str(&format!("**Generics:** `<{}>`\n\n", e.generic_params.join(", ")));
+                }
+                if !e.variants.is_empty() {
+                    doc.push_str("| Variant | Data |\n|---------|------|\n");
+                    for v in &e.variants {
+                        let data = if v.data_types.is_empty() {
+                            String::new()
+                        } else {
+                            format!("`({})`", v.data_types.join(", "))
+                        };
+                        doc.push_str(&format!("| `{}` | {} |\n", v.name, data));
+                    }
+                    doc.push_str("\n");
+                }
+            }
+            ast::Declaration::Interface(iface) => {
+                doc.push_str(&format!("## Interface `{}`\n\n", iface.name));
+                if let Some(ref comment) = iface.doc_comment {
+                    doc.push_str(&format!("{}\n\n", comment));
+                }
+                for method in &iface.methods {
+                    doc.push_str(&format!("### Method `{}`\n\n", method.name));
+                    if let Some(ref mc) = method.doc_comment {
+                        doc.push_str(&format!("{}\n\n", mc));
+                    }
+                    doc.push_str(&generate_function_signature(method));
+                    doc.push_str("\n");
+                }
+            }
+            ast::Declaration::Impl(impl_block) => {
+                let generics = if impl_block.generic_params.is_empty() {
+                    String::new()
+                } else {
+                    format!("<{}>", impl_block.generic_params.join(", "))
+                };
+                let iface = impl_block.interface_name.as_deref().map(|i| format!(" for `{}`", i)).unwrap_or_default();
+                doc.push_str(&format!("## Impl `{}`{}{}\n\n", impl_block.target_name, generics, iface));
+                for method in &impl_block.functions {
+                    if let Some(ref mc) = method.doc_comment {
+                        doc.push_str(&format!("{}\n\n", mc));
+                    }
+                    doc.push_str(&generate_function_signature(method));
+                    doc.push_str("\n");
+                }
+            }
+        }
+    }
+
+    Ok(doc)
+}
+
+fn generate_function_signature(f: &ast::Function) -> String {
+    let mut sig = String::from("```aion\n");
+
+    let modifiers: Vec<&str> = f.modifiers.iter().filter_map(|t| match t.kind {
+        token::TokenKind::Extern => Some("extern"),
+        token::TokenKind::Spawn => Some("spawn"),
+        token::TokenKind::Unsafe => Some("unsafe"),
+        _ => None,
+    }).collect();
+    if !modifiers.is_empty() {
+        sig.push_str(&format!("{} ", modifiers.join(" ")));
+    }
+
+    sig.push_str(&format!("fn {}", f.name));
+
+    if !f.generic_params.is_empty() {
+        sig.push_str(&format!("<{}>", f.generic_params.join(", ")));
+    }
+
+    sig.push('(');
+    for (i, (name, ty, default)) in f.params.iter().enumerate() {
+        if i > 0 { sig.push_str(", "); }
+        sig.push_str(&format!("{}: {}", name, ty));
+        if let Some(default) = default {
+            sig.push_str(&format!(" = {:?}", default));
+        }
+    }
+    sig.push(')');
+
+    if f.return_type != "void" && f.return_type != "()" {
+        sig.push_str(&format!(" -> {}", f.return_type));
+    }
+
+    if f.body.is_none() {
+        sig.push_str(";");
+    }
+
+    sig.push_str("\n```\n");
+    sig
+}

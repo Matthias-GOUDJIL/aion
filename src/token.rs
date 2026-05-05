@@ -52,6 +52,9 @@ pub enum TokenKind {
     // End of File
     EOF,
     
+    // Doc Comments
+    DocComment(String),
+
     // Error
     Illegal(char),
 }

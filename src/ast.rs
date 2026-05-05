@@ -42,6 +42,7 @@ pub enum Declaration {
 pub struct Interface {
     pub name: String,
     pub methods: Vec<Function>,
+    pub doc_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +62,7 @@ pub struct Function {
     pub body: Option<Vec<Statement>>,
     pub modifiers: Vec<Token>,
     pub attributes: Vec<(String, String)>,
+    pub doc_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -69,6 +71,7 @@ pub struct Struct {
     pub generic_params: Vec<String>,
     pub fields: Vec<(String, String)>,
     pub attributes: Vec<String>,
+    pub doc_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +79,7 @@ pub struct Enum {
     pub name: String,
     pub generic_params: Vec<String>,
     pub variants: Vec<EnumVariant>,
+    pub doc_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
