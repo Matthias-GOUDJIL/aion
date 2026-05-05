@@ -1,0 +1,27 @@
+fn main() {
+    let keyword = "true"
+
+    match keyword {
+        "true" | "false" => io.println("boolean keyword"),
+        "null" => io.println("null keyword"),
+        _ => io.println("other")
+    }
+
+    let kw2 = "null"
+
+    match kw2 {
+        "true" | "false" => io.println("boolean keyword"),
+        "null" => io.println("null keyword"),
+        _ => io.println("other")
+    }
+
+    let kw3 = "hello"
+
+    match kw3 {
+        "true" | "false" => io.println("boolean keyword"),
+        "null" => io.println("null keyword"),
+        _ => io.println("other")
+    }
+
+    return 0
+}
