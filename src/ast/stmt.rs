@@ -12,6 +12,8 @@ pub enum Statement {
     Spawn(Vec<Statement>, Span),
     Match { condition: Expression, arms: Vec<MatchArm>, span: Span },
     UnsafeBlock(Vec<Statement>, Span),
+    Break(Span),
+    Continue(Span),
     NoOp,
 }
 

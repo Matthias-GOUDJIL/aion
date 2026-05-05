@@ -100,6 +100,8 @@ fn test_string_match() { assert_snapshot!(run_aion_test("language/string_match")
 fn test_recursion_deep() { assert_snapshot!(run_aion_test("language/recursion_deep")); }
 #[test]
 fn test_string_escapes() { assert_snapshot!(run_aion_test("language/string_escapes")); }
+#[test]
+fn test_break_continue() { assert_snapshot!(run_aion_test("language/break_continue")); }
 
 // --- Stdlib Tests ---
 

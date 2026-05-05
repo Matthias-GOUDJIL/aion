@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::collections::{HashMap, HashSet};
+use inkwell::basic_block::BasicBlock;
 use inkwell::context::Context;
 use inkwell::builder::Builder;
 use inkwell::module::Module;
@@ -22,6 +23,8 @@ pub struct Compiler<'ctx> {
     pub decls: HashMap<String, Declaration>,
     pub compiled_instances: HashSet<String>,
     source: String,
+    loop_exit_blocks: Vec<BasicBlock<'ctx>>,
+    loop_cond_blocks: Vec<BasicBlock<'ctx>>,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -42,6 +45,8 @@ impl<'ctx> Compiler<'ctx> {
             decls: HashMap::new(), 
             compiled_instances: HashSet::new(),
             source: source.to_string(),
+            loop_exit_blocks: Vec::new(),
+            loop_cond_blocks: Vec::new(),
         };
         compiler.register_builtins();
         compiler
@@ -533,12 +538,26 @@ impl<'ctx> Compiler<'ctx> {
                     let cv = self.compile_expr(condition, variables, function)?.into_int_value(); 
                     self.builder.build_conditional_branch(self.builder.build_int_compare(IntPredicate::NE, cv, i64_t.const_int(0, false), "loopcond")?, bb, eb)?;
                     self.builder.position_at_end(bb); 
+                    self.loop_exit_blocks.push(eb);
+                    self.loop_cond_blocks.push(cb);
                     let mut bvars = variables.clone(); 
                     self.compile_block(body, &mut bvars, function)?; 
+                    self.loop_exit_blocks.pop();
+                    self.loop_cond_blocks.pop();
                     if self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?.get_terminator().is_none() { 
                         self.builder.build_unconditional_branch(cb)?; 
                     } 
                     self.builder.position_at_end(eb); 
+                    lv = None;
+                },
+                Statement::Break(_) => {
+                    let eb = self.loop_exit_blocks.last().ok_or_else(|| CompileError::Internal("break outside loop".to_string()))?;
+                    self.builder.build_unconditional_branch(*eb)?;
+                    lv = None;
+                },
+                Statement::Continue(_) => {
+                    let cb = self.loop_cond_blocks.last().ok_or_else(|| CompileError::Internal("continue outside loop".to_string()))?;
+                    self.builder.build_unconditional_branch(*cb)?;
                     lv = None;
                 },
                 Statement::Match { condition, arms, .. } => {

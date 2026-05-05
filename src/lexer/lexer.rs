@@ -147,6 +147,8 @@ impl<'a> Lexer<'a> {
                             "type" => TokenKind::Type,
                             "self" => TokenKind::SelfToken,
                             "spawn" => TokenKind::Spawn,
+                            "break" => TokenKind::Break,
+                            "continue" => TokenKind::Continue,
                             "true" => TokenKind::True,
                             "false" => TokenKind::False,
                             _ => TokenKind::Identifier(ident),
