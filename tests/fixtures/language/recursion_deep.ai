@@ -1,0 +1,37 @@
+fn is_even(n: i64) -> i64 {
+    if n == 0 {
+        return 1
+    }
+    return is_odd(n - 1)
+}
+
+fn is_odd(n: i64) -> i64 {
+    if n == 0 {
+        return 0
+    }
+    return is_even(n - 1)
+}
+
+fn main() {
+    let r1 = is_even(100)
+    let r2 = is_odd(101)
+
+    if r1 == 1 {
+        io.println("100 is even")
+    }
+    if r2 == 1 {
+        io.println("101 is odd")
+    }
+
+    let deep = count_down(10000)
+    io.println(string.from_int(deep))
+
+    return 0
+}
+
+fn count_down(n: i64) -> i64 {
+    if n <= 0 {
+        return 0
+    }
+    return count_down(n - 1) + 1
+}
