@@ -30,6 +30,7 @@ Aion is a direct-to-LLVM compiler with a strict safety-first pipeline.
 -   **Type Safety**: `Type::Unknown` is never returned silently. Fallbacks are explicit and validated.
 -   **Debug Hygiene**: No `println!`/`eprintln!` in production builds. Conditional logging only.
 -   **Span Tracking**: All AST nodes carry `Span` (line, col) for precise error reporting.
+-   **Recursion**: Full support for self-recursion and mutual recursion. Two-pass compilation (prototypes first, then bodies) enables forward references. Tested up to 1B+ recursion depth. Stack depth is limited only by the OS stack size (default 8MB on Linux).
 
 ## 5. Environment & Build
 -   **Docker-First**: LLVM 15+ dependencies are isolated in `aion-compiler` Docker image.

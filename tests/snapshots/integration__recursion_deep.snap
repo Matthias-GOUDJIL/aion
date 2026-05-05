@@ -1,0 +1,7 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/recursion_deep\")"
+---
+100 is even
+101 is odd
+10000
