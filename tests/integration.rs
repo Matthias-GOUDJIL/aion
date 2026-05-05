@@ -98,6 +98,8 @@ fn test_char_literal() { assert_snapshot!(run_aion_test("language/char_literal")
 fn test_string_match() { assert_snapshot!(run_aion_test("language/string_match")); }
 #[test]
 fn test_recursion_deep() { assert_snapshot!(run_aion_test("language/recursion_deep")); }
+#[test]
+fn test_string_escapes() { assert_snapshot!(run_aion_test("language/string_escapes")); }
 
 // --- Stdlib Tests ---
 
