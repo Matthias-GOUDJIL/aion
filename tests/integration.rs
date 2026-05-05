@@ -8,26 +8,21 @@ fn project_root() -> PathBuf {
 
 fn run_aion_test(fixture: &str) -> String {
     let root = project_root();
-    let wrapper = root.join("aion");
-    assert!(wrapper.exists(), "aion wrapper not found at {}", wrapper.display());
 
-    let output = Command::new(&wrapper)
-        .arg("run")
-        .arg(format!("tests/fixtures/{}.ai", fixture))
+    let output = Command::new("cargo")
+        .args(["run", "--quiet", "--", "run", &format!("tests/fixtures/{}.ai", fixture)])
         .current_dir(&root)
         .timeout(std::time::Duration::from_secs(60))
         .output()
-        .expect("failed to execute aion wrapper");
+        .expect("failed to execute cargo run");
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
     if !output.status.success() && !stderr.is_empty() {
-        // Some tests are expected to fail (compile errors)
         return stderr.trim().to_string();
     }
 
-    // Parse output between --- delimiters
     let full = format!("{}\n{}", stdout, stderr);
     let lines: Vec<&str> = full.lines().collect();
     let mut between = Vec::new();

@@ -12,9 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Create tests/tmp directory
         run: mkdir -p tests/tmp
 
@@ -22,4 +19,9 @@ jobs:
         run: docker build -t aion-compiler .
 
       - name: Run integration tests
-        run: cargo test
+        run: |
+          docker run --rm \
+            -v "$(pwd)":/workspace \
+            -w /workspace \
+            aion-compiler \
+            bash -c "mkdir -p tests/tmp && INSTA_UPDATE=always cargo test -- --test-threads=1"
