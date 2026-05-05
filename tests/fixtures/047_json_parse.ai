@@ -1,0 +1,16 @@
+use std.json
+use std.io
+
+fn main() {
+    // Test 1: Parse null
+    let v1 = json.parse("null")
+    io.println("parse null: done")
+
+    // Test 2: Stringify null
+    let s1 = json.stringify(json.Value::Null)
+    io.print("stringify null: ")
+    io.println(s1)
+
+    io.println("all tests done")
+    return 0
+}

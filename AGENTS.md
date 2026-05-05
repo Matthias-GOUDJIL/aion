@@ -25,3 +25,10 @@ The detailed project context has been split into thematic files to preserve toke
 - **[Testing](docs/testing.md)**: How to run tests, fixture conventions, and test creation rules.
 - **[Conventions & Standards](docs/conventions.md)**: Coding standards, language rules, and Git conventions.
 - **[Workflow & Commands](docs/workflow.md)**: Developer commands, Docker cache gotcha, and workflow commands.
+
+## Stdlib Documentation
+
+Each stdlib module has a `SPEC.md` co-located with its source code. This documents purpose, API, language requirements, known limitations, and design decisions. Always read the module's `SPEC.md` before modifying it.
+
+Current specs:
+- `stdlib/std/json/SPEC.md` — JSON parser/serializer (in progress)
