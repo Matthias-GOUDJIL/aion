@@ -846,6 +846,7 @@ impl<'ctx> Compiler<'ctx> {
         match e {
             Expression::Integer(n, _) => Ok(i64_t.const_int(*n as u64, false).into()),
             Expression::Float(f_val, _) => Ok(self.context.f64_type().const_float(*f_val).into()),
+            Expression::Char(c, _) => Ok(i64_t.const_int(*c as u64, false).into()),
             Expression::Boolean(b, _) => Ok(i64_t.const_int(if *b { 1 } else { 0 }, false).into()),
             Expression::String(s, _) => Ok(self.builder.build_global_string_ptr(&format!("{}\0", s), "aion_str")?.as_basic_value_enum()),
             Expression::Identifier(name, _) => { 
@@ -1294,6 +1295,7 @@ impl<'ctx> Compiler<'ctx> {
         let res = match e {
             Expression::Integer(_, _) => "i64".to_string(), 
             Expression::Float(_, _) => "f64".to_string(), 
+            Expression::Char(_, _) => "i64".to_string(), 
             Expression::Boolean(_, _) => "bool".to_string(), 
             Expression::String(_, _) => "String".to_string(),
             Expression::Identifier(name, _) => {

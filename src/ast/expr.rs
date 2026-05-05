@@ -6,6 +6,7 @@ use crate::ast::Statement;
 pub enum Expression {
     Integer(i64, Span),
     Float(f64, Span),
+    Char(char, Span),
     String(String, Span),
     Duration(u64, u32, Span),
     Date(i64, Span),
@@ -61,6 +62,7 @@ impl Expression {
         match self {
             Expression::Integer(_, s)
             | Expression::Float(_, s)
+            | Expression::Char(_, s)
             | Expression::String(_, s)
             | Expression::Duration(_, _, s)
             | Expression::Date(_, s)

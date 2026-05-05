@@ -2,4 +2,6 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"language/short_circuit\")"
 ---
-
+Testing short-circuiting...
+Success: (false && crash) did not crash
+Success: (true || crash) did not crash

@@ -2,4 +2,4 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"stdlib/env_args_cli\")"
 ---
-
+Args count: 0

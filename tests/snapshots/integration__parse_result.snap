@@ -2,4 +2,10 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"language/parse_result\")"
 ---
-
+value: 123
+pos: 3
+value: 456
+pos: 6
+first: 100200
+second: 0
+ParseResult tests done

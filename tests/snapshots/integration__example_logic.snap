@@ -2,4 +2,4 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"examples/logic\")"
 ---
-
+Access Granted: Adult

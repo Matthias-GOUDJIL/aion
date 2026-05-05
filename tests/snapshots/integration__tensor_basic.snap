@@ -2,4 +2,9 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"stdlib/tensor_basic\")"
 ---
-
+Testing AI Tensors...
+Created shape Vector<i64>(2, 3)
+Created Tensor.zeros(shape)
+Called t.backward()
+Called t.backward()
+Success: AI Tensor core initialized!

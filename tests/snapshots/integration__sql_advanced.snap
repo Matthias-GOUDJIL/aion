@@ -2,4 +2,9 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"stdlib/sql_advanced\")"
 ---
-
+SQL transpiler: DECLARE, WHILE, strings, AND/OR
+DECLARE works
+WHILE works
+AND works
+OR works
+Hello SQL World

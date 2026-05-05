@@ -2,4 +2,5 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"language/string_operations\")"
 ---
-
+Length of 'Hello ' is 6
+String functions tested

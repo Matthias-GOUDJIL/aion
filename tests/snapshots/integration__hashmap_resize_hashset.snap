@@ -2,4 +2,13 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"stdlib/hashmap_resize_hashset\")"
 ---
-
+Testing HashMap remove...
+Len before: 3
+Len after: 2
+Success: b removed
+Testing HashMap resize...
+Len after many inserts: 22
+Error: key_5 not found
+Testing HashSet...
+Set contains apple
+Success: apple removed from set

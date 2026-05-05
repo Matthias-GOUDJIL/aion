@@ -2,4 +2,5 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"stdlib/fs_result_error\")"
 ---
-
+Read error, code:
+Extracted error code 1 correctly

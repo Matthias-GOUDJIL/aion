@@ -863,6 +863,11 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 Expression::String(s, span)
             },
+            TokenKind::CharLiteral(c) => {
+                let span = Span::from_token(&self.current_token);
+                self.next_token();
+                Expression::Char(c, span)
+            },
             TokenKind::FString(s) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();

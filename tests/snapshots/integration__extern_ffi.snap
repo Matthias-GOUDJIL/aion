@@ -2,4 +2,6 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"compiler/extern_ffi\")"
 ---
-
+Calling extern puts...
+Hello from extern C puts!
+Done.

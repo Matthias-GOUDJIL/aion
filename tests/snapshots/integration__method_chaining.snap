@@ -2,4 +2,5 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"language/method_chaining\")"
 ---
-
+Length of new vector: 0
+Success: Method chaining works!
