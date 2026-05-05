@@ -1,0 +1,7 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/loop_basic\")"
+---
+10
+15
+loop tests done

@@ -18,7 +18,7 @@ pub enum TokenKind {
     Use, Pub, Async, Unsafe, Require, Extern,
     Interface, Impl, Channel,
     For, In, Type, SelfToken, Spawn,
-    Break, Continue,
+    Break, Continue, Loop,
     
     // AI-Native & Logic
     Intent, 

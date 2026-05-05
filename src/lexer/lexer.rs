@@ -149,6 +149,7 @@ impl<'a> Lexer<'a> {
                             "spawn" => TokenKind::Spawn,
                             "break" => TokenKind::Break,
                             "continue" => TokenKind::Continue,
+                            "loop" => TokenKind::Loop,
                             "true" => TokenKind::True,
                             "false" => TokenKind::False,
                             _ => TokenKind::Identifier(ident),
