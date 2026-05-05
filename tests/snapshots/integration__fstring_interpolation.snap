@@ -2,4 +2,4 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"language/fstring_interpolation\")"
 ---
-
+Hello {name}, you are {age}!

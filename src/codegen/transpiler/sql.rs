@@ -106,6 +106,7 @@ impl SqlTranspiler {
         match expr {
             Expression::Integer(..) => "i64",
             Expression::Float(..) => "f64",
+            Expression::Char(..) => "i64",
             Expression::Boolean(..) => "bool",
             Expression::String(..) => "String",
             Expression::Identifier(..) => "i64",

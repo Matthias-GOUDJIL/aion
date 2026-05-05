@@ -1,0 +1,11 @@
+fn main() {
+    let c = 'A'
+    let newline = '\n'
+    let brace = '{'
+
+    if c == 65 {
+        io.println("Char works!")
+    }
+
+    return 0
+}

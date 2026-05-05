@@ -2,4 +2,8 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"language/primitive_methods\")"
 ---
-
+--- Primitive Method Calls ---
+42
+20
+10
+5

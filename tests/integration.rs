@@ -29,7 +29,7 @@ fn run_aion_test(path: &str) -> String {
     let mut in_block = false;
 
     for line in &lines {
-        if line.starts_with("--------------------------------") {
+        if line.starts_with("-------------------------------") {
             if in_block {
                 break;
             }
@@ -92,6 +92,8 @@ fn test_primitive_methods() { assert_snapshot!(run_aion_test("language/primitive
 fn test_struct_return() { assert_snapshot!(run_aion_test("language/struct_return")); }
 #[test]
 fn test_parse_result() { assert_snapshot!(run_aion_test("language/parse_result")); }
+#[test]
+fn test_char_literal() { assert_snapshot!(run_aion_test("language/char_literal")); }
 
 // --- Stdlib Tests ---
 

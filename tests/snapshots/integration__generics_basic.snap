@@ -2,4 +2,5 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"language/generics_basic\")"
 ---
-
+Generic identity<i64> works
+Generic identity<i64> instance 2 works

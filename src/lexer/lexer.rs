@@ -108,6 +108,7 @@ impl<'a> Lexer<'a> {
                     else { TokenKind::Colon }
                 }
                 '@' => TokenKind::At,
+                '\'' => self.read_char_literal(),
                 '"' => self.read_string(),
                 c if c.is_alphabetic() || c == '_' => {
                     if c == 'f' && self.peek_char() == '"' {
@@ -215,6 +216,29 @@ impl<'a> Lexer<'a> {
             if let Some(c) = self.read_char() { s.push(c); }
         }
         TokenKind::StringLiteral(s)
+    }
+
+    fn read_char_literal(&mut self) -> TokenKind {
+        let ch = match self.read_char() {
+            Some('\\') => match self.read_char() {
+                Some('n') => '\n',
+                Some('t') => '\t',
+                Some('r') => '\r',
+                Some('\\') => '\\',
+                Some('\'') => '\'',
+                Some('0') => '\0',
+                Some(c) => c,
+                None => return TokenKind::Illegal('\\'),
+            },
+            Some(c) => c,
+            None => return TokenKind::Illegal('\''),
+        };
+        if self.peek_char() == '\'' {
+            self.read_char();
+            TokenKind::CharLiteral(ch)
+        } else {
+            TokenKind::Illegal(ch)
+        }
     }
 
     fn read_fstring(&mut self) -> TokenKind {

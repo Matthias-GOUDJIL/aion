@@ -2,4 +2,7 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"stdlib/dataframe_basic\")"
 ---
-
+Step 1: Create Series
+Step 2: Create DataFrame
+Step 3: Add Column
+Step 4: Done

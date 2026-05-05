@@ -265,6 +265,7 @@ impl TypeChecker {
     fn check_expression(&mut self, expr: &Expression) -> Result<Type, CompileError> {
         match expr {
             Expression::Integer(..) => Ok(Type::Integer),
+            Expression::Char(..) => Ok(Type::Integer),
             Expression::Float(..) => Ok(Type::Float),
             Expression::Boolean(..) => Ok(Type::Boolean),
             Expression::String(..) => Ok(Type::String),

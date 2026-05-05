@@ -2,4 +2,6 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"stdlib/fmt_format\")"
 ---
-
+Testing std.fmt.format...
+Hello, Aion! This language is becoming stable.
+Success: Formatting works!

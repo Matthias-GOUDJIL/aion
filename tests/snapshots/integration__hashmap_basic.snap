@@ -2,4 +2,6 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"stdlib/hashmap_basic\")"
 ---
-
+hello: world
+foo: bar
+missing not found

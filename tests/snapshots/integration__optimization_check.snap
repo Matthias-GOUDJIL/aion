@@ -2,4 +2,8 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"compiler/optimization_check\")"
 ---
-
+Optimized code runs correctly
+Arithmetic optimized
+Logic optimized
+String optimized
+All optimizations pass
