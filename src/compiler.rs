@@ -56,6 +56,7 @@ impl<'ctx> Compiler<'ctx> {
         let builtins = vec![
             ("io.println", "aion_io_println", "void", false), ("io.print", "aion_io_print", "void", false), ("io.read_line", "aion_io_read_line", "String", false),
             ("string.from_int", "aion_int_to_str", "String", false), ("string.from_float", "aion_float_to_str", "String", false),
+            ("string.to_float", "aion_str_to_float", "f64", false),
             ("fs_read_to_string", "aion_read_file", "String", false), ("fs_write", "aion_write_file", "i32", false), ("fs_exists", "aion_fs_exists", "i64", false), ("fs_append", "aion_append_file", "i32", false),
             ("aion_getenv", "aion_getenv", "String", false), ("aion_get_argc", "aion_get_argc", "i64", false), ("aion_get_argv_index", "aion_get_argv_index", "String", false),
             ("aion_exit", "exit", "void", false), ("exit", "exit", "void", false), ("aion_malloc", "aion_malloc", "ptr", false), ("aion_realloc", "aion_realloc", "ptr", false), ("aion_free", "aion_free", "void", false),
@@ -359,6 +360,7 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function("aion_str_concat", pt.fn_type(&[pt.into(), pt.into()], false), None); 
         self.module.add_function("aion_int_to_str", pt.fn_type(&[i64_t.into()], false), None); 
         self.module.add_function("aion_float_to_str", pt.fn_type(&[self.context.f64_type().into()], false), None); 
+        self.module.add_function("aion_str_to_float", self.context.f64_type().fn_type(&[pt.into()], false), None); 
         self.module.add_function("aion_read_file", pt.fn_type(&[pt.into()], false), None); 
         self.module.add_function("aion_write_file", i64_t.fn_type(&[pt.into(), pt.into()], false), None); 
         self.module.add_function("aion_append_file", i64_t.fn_type(&[pt.into(), pt.into()], false), None); 
