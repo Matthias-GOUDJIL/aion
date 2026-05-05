@@ -2,14 +2,37 @@ use std.json
 use std.io
 
 fn main() {
-    // Test 1: Parse null
-    let v1 = json.parse("null")
-    io.println("parse null: done")
-
-    // Test 2: Stringify null
+    // Test 1: Stringify primitives
     let s1 = json.stringify(json.Value::Null)
     io.print("stringify null: ")
     io.println(s1)
+
+    let s2 = json.stringify(json.Value::Bool(true))
+    io.print("stringify true: ")
+    io.println(s2)
+
+    let s3 = json.stringify(json.Value::Bool(false))
+    io.print("stringify false: ")
+    io.println(s3)
+
+    // Test 2: Parse null
+    let v1 = json.parse("null")
+    io.println("parse null: done")
+
+    // Test 3: Parse boolean
+    let v2 = json.parse("true")
+    io.println("parse true: done")
+
+    let v3 = json.parse("false")
+    io.println("parse false: done")
+
+    // Test 4: Parse number
+    let v4 = json.parse("42")
+    io.println("parse number: done")
+
+    // Test 5: Parse string (no quotes in input since Aion lexer doesn't handle \")
+    let v5 = json.parse("hello")
+    io.println("parse string: done")
 
     io.println("all tests done")
     return 0

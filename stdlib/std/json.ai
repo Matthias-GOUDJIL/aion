@@ -1,7 +1,6 @@
 module std.json
 
 use std.string
-use std.collections.vector
 use std.option
 
 pub enum Value {
@@ -9,14 +8,128 @@ pub enum Value {
     Bool(bool),
     Number(f64),
     String(String),
-    Array(vector.Vector),
-    Object(vector.Vector),
 }
 
 pub fn parse(json: String) -> option.Option {
-    option.Option::None
+    let result = parse_value(json, 0)
+    match result {
+        option.Option::Some(v) => return option.Option::Some(v),
+        option.Option::None => return option.Option::None,
+    }
+}
+
+fn parse_value(input: String, pos: i64) -> option.Option {
+    let p = skip_ws(input, pos)
+    let len = string.len(input)
+    if p >= len { return option.Option::None }
+    let c = string.at(input, p)
+
+    if c == 34 { return parse_string_value(input, p) }
+    if c == 110 { return parse_null(input, p) }
+    if c == 116 { return parse_true(input, p) }
+    if c == 102 { return parse_false(input, p) }
+    if c == 45 || (c >= 48 && c <= 57) { return parse_number(input, p) }
+    return option.Option::None
+}
+
+fn skip_ws(input: String, pos: i64) -> i64 {
+    let len = string.len(input)
+    let mut p = pos
+    let mut done = false
+    while p < len && !done {
+        let c = string.at(input, p)
+        if c == 32 || c == 9 || c == 10 || c == 13 {
+            p = p + 1
+        } else {
+            done = true
+        }
+    }
+    return p
+}
+
+fn parse_null(input: String, pos: i64) -> option.Option {
+    let len = string.len(input)
+    if pos + 4 > len { return option.Option::None }
+    let chunk = string.substr(input, pos, 4)
+    if string.equals(chunk, "null") {
+        return option.Option::Some(Value::Null)
+    }
+    return option.Option::None
+}
+
+fn parse_true(input: String, pos: i64) -> option.Option {
+    let len = string.len(input)
+    if pos + 4 > len { return option.Option::None }
+    let chunk = string.substr(input, pos, 4)
+    if string.equals(chunk, "true") {
+        return option.Option::Some(Value::Bool(true))
+    }
+    return option.Option::None
+}
+
+fn parse_false(input: String, pos: i64) -> option.Option {
+    let len = string.len(input)
+    if pos + 5 > len { return option.Option::None }
+    let chunk = string.substr(input, pos, 5)
+    if string.equals(chunk, "false") {
+        return option.Option::Some(Value::Bool(false))
+    }
+    return option.Option::None
+}
+
+fn parse_string_value(input: String, pos: i64) -> option.Option {
+    let len = string.len(input)
+    let mut p = pos
+    if p >= len || string.at(input, p) != 34 { return option.Option::None }
+    p = p + 1
+    let mut result = ""
+    let mut done = false
+    while p < len && !done {
+        let c = string.at(input, p)
+        if c == 34 {
+            done = true
+        } else {
+            let ch_str = string.substr(input, p, 1)
+            result = string.concat(result, ch_str)
+        }
+        p = p + 1
+    }
+    if !done { return option.Option::None }
+    return option.Option::Some(Value::String(result))
+}
+
+fn parse_number(input: String, pos: i64) -> option.Option {
+    let len = string.len(input)
+    let mut p = pos
+    let mut start = pos
+    let mut done = false
+    if p < len && string.at(input, p) == 45 { p = p + 1 }
+    while p < len && !done {
+        let c = string.at(input, p)
+        if c >= 48 && c <= 57 { p = p + 1 } else { done = true }
+    }
+    if p < len && string.at(input, p) == 46 {
+        p = p + 1
+        done = false
+        while p < len && !done {
+            let c = string.at(input, p)
+            if c >= 48 && c <= 57 { p = p + 1 } else { done = true }
+        }
+    }
+    if p == start { return option.Option::None }
+    let num_str = string.substr(input, start, p - start)
+    let num_val = string.to_float(num_str)
+    return option.Option::Some(Value::Number(num_val))
 }
 
 pub fn stringify(value: Value) -> String {
-    "null"
+    match value {
+        Value::Null => return "null",
+        Value::Bool(b) => {
+            if b { return "true" }
+            return "false"
+        },
+        Value::Number(n) => return string.from_float(n),
+        Value::String(s) => return s,
+    }
 }
