@@ -96,15 +96,17 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn aion_type_to_llvm(&self, tn: &str) -> BasicTypeEnum<'ctx> {
-        let clean = tn.replace(" ", ""); 
-        if clean.starts_with('*') || clean == "ptr" || clean == "String" { 
-            return self.context.ptr_type(AddressSpace::default()).into(); 
-        }
-        match clean.as_str() {
-            "i64" | "u64" | "Integer" | "bool" | "Boolean" | "Date" | "Duration" | "void" | "Unit" => self.context.i64_type().into(),
-            "i32" | "u32" => self.context.i32_type().into(), 
-            "i8" | "u8" => self.context.i8_type().into(), 
-            "f64" | "Float" => self.context.f64_type().into(),
+        self.type_to_llvm(&crate::types::Type::from_str(tn))
+    }
+
+    fn type_to_llvm(&self, ty: &crate::types::Type) -> BasicTypeEnum<'ctx> {
+        use crate::types::Type;
+        match ty {
+            Type::Integer | Type::Boolean | Type::Date | Type::Duration | Type::Unit => self.context.i64_type().into(),
+            Type::Float => self.context.f64_type().into(),
+            Type::String | Type::Pointer(_) | Type::Enum { .. } | Type::Struct { .. } | Type::GenericInstance(..) => {
+                self.context.ptr_type(AddressSpace::default()).into()
+            }
             _ => self.context.ptr_type(AddressSpace::default()).into(),
         }
     }

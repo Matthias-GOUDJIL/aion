@@ -48,44 +48,13 @@ impl TypeChecker {
         if let Some(t) = self.type_params.get(name) {
             return t.clone();
         }
-        
         let trimmed = name.trim();
-        if let Some(stripped) = trimmed.strip_prefix('*') {
-            return Type::Pointer(Box::new(self.resolve_type(stripped.trim())));
+        if let Some(t) = self.env.get(trimmed) { return t; }
+        if let Some(ref module) = self.current_module {
+            let full_name = format!("{}.{}", module, trimmed);
+            if let Some(t) = self.env.get(&full_name) { return t; }
         }
-
-        match trimmed {
-            "i64" | "u64" | "i32" | "u32" | "i8" | "u8" => Type::Integer,
-            "f64" => Type::Float,
-            "bool" => Type::Boolean,
-            "String" => Type::String,
-            "Date" => Type::Date,
-            "Duration" => Type::Duration,
-            "void" | "Unit" => Type::Unit,
-            _ => {
-                if let Some(t) = self.env.get(trimmed) { return t; }
-                if let Some(ref module) = self.current_module {
-                    let full_name = format!("{}.{}", module, trimmed);
-                    if let Some(t) = self.env.get(&full_name) { return t; }
-                }
-                if trimmed.contains('<') && trimmed.ends_with('>') {
-                    if let Some(start) = trimmed.find('<') {
-                        let base = trimmed[..start].to_string();
-                        let args_str = &trimmed[start+1..trimmed.len()-1];
-                        let mut ga = Vec::new();
-                        // Simple split by comma (doesn't handle nested generics perfectly, but sufficient for Phase 1)
-                        for part in args_str.split(',') {
-                            let pt = part.trim().to_string();
-                            if !pt.is_empty() {
-                                ga.push(self.resolve_type(&pt));
-                            }
-                        }
-                        return Type::GenericInstance(base, ga);
-                    }
-                }
-                Type::Placeholder(trimmed.to_string())
-            }
-        }
+        Type::from_str(trimmed)
     }
 
     fn register_builtins(&mut self) {
