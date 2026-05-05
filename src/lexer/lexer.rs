@@ -1,4 +1,4 @@
-use crate::token::{Token, TokenKind};
+use super::token::{Token, TokenKind};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -322,8 +322,8 @@ impl<'a> Lexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::token::TokenKind;
+    use crate::lexer::token::TokenKind;
+    use super::Lexer;
 
     #[test]
     fn test_basic_tokens() {

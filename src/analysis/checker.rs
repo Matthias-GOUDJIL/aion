@@ -1,7 +1,7 @@
 use crate::ast::{Span, Statement, Expression, Program, Declaration};
-use crate::types::Type;
-use crate::environment::Environment;
-use crate::token::{Token, TokenKind};
+use super::types::Type;
+use super::environment::Environment;
+use crate::lexer::token::{Token, TokenKind};
 use crate::error::CompileError;
 
 use std::collections::HashMap;
