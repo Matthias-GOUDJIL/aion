@@ -12,11 +12,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Create tests/tmp directory
         run: mkdir -p tests/tmp
 
       - name: Build Docker image
         run: docker build -t aion-compiler .
 
-      - name: Run test suite
-        run: python3 runner.py
+      - name: Run integration tests
+        run: cargo test
