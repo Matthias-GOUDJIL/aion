@@ -213,7 +213,21 @@ impl<'a> Lexer<'a> {
         let mut s = String::new();
         while let Some(&ch) = self.input.peek() {
             if ch == '"' { self.read_char(); break; }
-            if let Some(c) = self.read_char() { s.push(c); }
+            if ch == '\\' {
+                self.read_char();
+                match self.read_char() {
+                    Some('n') => s.push('\n'),
+                    Some('t') => s.push('\t'),
+                    Some('r') => s.push('\r'),
+                    Some('\\') => s.push('\\'),
+                    Some('"') => s.push('"'),
+                    Some('0') => s.push('\0'),
+                    Some(c) => s.push(c),
+                    None => return TokenKind::Illegal('\\'),
+                }
+            } else if let Some(c) = self.read_char() {
+                s.push(c);
+            }
         }
         TokenKind::StringLiteral(s)
     }
@@ -226,6 +240,7 @@ impl<'a> Lexer<'a> {
                 Some('r') => '\r',
                 Some('\\') => '\\',
                 Some('\'') => '\'',
+                Some('"') => '"',
                 Some('0') => '\0',
                 Some(c) => c,
                 None => return TokenKind::Illegal('\\'),

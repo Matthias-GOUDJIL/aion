@@ -1,0 +1,11 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/string_escapes\")"
+---
+line1
+line2
+col1	col2
+path\to\file
+say "hello"
+1
+all escape tests done

@@ -1,0 +1,20 @@
+fn main() {
+    let newline = "line1\nline2"
+    io.println(newline)
+
+    let tab = "col1\tcol2"
+    io.println(tab)
+
+    let backslash = "path\\to\\file"
+    io.println(backslash)
+
+    let quote = "say \"hello\""
+    io.println(quote)
+
+    let null_char = "a\0b"
+    let null_len = string.len(null_char)
+    io.println(string.from_int(null_len))
+
+    io.println("all escape tests done")
+    return 0
+}

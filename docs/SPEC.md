@@ -19,7 +19,7 @@ Aion is a direct-to-LLVM compiler with a strict safety-first pipeline.
 
 ## 3. Memory & Strings
 -   **Current**: Automatic memory management via Boehm Garbage Collector (`libgc`).
--   **Strings**: C-style strings (`char*`). 
+-   **Strings**: C-style strings (`char*`). Escape sequences supported: `\n`, `\t`, `\r`, `\\`, `\"`, `\0`.
 -   **Safe Concat**: String concatenation (`+` or `concat`) uses `aion_str_concat` (allocates new buffer).
 -   **Comparison**: `==` and `!=` compare string content via `aion_str_eq` when both operands are `String`.
 -   **Safety**: `unsafe` blocks required for pointer dereferences, FFI, and specific intrinsics.
