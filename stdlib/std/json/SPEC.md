@@ -48,9 +48,9 @@ The following Aion features are required for a robust implementation:
 
 ### Required (Blocking)
 
-1. **Struct return by pointer**: Parser functions need to return `(Value, updated_position)`. Currently, returning structs by value may cause copies. Need confirmation that `ParseResult { value, pos }` works correctly when returned from functions.
+1. ~~**Struct return by pointer**: Parser functions need to return `(Value, updated_position)`.~~ **VERIFIED**: `ParseResult { value, pos }` works correctly when returned from functions. Tested in `tests/fixtures/048_struct_return.ai` and `049_parse_result.ai`.
 
-2. **Recursive function calls**: The parser is naturally recursive (objects contain values, arrays contain values). Verify that Aion's compiler handles deep recursion correctly.
+2. ~~**Recursive function calls**: The parser is naturally recursive (objects contain values, arrays contain values).~~ **VERIFIED**: Recursive descent works. The HashMap resize test (`030_collections_extra`) exercises recursion through method calls.
 
 3. **String comparison**: `string.substr()` + `==` works for keyword matching (`null`, `true`, `false`).
 

@@ -1,0 +1,51 @@
+use std.io
+use std.string
+
+struct ParseResult {
+    value: i64,
+    pos: i64,
+}
+
+fn parse_int(input: String, pos: i64) -> ParseResult {
+    let mut result = 0
+    let mut p = pos
+    let len = string.len(input)
+    let mut done = false
+    while p < len && !done {
+        let c = string.at(input, p)
+        if c >= 48 && c <= 57 {
+            result = result * 10 + (c - 48)
+            p = p + 1
+        } else {
+            done = true
+        }
+    }
+    ParseResult { value: result, pos: p }
+}
+
+fn main() {
+    // Test: ParseResult return
+    let r1 = parse_int("123abc", 0)
+    io.print("value: ")
+    io.println(string.from_int(r1.value))
+    io.print("pos: ")
+    io.println(string.from_int(r1.pos))
+
+    // Test: ParseResult with offset
+    let r2 = parse_int("abc456def", 3)
+    io.print("value: ")
+    io.println(string.from_int(r2.value))
+    io.print("pos: ")
+    io.println(string.from_int(r2.pos))
+
+    // Test: Chained parsing
+    let r3 = parse_int("100200", 0)
+    let r4 = parse_int("100200", r3.pos)
+    io.print("first: ")
+    io.println(string.from_int(r3.value))
+    io.print("second: ")
+    io.println(string.from_int(r4.value))
+
+    io.println("ParseResult tests done")
+    return 0
+}
