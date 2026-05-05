@@ -4,19 +4,30 @@
 src/              — Rust compiler (lexer → parser → type checker → LLVM codegen)
   main.rs         — CLI entrypoint: build / run / doc / transpile subcommands
   lib.rs          — compile_file(): orchestrates lexer → parser → checker → compiler
-  compiler.rs     — LLVM IR generation via inkwell (Rust bindings for LLVM)
-  runtime.c       — C runtime: I/O, string ops, GC init, FFI builtins
-  lexer.rs        — Tokenizer (char → token stream)
-  parser.rs       — Token stream → AST (returns Result<Program, Vec<CompileError>>)
-  ast.rs          — AST node definitions with Span (Program, Declaration, Expression, Statement)
-  token.rs        — Token and TokenKind definitions
-  types.rs        — Type system (Type enum with from_str/Display)
   error.rs        — CompileError enum (Type, Unsafe, NotFound, NotFunction, InvalidOperator, Inkwell, Io, Import, Internal)
-  checker.rs      — TypeChecker: safety and type verification pass
-  environment.rs  — Scoped symbol table for type checker
-  transpiler/     — Transpilation backends
-    mod.rs        — Module root
-    sql.rs        — SQL transpiler (Aion → PostgreSQL functions)
+  runtime.c       — C runtime: I/O, string ops, GC init, FFI builtins
+  lexer/          — Tokenizer (char → token stream)
+    mod.rs        — Re-exports Token, TokenKind, Lexer
+    token.rs      — Token and TokenKind definitions
+    lexer.rs      — Lexer implementation
+  ast/            — AST node definitions
+    mod.rs        — Re-exports + Span struct
+    expr.rs       — Expression enum
+    stmt.rs       — Statement enum + MatchArm
+    decl.rs       — Declaration, Function, Struct, Enum, Interface, ImplBlock, Program, Import
+  parser/         — Token stream → AST (returns Result<Program, Vec<CompileError>>)
+    mod.rs        — Parser struct + parse_program + parse_import
+  analysis/       — Type system and verification
+    mod.rs        — Re-exports TypeChecker, Environment, Type
+    types.rs      — Type enum with from_str/Display
+    checker.rs    — TypeChecker: safety and type verification pass
+    environment.rs — Scoped symbol table for type checker
+  codegen/        — LLVM IR generation via inkwell (Rust bindings for LLVM)
+    mod.rs        — Re-exports Compiler
+    compiler.rs   — LLVM code generation
+    transpiler/   — Transpilation backends
+      mod.rs      — Module root
+      sql.rs      — SQL transpiler (Aion → PostgreSQL functions)
 stdlib/           — Aion standard library (written in Aion, .ai files)
   core/           — Core memory primitives (heap.ai, memory.ai)
   std/            — Standard library modules (io, fs, collections, math, etc.)
