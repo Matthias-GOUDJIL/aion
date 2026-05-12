@@ -108,6 +108,8 @@ fn test_string_methods() { assert_snapshot!(run_aion_test("stdlib/string_methods
 fn test_loop_basic() { assert_snapshot!(run_aion_test("language/loop_basic")); }
 #[test]
 fn test_function_types() { assert_snapshot!(run_aion_test("language/function_types")); }
+#[test]
+fn test_match_expression() { assert_snapshot!(run_aion_test("language/match_expression")); }
 
 // --- Stdlib Tests ---
 

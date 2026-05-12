@@ -198,6 +198,10 @@ impl<'ctx> Compiler<'ctx> {
                 } 
                 for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); } 
             },
+            Expression::Match { condition, arms, .. } => {
+                self.substitute_types_in_expr(condition, ph, conc);
+                for arm in arms { self.substitute_types_in_body(&mut arm.body, ph, conc); }
+            },
             _ => {}
         }
     }
@@ -1284,6 +1288,231 @@ impl<'ctx> Compiler<'ctx> {
                 let call = self.builder.build_call(fv, &cargs, "intrinsic_call")?; 
                 Ok(match call.try_as_basic_value() { ValueKind::Basic(v) => v, _ => i64_t.const_zero().into() })
             },
+            Expression::Match { condition, arms, .. } => {
+                let cv = self.compile_expr(condition, variables, function)?;
+                let exit_bb = self.context.append_basic_block(function, "match_expr_exit");
+                let mut phis = Vec::new();
+                let ctn = self.get_expr_type_name(condition, variables);
+                let cbn = if ctn.contains('<') { ctn.split('<').next().ok_or_else(|| CompileError::Internal("Invalid type name".to_string()))?.to_string() } else { ctn.clone() };
+                let fen = self.resolve_fuzzy_name(&self.enum_types, &cbn).unwrap_or(cbn.clone());
+                
+                if let Some(et_ref) = self.enum_types.get(&fen) {
+                    let et = *et_ref;
+                    let ep = cv.into_pointer_value();
+                    let tag = self.builder.build_load(i64_t, self.builder.build_struct_gep(et, ep, 0, "tagptr")?, "tag")?.into_int_value();
+                    let na = arms.len();
+                    for (i, arm) in arms.iter().enumerate() {
+                        let ab = self.context.append_basic_block(function, &format!("match_arm_{}_{}", i, arm.pattern));
+                        let is_last = i == na - 1;
+                        let nb = if is_last { exit_bb } else { self.context.append_basic_block(function, "match_arm_next") };
+                        
+                        let all_patterns: Vec<String> = if arm.patterns.is_empty() {
+                            vec![arm.pattern.clone()]
+                        } else {
+                            arm.patterns.clone()
+                        };
+                        
+                        let is_default = all_patterns.iter().any(|p| p == "_");
+                        let mut arm_match_cond: Option<inkwell::values::IntValue<'ctx>> = None;
+                        
+                        if !is_default {
+                            if let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen) {
+                                for pat in &all_patterns {
+                                    let mut at = i as u64;
+                                    for (vi, v) in e_decl.variants.iter().enumerate() {
+                                        if pat == &v.name || pat.ends_with(&format!(".{}", v.name)) || pat.ends_with(&format!("::{}", v.name)) {
+                                            at = vi as u64;
+                                            break;
+                                        }
+                                    }
+                                    if at == i as u64 && (pat == "Some" || pat == "Ok" || pat.ends_with(".Some") || pat.ends_with("::Some")) { at = 0; }
+                                    if at == i as u64 && (pat == "None" || pat == "Err" || pat.ends_with(".None") || pat.ends_with("::None")) { at = 1; }
+                                    
+                                    let cond = self.builder.build_int_compare(IntPredicate::EQ, tag, i64_t.const_int(at, false), "is_arm")?;
+                                    arm_match_cond = Some(match arm_match_cond {
+                                        Some(prev) => self.builder.build_or(prev, cond, "arm_or")?,
+                                        None => cond,
+                                    });
+                                }
+                            }
+                        }
+                        
+                        if is_default && arm_match_cond.is_none() {
+                            self.builder.build_unconditional_branch(ab)?;
+                        } else if let Some(cond) = arm_match_cond {
+                            self.builder.build_conditional_branch(cond, ab, nb)?;
+                        } else {
+                            self.builder.build_unconditional_branch(nb)?;
+                        }
+                        if is_last && !is_default {
+                            let test_bb = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?;
+                            phis.push((i64_t.const_zero().into(), test_bb));
+                        }
+                        self.builder.position_at_end(ab);
+                        let mut av = variables.clone();
+                        if !arm.params.is_empty() {
+                            let dp = self.builder.build_struct_gep(et, ep, 1, "arm_dataptr")?;
+                            let mut ptn = "i64".to_string();
+                            if let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen) {
+                                for v in &e_decl.variants {
+                                    if arm.pattern == v.name || arm.pattern.ends_with(&format!(".{}", v.name)) || arm.pattern.ends_with(&format!("::{}", v.name)) {
+                                        if !v.data_types.is_empty() { ptn = v.data_types[0].clone(); }
+                                        break;
+                                    }
+                                }
+                            }
+                            let lt = self.aion_type_to_llvm(&ptn);
+                            let cp = self.builder.build_bit_cast(dp, self.context.ptr_type(AddressSpace::default()), "arm_datacast")?;
+                            let lv_val = self.builder.build_load(lt, cp.into_pointer_value(), &arm.params[0])?;
+                            let pa = self.builder.build_alloca(lt, &arm.params[0])?;
+                            self.builder.build_store(pa, lv_val)?;
+                            av.insert(arm.params[0].clone(), (pa, lt, ptn));
+                        }
+                        
+                        if let Some(guard_expr) = &arm.guard {
+                            let guard_val = self.compile_expr(guard_expr, &av, function)?.into_int_value();
+                            let guard_pass_bb = self.context.append_basic_block(function, "guard_pass");
+                            let guard_fail_bb = nb;
+                            let guard_cond = self.builder.build_int_compare(IntPredicate::NE, guard_val, i64_t.const_zero(), "guard_cond")?;
+                            self.builder.build_conditional_branch(guard_cond, guard_pass_bb, guard_fail_bb)?;
+                            self.builder.position_at_end(guard_pass_bb);
+                        }
+                        
+                        let ar = self.compile_block(&arm.body, &mut av, function)?;
+                        let abf = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?;
+                        if abf.get_terminator().is_none() {
+                            let v = ar.unwrap_or(i64_t.const_zero().into());
+                            phis.push((v, abf));
+                        }
+                        if !is_last { self.builder.position_at_end(nb); }
+                    }
+                } else {
+                    // Match on primitives (i64, String)
+                    let na = arms.len();
+                    for (i, arm) in arms.iter().enumerate() {
+                        let pattern_clean = arm.pattern.chars().filter(|c| c.is_alphanumeric()).collect::<String>();
+                        let ab = self.context.append_basic_block(function, &format!("match_arm_{}_{}", i, pattern_clean));
+                        let is_last = i == na - 1;
+                        let nb = if is_last { exit_bb } else { self.context.append_basic_block(function, "match_arm_next") };
+                        
+                        let all_patterns: Vec<String> = if arm.patterns.is_empty() {
+                            vec![arm.pattern.clone()]
+                        } else {
+                            arm.patterns.clone()
+                        };
+                        
+                        let is_default = all_patterns.iter().any(|p| p == "_");
+                        let is_binding_var = arm.params.len() > 0 || arm.guard.is_some();
+                        let mut prim_match_cond: Option<inkwell::values::IntValue<'ctx>> = None;
+                        
+                        if !is_default && !is_binding_var {
+                            if ctn == "i64" || ctn == "Integer" {
+                                for pat in &all_patterns {
+                                    if let Some((start_str, end_str)) = pat.split_once("..") {
+                                        if let (Ok(start), Ok(end)) = (start_str.parse::<i64>(), end_str.parse::<i64>()) {
+                                            let cv_val = cv.into_int_value();
+                                            let cond_start = self.builder.build_int_compare(IntPredicate::SGE, cv_val, i64_t.const_int(start as u64, false), "range_start")?;
+                                            let cond_end = self.builder.build_int_compare(IntPredicate::SLE, cv_val, i64_t.const_int(end as u64, false), "range_end")?;
+                                            let range_cond = self.builder.build_and(cond_start, cond_end, "range_cond")?;
+                                            prim_match_cond = Some(match prim_match_cond {
+                                                Some(prev) => self.builder.build_or(prev, range_cond, "range_or")?,
+                                                None => range_cond,
+                                            });
+                                        }
+                                    } else if let Ok(val) = pat.parse::<i64>() {
+                                        let cond = self.builder.build_int_compare(IntPredicate::EQ, cv.into_int_value(), i64_t.const_int(val as u64, false), "match_cond")?;
+                                        prim_match_cond = Some(match prim_match_cond {
+                                            Some(prev) => self.builder.build_or(prev, cond, "match_or")?,
+                                            None => cond,
+                                        });
+                                    }
+                                }
+                            } else if ctn == "String" {
+                                for pat in &all_patterns {
+                                    let pattern_str = if pat.starts_with('"') && pat.ends_with('"') {
+                                        &pat[1..pat.len()-1]
+                                    } else {
+                                        pat.as_str()
+                                    };
+                                    let cmp_fn = self.module.get_function("aion_str_eq").ok_or_else(|| CompileError::Internal("aion_str_eq not found".to_string()))?;
+                                    let pat_global = self.builder.build_global_string_ptr(pattern_str, "match_pat")?;
+                                    let cmp_result = self.builder.build_call(cmp_fn, &[cv.into(), pat_global.as_basic_value_enum().into()], "str_cmp")?.try_as_basic_value().unwrap_basic().into_int_value();
+                                    let cond = self.builder.build_int_compare(IntPredicate::NE, cmp_result, i64_t.const_zero(), "str_match")?;
+                                    prim_match_cond = Some(match prim_match_cond {
+                                        Some(prev) => self.builder.build_or(prev, cond, "match_or")?,
+                                        None => cond,
+                                    });
+                                }
+                            }
+                        }
+                        
+                        if (is_default || is_binding_var) && prim_match_cond.is_none() {
+                            self.builder.build_unconditional_branch(ab)?;
+                        } else if let Some(cond) = prim_match_cond {
+                            self.builder.build_conditional_branch(cond, ab, nb)?;
+                        } else {
+                            self.builder.build_unconditional_branch(nb)?;
+                        }
+                        if is_last && !is_default && !is_binding_var {
+                            let test_bb = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?;
+                            phis.push((i64_t.const_zero().into(), test_bb));
+                        }
+                        self.builder.position_at_end(ab);
+                        let mut av = variables.clone();
+                        if !arm.params.is_empty() {
+                            let lt = self.aion_type_to_llvm(&ctn);
+                            let pa = self.builder.build_alloca(lt, &arm.params[0])?;
+                            self.builder.build_store(pa, cv)?;
+                            av.insert(arm.params[0].clone(), (pa, lt, ctn.clone()));
+                        }
+                        
+                        if let Some(guard_expr) = &arm.guard {
+                            let guard_val = self.compile_expr(guard_expr, &av, function)?.into_int_value();
+                            let guard_pass_bb = self.context.append_basic_block(function, "guard_pass");
+                            let guard_fail_bb = nb;
+                            let guard_cond = self.builder.build_int_compare(IntPredicate::NE, guard_val, i64_t.const_zero(), "guard_cond")?;
+                            self.builder.build_conditional_branch(guard_cond, guard_pass_bb, guard_fail_bb)?;
+                            self.builder.position_at_end(guard_pass_bb);
+                        }
+                        
+                        let ar = self.compile_block(&arm.body, &mut av, function)?;
+                        let abf = self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?;
+                        if abf.get_terminator().is_none() {
+                            let v = ar.unwrap_or(i64_t.const_zero().into());
+                            phis.push((v, abf));
+                        }
+                        if !is_last { self.builder.position_at_end(nb); }
+                    }
+                }
+                
+                self.builder.position_at_end(exit_bb);
+                if !phis.is_empty() {
+                    let target_type = phis[0].0.get_type();
+                    let mut final_phis = Vec::new();
+                    for (mut v, b) in phis {
+                        self.builder.position_at_end(b);
+                        if v.get_type() != target_type {
+                            if target_type.is_pointer_type() && v.is_int_value() {
+                                v = self.builder.build_int_to_ptr(v.into_int_value(), pt, "phi_ptr")?.into();
+                            } else if target_type.is_int_type() && v.is_pointer_value() {
+                                v = self.builder.build_ptr_to_int(v.into_pointer_value(), i64_t, "phi_int")?.into();
+                            }
+                        }
+                        self.builder.build_unconditional_branch(exit_bb)?;
+                        final_phis.push((v, b));
+                    }
+                    self.builder.position_at_end(exit_bb);
+                    let phi = self.builder.build_phi(target_type, "match_res")?;
+                    for (v, b) in final_phis { phi.add_incoming(&[(&v, b)]); }
+                    Ok(phi.as_basic_value())
+                } else {
+                    if self.builder.get_insert_block().ok_or_else(|| CompileError::Internal("No active insert block".to_string()))?.get_terminator().is_none() {
+                        self.builder.build_unconditional_branch(exit_bb)?;
+                    }
+                    self.builder.position_at_end(exit_bb);
+                    Ok(i64_t.const_zero().into())
+                }
+            },
             _ => Ok(i64_t.const_zero().into()),
         }
     }
@@ -1405,6 +1634,16 @@ impl<'ctx> Compiler<'ctx> {
                 if t.starts_with('*') { t[1..].to_string().replace(" ", "") } else { "unknown".to_string() }
             },
             Expression::TypeRef { name, generic_args, .. } => { if generic_args.is_empty() { name.clone() } else { format!("{}<{}>", name, generic_args.join(",")) } },
+            Expression::Match { arms, .. } => {
+                if let Some(arm) = arms.first() {
+                    if let Some(s) = arm.body.last() {
+                        match s {
+                            Statement::ExpressionStmt(e, _) | Statement::Return { value: e, .. } => self.get_expr_type_name(e, variables),
+                            _ => "unknown".to_string()
+                        }
+                    } else { "unknown".to_string() }
+                } else { "unknown".to_string() }
+            },
             _ => "unknown".to_string(),
         };
         res.replace(" ", "")

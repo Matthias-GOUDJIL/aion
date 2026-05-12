@@ -131,6 +131,7 @@ impl SqlTranspiler {
             Expression::TypeRef { .. } => "i64",
             Expression::Duration(..) => "Duration",
             Expression::Date(..) => "Date",
+            Expression::Match { .. } => "i64",
         }
         .to_string()
     }

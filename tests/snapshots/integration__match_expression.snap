@@ -1,0 +1,6 @@
+---
+source: tests/integration.rs
+assertion_line: 112
+expression: "run_aion_test(\"language/match_expression\")"
+---
+Match expressions work

@@ -1,0 +1,16 @@
+fn classify(x: i64) -> String {
+    return match x {
+        0 => "zero",
+        1 => "one",
+        2..10 => "small",
+        _ => "large",
+    }
+}
+
+fn main() {
+    let a = classify(0)
+    let b = classify(5)
+    let c = classify(42)
+    io.println("Match expressions work")
+    return 0
+}

@@ -806,6 +806,155 @@ impl<'a> Parser<'a> {
                 }
                 Expression::If { condition: Box::new(condition), then_branch, else_branch, span }
             },
+            TokenKind::Match => {
+                let span = Span::from_token(&self.current_token);
+                self.next_token();
+                let condition = self.parse_expression();
+                if self.current_token.kind != TokenKind::LBrace { 
+                    Expression::Match { condition: Box::new(condition), arms: vec![], span }
+                } else {
+                    self.next_token();
+                    let mut arms = Vec::new();
+                    while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+                        let mut pattern = String::new();
+                        let mut is_valid_pattern = false;
+                        
+                        match &self.current_token.kind {
+                            TokenKind::Identifier(p) => {
+                                pattern = p.clone(); 
+                                self.next_token();
+                                let mut struct_fields: Vec<(String, String)> = Vec::new();
+                                if self.current_token.kind == TokenKind::LBrace {
+                                    self.next_token();
+                                    while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+                                        if let TokenKind::Identifier(field_name) = &self.current_token.kind {
+                                            let fn_str = field_name.clone();
+                                            self.next_token();
+                                            if self.current_token.kind == TokenKind::Colon {
+                                                self.next_token();
+                                                if let TokenKind::Identifier(var_name) = &self.current_token.kind {
+                                                    struct_fields.push((fn_str, var_name.clone()));
+                                                    self.next_token();
+                                                }
+                                            }
+                                        }
+                                        if self.current_token.kind == TokenKind::Comma {
+                                            self.next_token();
+                                        }
+                                    }
+                                    if self.current_token.kind == TokenKind::RBrace {
+                                        self.next_token();
+                                    }
+                                }
+                                if !struct_fields.is_empty() {
+                                    let fields_str = struct_fields.iter()
+                                        .map(|(f, v)| format!("{}:{}", f, v))
+                                        .collect::<Vec<_>>()
+                                        .join(",");
+                                    pattern = format!("{}_{{{}}}", pattern, fields_str);
+                                }
+                                
+                                while self.current_token.kind == TokenKind::DoubleColon || self.current_token.kind == TokenKind::Dot {
+                                    let op = if self.current_token.kind == TokenKind::DoubleColon { "::" } else { "." };
+                                    self.next_token();
+                                    if let TokenKind::Identifier(sub) = &self.current_token.kind {
+                                        pattern.push_str(op);
+                                        pattern.push_str(sub);
+                                        self.next_token();
+                                    } else { break; }
+                                }
+                                is_valid_pattern = true;
+                            },
+                            TokenKind::IntLiteral(n) => {
+                                pattern = n.to_string();
+                                self.next_token();
+                                if self.current_token.kind == TokenKind::Range {
+                                    self.next_token();
+                                    if let TokenKind::IntLiteral(end_n) = &self.current_token.kind {
+                                        pattern = format!("{}..{}", pattern, end_n);
+                                        self.next_token();
+                                    }
+                                }
+                                is_valid_pattern = true;
+                            },
+                            TokenKind::StringLiteral(s) => {
+                                pattern = format!("\"{}\"", s);
+                                self.next_token();
+                                is_valid_pattern = true;
+                            },
+                            TokenKind::Range => {
+                                self.next_token();
+                            },
+                            _ => {
+                                self.next_token();
+                            }
+                        }
+
+                        if is_valid_pattern {
+                            let mut patterns = vec![pattern.clone()];
+                            while self.current_token.kind == TokenKind::Pipe {
+                                self.next_token();
+                                match &self.current_token.kind {
+                                    TokenKind::Identifier(p) => { patterns.push(p.clone()); self.next_token(); },
+                                    TokenKind::IntLiteral(n) => { patterns.push(n.to_string()); self.next_token(); },
+                                    TokenKind::StringLiteral(s) => { patterns.push(format!("\"{}\"", s)); self.next_token(); },
+                                    _ => { break; }
+                                }
+                            }
+                            
+                            let mut params = Vec::new();
+                            
+                            if patterns.len() == 1 {
+                                let pat = &patterns[0];
+                                let is_lower = !pat.is_empty() && pat.chars().next().unwrap().is_lowercase();
+                                let is_identifier = pat.chars().all(|c| c.is_alphanumeric() || c == '_');
+                                let is_not_underscore = pat != "_";
+                                let followed_by_guard_or_arrow = self.current_token.kind == TokenKind::If || self.current_token.kind == TokenKind::Arrow;
+                                
+                                if is_lower && is_identifier && is_not_underscore && followed_by_guard_or_arrow {
+                                    params.push(pat.clone());
+                                    patterns.clear();
+                                }
+                            }
+                            
+                            if self.current_token.kind == TokenKind::LParen {
+                                self.next_token();
+                                while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                                    if let TokenKind::Identifier(param) = &self.current_token.kind {
+                                        params.push(param.clone());
+                                        self.next_token();
+                                    } else {
+                                        self.next_token();
+                                    }
+                                    if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                                }
+                                if self.current_token.kind == TokenKind::RParen { self.next_token(); }
+                            }
+
+                            let guard = if self.current_token.kind == TokenKind::If {
+                                self.next_token();
+                                Some(Box::new(self.parse_expression()))
+                            } else {
+                                None
+                            };
+
+                            if self.current_token.kind == TokenKind::Arrow {
+                                self.next_token();
+                                let body = if self.current_token.kind == TokenKind::LBrace { self.parse_block() } else {
+                                    match self.parse_statement() {
+                                        Some(s) => vec![s],
+                                        None => vec![],
+                                    }
+                                };
+                                arms.push(MatchArm { pattern, patterns, guard, params, body });
+                            }
+                        }
+                        if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                    }
+                    if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
+                    Expression::Match { condition: Box::new(condition), arms, span }
+                }
+            },
             TokenKind::LBrace => {
                 let span = Span::from_token(&self.current_token);
                 Expression::Block { statements: self.parse_block(), is_unsafe: false, span }
