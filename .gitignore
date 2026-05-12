@@ -14,7 +14,9 @@ aion_app_*
 output
 test_file.txt
 tests/test_file.txt
-tests/tmp/
+tests/tmp/*
+!tests/tmp/.gitkeep
+!tests/tmp/.gitignore
 test_fs_output.txt
 
 # Existing
