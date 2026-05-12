@@ -20,8 +20,10 @@ impl Result<T, E> {
     pub fn unwrap(self) -> T {
         match self {
             Result::Ok(val) => val,
-            Result::Err(err) => {
-                0 as T
+            Result::Err(_) => {
+                @intrinsic("io_println", "Panic: called Result::unwrap() on an Err value")
+                @intrinsic("exit", 1)
+                return 0 as T
             }
         }
     }
@@ -30,7 +32,9 @@ impl Result<T, E> {
         match self {
             Result::Err(err) => err,
             Result::Ok(_) => {
-                0 as E
+                @intrinsic("io_println", "Panic: called Result::unwrap_err() on an Ok value")
+                @intrinsic("exit", 1)
+                return 0 as E
             }
         }
     }
@@ -39,6 +43,17 @@ impl Result<T, E> {
         match self {
             Result::Ok(val) => val,
             Result::Err(_) => default,
+        }
+    }
+
+    pub fn expect(self, msg: String) -> T {
+        match self {
+            Result::Ok(val) => val,
+            Result::Err(_) => {
+                @intrinsic("io_println", msg)
+                @intrinsic("exit", 1)
+                return 0 as T
+            }
         }
     }
 }

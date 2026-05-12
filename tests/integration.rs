@@ -110,6 +110,8 @@ fn test_loop_basic() { assert_snapshot!(run_aion_test("language/loop_basic")); }
 fn test_function_types() { assert_snapshot!(run_aion_test("language/function_types")); }
 #[test]
 fn test_match_expression() { assert_snapshot!(run_aion_test("language/match_expression")); }
+#[test]
+fn test_option_result_methods() { assert_snapshot!(run_aion_test("language/option_result_methods")); }
 
 // --- Stdlib Tests ---
 

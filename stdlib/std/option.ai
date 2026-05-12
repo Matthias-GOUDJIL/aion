@@ -13,6 +13,10 @@ impl Option<T> {
         }
     }
 
+    pub fn is_none(self) -> bool {
+        !self.is_some()
+    }
+
     pub fn unwrap_or(self, default: T) -> T {
         match self {
             Option::Some(v) => return v,
@@ -27,6 +31,17 @@ impl Option<T> {
             },
             Option::None => {
                 @intrinsic("io_println", "Panic: called Option::unwrap() on a None value")
+                @intrinsic("exit", 1)
+                return 0 as T
+            },
+        }
+    }
+
+    pub fn expect(self, msg: String) -> T {
+        match self {
+            Option::Some(v) => v,
+            Option::None => {
+                @intrinsic("io_println", msg)
                 @intrinsic("exit", 1)
                 return 0 as T
             },
