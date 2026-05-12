@@ -1,0 +1,11 @@
+---
+source: tests/integration.rs
+assertion_line: 114
+expression: "run_aion_test(\"language/option_result_methods\")"
+---
+ok_val is Ok
+err_val is Err
+100
+42
+100
+Result methods work

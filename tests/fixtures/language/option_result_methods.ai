@@ -1,0 +1,33 @@
+use std.io
+use std.string
+use std.result
+
+fn make_ok(val: i64) -> Result<i64, String> {
+    return Result::Ok(val)
+}
+
+fn make_err(msg: String) -> Result<i64, String> {
+    return Result::Err(msg)
+}
+
+fn main() {
+    let ok_val = make_ok(100)
+    let err_val = make_err("error")
+
+    if ok_val.is_ok() {
+        io.println("ok_val is Ok")
+    }
+    if err_val.is_err() {
+        io.println("err_val is Err")
+    }
+
+    let r1 = ok_val.unwrap_or(0)
+    let r2 = err_val.unwrap_or(42)
+    io.println(string.from_int(r1))
+    io.println(string.from_int(r2))
+
+    let r3 = ok_val.expect("Should have value")
+    io.println(string.from_int(r3))
+
+    io.println("Result methods work")
+}
