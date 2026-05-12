@@ -1,0 +1,19 @@
+fn add(a: i64, b: i64) -> i64 {
+    return a + b
+}
+
+fn greet(name: String) -> String {
+    return name
+}
+
+fn no_args() -> i64 {
+    return 42
+}
+
+fn main() {
+    let x = add(1, 2)
+    let y = greet("hello")
+    let z = no_args()
+    io.println("Functions with typed params work")
+    return 0
+}
