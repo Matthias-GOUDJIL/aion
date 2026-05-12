@@ -436,6 +436,65 @@ impl TypeChecker {
                 if *is_unsafe { self.in_unsafe_context = was; }
                 Ok(lt)
             },
+            Expression::Match { condition, arms, .. } => {
+                let cond_type = self.check_expression(condition)?;
+                let cond_name = match &cond_type {
+                    Type::Enum { name } => name.clone(),
+                    Type::GenericInstance(name, _) => name.clone(),
+                    Type::Integer => "i64".to_string(),
+                    Type::String => "String".to_string(),
+                    Type::Struct { name } => name.clone(),
+                    _ => "unknown".to_string(),
+                };
+                let mut result_type = Type::Unit;
+                for arm in arms {
+                    let old_env = self.env.clone();
+                    
+                    let all_patterns: Vec<String> = if arm.patterns.is_empty() {
+                        vec![arm.pattern.clone()]
+                    } else {
+                        arm.patterns.clone()
+                    };
+                    
+                    if !arm.params.is_empty() {
+                        self.env = Environment::new_enclosed(old_env.clone());
+                        let mut payload = Type::Integer;
+                        
+                        if let Some(Declaration::Enum(e)) = self.decls.get(&cond_name) {
+                            for pat in &all_patterns {
+                                for v in &e.variants {
+                                    if pat == &v.name || pat.ends_with(&format!(".{}", v.name)) || pat.ends_with(&format!("::{}", v.name)) {
+                                        if !v.data_types.is_empty() { payload = self.resolve_type(&v.data_types[0]); }
+                                        break;
+                                    }
+                                }
+                            }
+                        } else if cond_name == "i64" {
+                            payload = Type::Integer;
+                        } else if cond_name == "String" {
+                            payload = Type::String;
+                        } else if let Some(Declaration::Struct(s)) = self.decls.get(&cond_name) {
+                            payload = Type::Struct { name: cond_name.clone() };
+                            for (field_name, field_type_str) in &s.fields {
+                                let field_type = self.resolve_type(field_type_str);
+                                self.env.set(format!("{}.{}", arm.params[0], field_name), field_type);
+                            }
+                        }
+                        
+                        self.env.set(arm.params[0].clone(), payload);
+                    }
+                    
+                    if let Some(guard_expr) = &arm.guard {
+                        self.check_expression(guard_expr)?;
+                    }
+                    
+                    for s in &arm.body {
+                        result_type = self.check_statement(s)?;
+                    }
+                    self.env = old_env;
+                }
+                Ok(result_type)
+            },
             _ => Err(CompileError::Internal(format!("Unsupported expression {:?}", expr))),
         }
     }

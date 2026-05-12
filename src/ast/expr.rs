@@ -1,4 +1,5 @@
 use super::Span;
+use super::stmt::MatchArm;
 use crate::lexer::token::Token;
 use crate::ast::Statement;
 
@@ -55,6 +56,11 @@ pub enum Expression {
         generic_args: Vec<String>,
         span: Span,
     },
+    Match {
+        condition: Box<Expression>,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -80,7 +86,8 @@ impl Expression {
             | Expression::EnumInst { span: s, .. }
             | Expression::MemberAccess { span: s, .. }
             | Expression::MethodCall { span: s, .. }
-            | Expression::TypeRef { span: s, .. } => *s,
+            | Expression::TypeRef { span: s, .. }
+            | Expression::Match { span: s, .. } => *s,
         }
     }
 }
