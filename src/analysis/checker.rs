@@ -373,15 +373,18 @@ impl TypeChecker {
                 };
 
                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
-                let cand = format!("{}::{}", full, method);
-                let ft = self.env.get(&cand).ok_or_else(|| self.err(format!("method '{}' not found on '{}'", method, full), &method_expr))?;
+                let cand_colon = format!("{}::{}", full, method);
+                let cand_dot = format!("{}.{}", full, method);
+                let ft = self.env.get(&cand_colon)
+                    .or_else(|| self.env.get(&cand_dot))
+                    .ok_or_else(|| self.err(format!("method '{}' not found on '{}'", method, full), &method_expr))?;
                 if let Type::Function { is_unsafe, ref return_type } = ft {
                     if is_unsafe && !self.in_unsafe_context {
                         return Err(self.err(format!("unsafe method call '{}'", method), &method_expr));
                     }
                     for arg in arguments { self.check_expression(arg)?; }
                     Ok(*return_type.clone())
-                } else { Err(self.err(format!("'{}' is not a function", cand), &method_expr)) }
+                } else { Err(self.err(format!("'{}' is not a function", cand_colon), &method_expr)) }
             },
             Expression::Cast { target, .. } => Ok(self.resolve_type(target)),
             Expression::StructInst { name, .. } => {

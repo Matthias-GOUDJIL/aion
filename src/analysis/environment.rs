@@ -29,7 +29,11 @@ impl Environment {
         
         // Fuzzy lookup: check if name matches a fully qualified name suffix
         for (key, val) in &self.store {
-            if key.ends_with(name) && (key.len() == name.len() || key.as_bytes()[key.len() - name.len() - 1] == b'.') {
+            if key.ends_with(name) && (key.len() == name.len() || {
+                let sep_idx = key.len() - name.len() - 1;
+                let b = key.as_bytes()[sep_idx];
+                b == b'.' || (sep_idx >= 1 && key.as_bytes()[sep_idx - 1] == b':' && b == b':')
+            }) {
                 return Some(val.clone());
             }
         }
