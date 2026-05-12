@@ -9,7 +9,7 @@ pub enum Type {
     String,
     Duration,
     Date,
-    Function { is_unsafe: bool, return_type: Box<Type> },
+    Function { is_unsafe: bool, params: Vec<Type>, return_type: Box<Type> },
     Enum { name: String },
     Struct { name: String },
     Placeholder(String),
@@ -69,7 +69,10 @@ impl Type {
                 format!("{}<{}>", base, args_str.join(", "))
             }
             Type::Placeholder(name) => name.clone(),
-            Type::Function { return_type, .. } => format!("fn() -> {}", return_type.name()),
+            Type::Function { params, return_type, .. } => {
+                let params_str: Vec<String> = params.iter().map(|p| p.name()).collect();
+                format!("fn({}) -> {}", params_str.join(", "), return_type.name())
+            },
             Type::Unknown => "unknown".to_string(),
         }
     }

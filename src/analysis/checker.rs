@@ -58,29 +58,29 @@ impl TypeChecker {
     }
 
     fn register_builtins(&mut self) {
-        self.env.set("aion_read_file".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::String) });
-        self.env.set("aion_write_file".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Integer) });
-        self.env.set("aion_get_argc".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Integer) });
-        self.env.set("aion_get_argv_index".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::String) });
-        self.env.set("aion_str_ptr".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Pointer(Box::new(Type::Integer))) });
-        self.env.set("exit".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Unit) });
-        self.env.set("aion_exit".to_string(), Type::Function { is_unsafe: true, return_type: Box::new(Type::Unit) });
+        self.env.set("aion_read_file".to_string(), Type::Function { is_unsafe: true, params: vec![Type::String], return_type: Box::new(Type::String) });
+        self.env.set("aion_write_file".to_string(), Type::Function { is_unsafe: true, params: vec![Type::String, Type::String], return_type: Box::new(Type::Integer) });
+        self.env.set("aion_get_argc".to_string(), Type::Function { is_unsafe: true, params: vec![], return_type: Box::new(Type::Integer) });
+        self.env.set("aion_get_argv_index".to_string(), Type::Function { is_unsafe: true, params: vec![Type::Integer], return_type: Box::new(Type::String) });
+        self.env.set("aion_str_ptr".to_string(), Type::Function { is_unsafe: true, params: vec![Type::String], return_type: Box::new(Type::Pointer(Box::new(Type::Integer))) });
+        self.env.set("exit".to_string(), Type::Function { is_unsafe: true, params: vec![Type::Integer], return_type: Box::new(Type::Unit) });
+        self.env.set("aion_exit".to_string(), Type::Function { is_unsafe: true, params: vec![Type::Integer], return_type: Box::new(Type::Unit) });
 
-        self.env.set("io.println".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Unit) });
-        self.env.set("io.print".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Unit) });
-        self.env.set("env.var".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::GenericInstance("Option".to_string(), vec![Type::String])) });
-        self.env.set("mem.is_null".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Boolean) });
-        self.env.set("string.len".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
-        self.env.set("String.len".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
-        self.env.set("string.concat".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
-        self.env.set("string.from_int".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
-        self.env.set("string.from_float".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::String) });
-        self.env.set("string.to_float".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Float) });
+        self.env.set("io.println".to_string(), Type::Function { is_unsafe: false, params: vec![Type::String], return_type: Box::new(Type::Unit) });
+        self.env.set("io.print".to_string(), Type::Function { is_unsafe: false, params: vec![Type::String], return_type: Box::new(Type::Unit) });
+        self.env.set("env.var".to_string(), Type::Function { is_unsafe: false, params: vec![Type::String], return_type: Box::new(Type::GenericInstance("Option".to_string(), vec![Type::String])) });
+        self.env.set("mem.is_null".to_string(), Type::Function { is_unsafe: false, params: vec![Type::Pointer(Box::new(Type::Unknown))], return_type: Box::new(Type::Boolean) });
+        self.env.set("string.len".to_string(), Type::Function { is_unsafe: false, params: vec![Type::String], return_type: Box::new(Type::Integer) });
+        self.env.set("String.len".to_string(), Type::Function { is_unsafe: false, params: vec![Type::String], return_type: Box::new(Type::Integer) });
+        self.env.set("string.concat".to_string(), Type::Function { is_unsafe: false, params: vec![Type::String, Type::String], return_type: Box::new(Type::String) });
+        self.env.set("string.from_int".to_string(), Type::Function { is_unsafe: false, params: vec![Type::Integer], return_type: Box::new(Type::String) });
+        self.env.set("string.from_float".to_string(), Type::Function { is_unsafe: false, params: vec![Type::Float], return_type: Box::new(Type::String) });
+        self.env.set("string.to_float".to_string(), Type::Function { is_unsafe: false, params: vec![Type::String], return_type: Box::new(Type::Float) });
         
         // i64 methods as functions
-        self.env.set("i64.abs".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
-        self.env.set("i64.max".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
-        self.env.set("i64.min".to_string(), Type::Function { is_unsafe: false, return_type: Box::new(Type::Integer) });
+        self.env.set("i64.abs".to_string(), Type::Function { is_unsafe: false, params: vec![Type::Integer], return_type: Box::new(Type::Integer) });
+        self.env.set("i64.max".to_string(), Type::Function { is_unsafe: false, params: vec![Type::Integer, Type::Integer], return_type: Box::new(Type::Integer) });
+        self.env.set("i64.min".to_string(), Type::Function { is_unsafe: false, params: vec![Type::Integer, Type::Integer], return_type: Box::new(Type::Integer) });
         
         self.env.set("argc".to_string(), Type::Integer);
         self.env.set("argv".to_string(), Type::String);
@@ -94,7 +94,8 @@ impl TypeChecker {
                     self.decls.insert(f.name.clone(), decl.clone());
                     let is_unsafe = f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe);
                     let ret_type = self.resolve_type(&f.return_type);
-                    self.env.set(f.name.clone(), Type::Function { is_unsafe, return_type: Box::new(ret_type) });
+                    let param_types: Vec<Type> = f.params.iter().map(|(_, pt, _)| self.resolve_type(pt)).collect();
+                    self.env.set(f.name.clone(), Type::Function { is_unsafe, params: param_types, return_type: Box::new(ret_type) });
                 },
                 Declaration::Enum(e) => {
                     self.decls.insert(e.name.clone(), decl.clone());
@@ -118,7 +119,12 @@ impl TypeChecker {
                         let mut ret_name = f.return_type.clone();
                         if ret_name == "Self" { ret_name = full_target.clone(); }
                         let ret_type = self.resolve_type(&ret_name);
-                        self.env.set(name, Type::Function { is_unsafe, return_type: Box::new(ret_type) });
+                        let param_types: Vec<Type> = f.params.iter().map(|(_, pt, _)| {
+                            let mut pt = pt.clone();
+                            if pt == "Self" { pt = full_target.clone(); }
+                            self.resolve_type(&pt)
+                        }).collect();
+                        self.env.set(name, Type::Function { is_unsafe, params: param_types, return_type: Box::new(ret_type) });
                     }
                 },
                 _ => {}
@@ -320,7 +326,7 @@ impl TypeChecker {
                                 let cand_colon = format!("{}::{}", full, method_name);
                                 let cand_dot = format!("{}.{}", full, method_name);
                                 let ft = self.env.get(&cand_colon).or_else(|| self.env.get(&cand_dot));
-                                if let Some(Type::Function { is_unsafe, ref return_type }) = ft {
+                                if let Some(Type::Function { is_unsafe, ref return_type, .. }) = ft {
                                     if is_unsafe && !self.in_unsafe_context {
                                         return Err(self.err(format!("unsafe method call '{}'", method_name), &call_expr));
                                     }
@@ -332,9 +338,9 @@ impl TypeChecker {
                     }
                 }
                 let ft = if let Some(t) = self.env.get(function) { t }
-                         else if self.in_unsafe_context && function.starts_with("aion_") { Type::Function { is_unsafe: true, return_type: Box::new(Type::Unknown) } }
+                         else if self.in_unsafe_context && function.starts_with("aion_") { Type::Function { is_unsafe: true, params: vec![], return_type: Box::new(Type::Unknown) } }
                          else { return Err(self.err(format!("function '{}' not defined", function), &call_expr)); };
-                if let Type::Function { is_unsafe, ref return_type } = ft {
+                if let Type::Function { is_unsafe, ref return_type, .. } = ft {
                     if is_unsafe && !self.in_unsafe_context {
                         return Err(self.err(format!("call to unsafe function '{}' requires unsafe block", function), &call_expr));
                     }
@@ -378,7 +384,7 @@ impl TypeChecker {
                 let ft = self.env.get(&cand_colon)
                     .or_else(|| self.env.get(&cand_dot))
                     .ok_or_else(|| self.err(format!("method '{}' not found on '{}'", method, full), &method_expr))?;
-                if let Type::Function { is_unsafe, ref return_type } = ft {
+                if let Type::Function { is_unsafe, ref return_type, .. } = ft {
                     if is_unsafe && !self.in_unsafe_context {
                         return Err(self.err(format!("unsafe method call '{}'", method), &method_expr));
                     }
