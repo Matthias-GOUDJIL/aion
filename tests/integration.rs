@@ -112,6 +112,8 @@ fn test_function_types() { assert_snapshot!(run_aion_test("language/function_typ
 fn test_match_expression() { assert_snapshot!(run_aion_test("language/match_expression")); }
 #[test]
 fn test_option_result_methods() { assert_snapshot!(run_aion_test("language/option_result_methods")); }
+#[test]
+fn test_sizeof_variables() { assert_snapshot!(run_aion_test("language/sizeof_variables")); }
 
 // --- Stdlib Tests ---
 

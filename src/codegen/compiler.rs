@@ -1255,7 +1255,14 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 if an == "sizeof" && !aa.is_empty() { 
                     let tnm = match &aa[0] { 
-                        Expression::Identifier(s, _) => s.clone(), 
+                        Expression::Identifier(s, _) => {
+                            // First check if it's a variable in the environment
+                            if let Some((_, _, vtn)) = variables.get(s) {
+                                vtn.clone()
+                            } else {
+                                s.clone()
+                            }
+                        },
                         Expression::TypeRef { name, .. } => name.clone(), 
                         _ => "i64".to_string() 
                     }; 
