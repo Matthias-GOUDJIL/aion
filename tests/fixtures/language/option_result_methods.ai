@@ -11,7 +11,13 @@ fn make_err(msg: String) -> Result<i64, String> {
 }
 
 fn main() {
-    let ok_val = make_ok(100)
+    // Test with direct EnumInst (issue #57 fix)
+    let x = Result::Ok(100)
+    let y = x.unwrap_or(0)
+    io.println(string.from_int(y))
+
+    // Test with helper functions
+    let ok_val = make_ok(200)
     let err_val = make_err("error")
 
     if ok_val.is_ok() {

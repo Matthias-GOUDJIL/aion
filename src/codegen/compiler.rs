@@ -215,13 +215,13 @@ impl<'ctx> Compiler<'ctx> {
             
             f.name = nn.clone(); 
             f.generic_params = vec![];
-            for i in 0..ph.len() { 
+            for i in 0..ph.len().min(ga.len()) { 
                 let p = &ph[i]; 
                 let c = &ga[i]; 
                 for (_, pt, _) in f.params.iter_mut() { *pt = pt.replace(p, c); } 
                 f.return_type = f.return_type.replace(p, c); 
             }
-            if let Some(body) = &mut f.body { self.substitute_types_in_body(body, &ph, ga); }
+            if let Some(body) = &mut f.body { self.substitute_types_in_body(body, &ph[..ph.len().min(ga.len())], &ga[..ph.len().min(ga.len())]); }
             
             self.decls.insert(nn.clone(), Declaration::Function(f.clone()));
             self.compiled_instances.insert(nn.clone()); 
@@ -889,6 +889,7 @@ impl<'ctx> Compiler<'ctx> {
                 let mut aga = generic_args.clone(); 
                 let mut aa = arguments.clone(); 
                 let mut is_mc = false;
+                let mut tga_from_receiver: Vec<String> = vec![];
                 if let Some((rn, mn)) = fnm.rsplit_once('.') {
                      let re = Expression::Identifier(rn.to_string(), Span::zero());
                      let tn = self.get_expr_type_name(&re, variables);
@@ -904,9 +905,12 @@ impl<'ctx> Compiler<'ctx> {
                      }
                      if tn != "unknown" { 
                          let (btn, tga) = if tn.contains('<') { let p: Vec<&str> = tn.split(['<', '>', ',']).filter(|s| !s.is_empty()).collect(); (p[0].to_string(), p[1..].iter().map(|s| s.trim().to_string()).collect()) } else { (tn.clone(), vec![]) }; 
+                         tga_from_receiver = tga.clone();
                          let mut bc = btn.as_str(); while bc.starts_with('*') { bc = &bc[1..]; } 
                          let tp = self.resolve_fuzzy_name(&self.struct_types, bc).or_else(|| self.resolve_fuzzy_name(&self.enum_types, bc)).unwrap_or(btn.clone()); 
-                         let fc = self.resolve_fuzzy_name(&self.decls, &format!("{}.{}", tp, mn)).unwrap_or(format!("{}.{}", tp, mn)); 
+                         let fc = self.resolve_fuzzy_name(&self.decls, &format!("{}::{}", tp, mn))
+                             .or_else(|| self.resolve_fuzzy_name(&self.decls, &format!("{}.{}", tp, mn)))
+                             .unwrap_or(format!("{}.{}", tp, mn)); 
                          if let Some(Declaration::Function(f_decl)) = self.decls.get(&fc) { 
                              let has_self = f_decl.params.get(0).map_or(false, |(n, _, _)| n == "self");
                              if has_self {
@@ -926,6 +930,14 @@ impl<'ctx> Compiler<'ctx> {
                 let fv = if !aga.is_empty() { 
                     let gn = format!("{}_{}", full, aga.join("_")); 
                     if let Some(e) = self.module.get_function(&gn) { e } else { self.instantiate_function(&full, &aga)? } 
+                } else if let Some(Declaration::Function(f_decl)) = self.decls.get(&full) {
+                    if !f_decl.generic_params.is_empty() && is_mc && !tga_from_receiver.is_empty() {
+                        // Try to infer generic args from receiver type
+                        let gn = format!("{}_{}", full, tga_from_receiver.join("_"));
+                        if let Some(e) = self.module.get_function(&gn) { e } else { self.instantiate_function(&full, &tga_from_receiver)? }
+                    } else {
+                        self.module.get_function(&lnm).ok_or_else(|| self.err(format!("function '{}' not found", afn), e))?
+                    }
                 } else {
                     self.module.get_function(&lnm).ok_or_else(|| self.err(format!("function '{}' not found", afn), e))?
                 };
@@ -1118,7 +1130,9 @@ impl<'ctx> Compiler<'ctx> {
                 } else { (rtn.clone(), vec![]) };
                 let mut bc = btn.as_str(); while bc.starts_with('*') { bc = &bc[1..]; }
                 let tp = self.resolve_fuzzy_name(&self.struct_types, bc).or_else(|| self.resolve_fuzzy_name(&self.enum_types, bc)).unwrap_or(btn.clone()); 
-                let fm = self.resolve_fuzzy_name(&self.decls, &format!("{}.{}", tp, method)).unwrap_or(format!("{}.{}", tp, method));
+                let fm = self.resolve_fuzzy_name(&self.decls, &format!("{}::{}", tp, method))
+                    .or_else(|| self.resolve_fuzzy_name(&self.decls, &format!("{}.{}", tp, method)))
+                    .unwrap_or(format!("{}.{}", tp, method));
                 let mut cg = tga; cg.extend(generic_args.clone());
                 let fv = if !cg.is_empty() { 
                     let gn = format!("{}_{}", fm, cg.join("_")); 
@@ -1569,8 +1583,9 @@ impl<'ctx> Compiler<'ctx> {
                         } else { (rt.clone(), vec![]) };
                         let mut bc = btn.as_str(); while bc.starts_with('*') { bc = &bc[1..]; }
                         let tp = self.resolve_fuzzy_name(&self.struct_types, bc).or_else(|| self.resolve_fuzzy_name(&self.enum_types, bc)).unwrap_or(btn.clone());
-                        let method_name = format!("{}.{}", tp, mn);
-                        if let Some(Declaration::Function(f_decl)) = self.decls.get(&method_name) {
+                        let method_name_colon = format!("{}::{}", tp, mn);
+                        let method_name_dot = format!("{}.{}", tp, mn);
+                        if let Some(Declaration::Function(f_decl)) = self.decls.get(&method_name_colon).or_else(|| self.decls.get(&method_name_dot)) {
                             let mut res_type = f_decl.return_type.clone();
                             let combined_args = if generic_args.is_empty() { &tga } else { generic_args };
                             for (i, p) in f_decl.generic_params.iter().enumerate() { if i < combined_args.len() { res_type = res_type.replace(p, &combined_args[i]); } }
@@ -1596,8 +1611,9 @@ impl<'ctx> Compiler<'ctx> {
                 } else { (rt.clone(), vec![]) };
                 let mut bc = btn.as_str(); while bc.starts_with('*') { bc = &bc[1..]; }
                 let full = self.resolve_fuzzy_name(&self.decls, bc).unwrap_or(btn.clone());
-                let method_name = format!("{}.{}", full, method);
-                if let Some(Declaration::Function(f_decl)) = self.decls.get(&method_name) {
+                let method_name_colon = format!("{}::{}", full, method);
+                let method_name_dot = format!("{}.{}", full, method);
+                if let Some(Declaration::Function(f_decl)) = self.decls.get(&method_name_colon).or_else(|| self.decls.get(&method_name_dot)) {
                     let mut res_type = f_decl.return_type.clone();
                     for (i, p) in f_decl.generic_params.iter().enumerate() { if i < generic_args.len() { res_type = res_type.replace(p, &generic_args[i]); } }
                     if let Some(decl) = self.decls.get(&full) { 
@@ -1614,7 +1630,18 @@ impl<'ctx> Compiler<'ctx> {
             },
             Expression::EnumInst { name, variant, arguments, generic_args, .. } => {
                 if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, name) {
-                    if generic_args.is_empty() { en.replace(" ", "") } else { format!("{}<{}>", en, generic_args.join(",")).replace(" ", "") }
+                    if !generic_args.is_empty() {
+                        format!("{}<{}>", en, generic_args.join(",")).replace(" ", "")
+                    } else {
+                        // Infer generic args from variant arguments
+                        let mut inferred_args: Vec<String> = vec![];
+                        if let Some(Declaration::Enum(_)) = self.decls.get(&en) {
+                            for arg in arguments.iter() {
+                                inferred_args.push(self.get_expr_type_name(arg, variables));
+                            }
+                        }
+                        if inferred_args.is_empty() { en.replace(" ", "") } else { format!("{}<{}>", en, inferred_args.join(",")).replace(" ", "") }
+                    }
                 } else {
                     let call_expr = Expression::Call { function: format!("{}.{}", name, variant), generic_args: generic_args.clone(), arguments: arguments.clone(), span: Span::zero() };
                     self.get_expr_type_name(&call_expr, variables)

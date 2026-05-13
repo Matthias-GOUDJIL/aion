@@ -397,8 +397,22 @@ impl TypeChecker {
                 let full = self.resolve_fuzzy_name(&self.decls, name).unwrap_or(name.clone());
                 Ok(Type::Struct { name: full })
             },
-            Expression::EnumInst { name, .. } => {
+            Expression::EnumInst { name, variant, arguments, .. } => {
                 let full = self.resolve_fuzzy_name(&self.decls, name).unwrap_or(name.clone());
+                // Try to infer generic type arguments from variant arguments
+                let has_generics = if let Some(Declaration::Enum(enum_decl)) = self.decls.get(&full) {
+                    enum_decl.variants.iter().find(|v| v.name == *variant).map_or(false, |v| !v.data_types.is_empty())
+                } else {
+                    false
+                };
+                if has_generics {
+                    let type_args: Vec<Type> = arguments.iter().map(|arg| {
+                        self.check_expression(arg).unwrap_or(Type::Unknown)
+                    }).collect();
+                    if !type_args.is_empty() {
+                        return Ok(Type::GenericInstance(full, type_args));
+                    }
+                }
                 Ok(Type::Enum { name: full })
             },
             Expression::Deref { expr, .. } => {
