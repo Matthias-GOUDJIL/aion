@@ -1,0 +1,24 @@
+use std.io
+use std.string
+
+struct Point {
+    x: i64,
+    y: i64
+}
+
+fn main() {
+    let n = 42
+    let size1 = @sizeof(n)
+    io.println(string.from_int(size1))
+
+    let p = Point { x: 10, y: 20 }
+    let size2 = @sizeof(p)
+    io.println(string.from_int(size2))
+
+    let s = "hello"
+    let size3 = @sizeof(s)
+    io.println(string.from_int(size3))
+
+    let size4 = @sizeof(i64)
+    io.println(string.from_int(size4))
+}

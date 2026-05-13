@@ -1,0 +1,8 @@
+---
+source: tests/integration.rs
+expression: run_aion_test("language/sizeof_variables")
+---
+8
+16
+8
+8
