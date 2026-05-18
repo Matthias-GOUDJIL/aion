@@ -1550,16 +1550,27 @@ impl<'ctx> Compiler<'ctx> {
         if let Some(Declaration::Struct(s)) = self.decls.get(&full) {
             for (f_nm, ft) in &s.fields {
                 if f_nm == fnm {
-                    let mut rft = ft.clone();
-                    for (i, p) in s.generic_params.iter().enumerate() {
-                        if i < tga.len() { rft = rft.replace(p, &tga[i]); }
-                    }
+                    let rft = Self::substitute_generic_params(ft, &s.generic_params, &tga);
                     return rft.replace(" ", "");
                 }
             }
         }
         "unknown".to_string()
     }
+    fn substitute_generic_params(res_type: &str, params: &[String], args: &[String]) -> String {
+        let mut result = res_type.to_string();
+        for (i, p) in params.iter().enumerate() {
+            if i < args.len() {
+                let arg = &args[i];
+                // Replace <Param> with <Arg> — handles Vector<Param>, Option<Param>, etc.
+                result = result.replace(&format!("<{}>", p), &format!("<{}>", arg));
+                // Handle standalone Param as the full return type (e.g. fn foo() -> T)
+                if result == *p { result = arg.clone(); }
+            }
+        }
+        result
+    }
+
     fn get_expr_type_name(&self, e: &Expression, variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>) -> String {
         let res = match e {
             Expression::Integer(_, _) => "i64".to_string(), 
@@ -1595,15 +1606,14 @@ impl<'ctx> Compiler<'ctx> {
                         if let Some(Declaration::Function(f_decl)) = self.decls.get(&method_name_colon).or_else(|| self.decls.get(&method_name_dot)) {
                             let mut res_type = f_decl.return_type.clone();
                             let combined_args = if generic_args.is_empty() { &tga } else { generic_args };
-                            for (i, p) in f_decl.generic_params.iter().enumerate() { if i < combined_args.len() { res_type = res_type.replace(p, &combined_args[i]); } }
+                            res_type = Self::substitute_generic_params(&res_type, &f_decl.generic_params, combined_args);
                             return res_type.replace(" ", "");
                         }
                     }
                 }
                 let full = self.resolve_fuzzy_name(&self.decls, name).unwrap_or(name.clone());
                 if let Some(Declaration::Function(f_decl)) = self.decls.get(&full) {
-                    let mut r = f_decl.return_type.clone(); 
-                    for (i, p) in f_decl.generic_params.iter().enumerate() { if i < generic_args.len() { r = r.replace(p, &generic_args[i]); } } 
+                    let r = Self::substitute_generic_params(&f_decl.return_type, &f_decl.generic_params, generic_args);
                     return r.replace(" ", "");
                 }
                 "unknown".to_string()
@@ -1621,11 +1631,10 @@ impl<'ctx> Compiler<'ctx> {
                 let method_name_colon = format!("{}::{}", full, method);
                 let method_name_dot = format!("{}.{}", full, method);
                 if let Some(Declaration::Function(f_decl)) = self.decls.get(&method_name_colon).or_else(|| self.decls.get(&method_name_dot)) {
-                    let mut res_type = f_decl.return_type.clone();
-                    for (i, p) in f_decl.generic_params.iter().enumerate() { if i < generic_args.len() { res_type = res_type.replace(p, &generic_args[i]); } }
+                    let mut res_type = Self::substitute_generic_params(&f_decl.return_type, &f_decl.generic_params, generic_args);
                     if let Some(decl) = self.decls.get(&full) { 
                         let bp = match decl { Declaration::Struct(s) => &s.generic_params, Declaration::Enum(e) => &e.generic_params, _ => &vec![] }; 
-                        for (i, p) in bp.iter().enumerate() { if i < tga.len() { res_type = res_type.replace(p, &tga[i]); } } 
+                        res_type = Self::substitute_generic_params(&res_type, bp, &tga);
                     }
                     return res_type.replace(" ", "");
                 }
