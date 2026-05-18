@@ -7,6 +7,21 @@ on:
     branches: [main]
 
 jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Check PR title follows conventional commit format
+        run: |
+          title="${{ github.event.pull_request.title }}"
+          echo "PR title: $title"
+          if echo "$title" | grep -qP '^(feat|fix|refactor|docs|test|chore)(\(.+\))?: '; then
+            echo "ok"
+          else
+            echo "PR title must match: type: description (e.g. feat: add foo, fix: correct bar)"
+            exit 1
+          fi
+
   test:
     runs-on: ubuntu-latest
     steps:
