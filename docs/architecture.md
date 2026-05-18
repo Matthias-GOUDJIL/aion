@@ -80,3 +80,15 @@ editors/          — Editor integrations (vscode/)
 - **Opaque pointers**: LLVM 15+ uses opaque pointers. `build_load` requires the element type explicitly.
 - **Recursive imports**: `process_imports` must rename local declarations *before* recursing to avoid exponential prefix concatenation.
 - **Assignment is a statement**: `a = b` is a statement in Aion, not an expression.
+
+## Known Pitfalls (discovered during bug fixing)
+
+- **All structs → `ptr_type` at LLVM level**: `aion_type_to_llvm` maps every struct/enum/string type to an opaque pointer. Field access uses GEP with the LLVM struct type for offset calculation, but load/store operations are always pointer-sized (8 bytes). Consequence: `@intrinsic("mem_zero")` only emits 8 bytes of zeros — it cannot zero a multi-field struct (see #62). A proper fix requires restructuring the type mapping layer so struct LLVM types carry actual field type/size information.
+
+- **String-based type resolution in codegen**: `get_expr_type_name` and `instantiate_function` resolve types via string manipulation (e.g., `replace("V", "String")`). This corrupts type names when a generic parameter appears as a substring of another type name (e.g., `"V"` in `"Vector"` → `"Stringector"`, fixed in #61). `substitute_generic_params()` handles this by replacing only `<Param>` patterns. The same fragility remains in `instantiate_function` and `substitute_types_in_expr` (see #67).
+
+- **`%` operator is unsigned remainder**: Changed from `srem` to `urem` (#66). This ensures `hash % cap` always yields `[0, cap-1]` regardless of hash sign. Code relying on signed remainder semantics for negative numbers would break — no known cases in the current codebase.
+
+- **Static methods receive receiver argument**: The MethodCall codegen always pushed the receiver as the first argument, even for static methods like `new()` that have no `self` parameter. For TypeRef receivers (e.g., `Vector<String>`), `compile_expr` fell through to the catch-all returning `i64 0`, corrupting the calling convention. Fixed in #66 by checking `has_self` before pushing the receiver.
+
+- **HashMap bucket array is an array of pointers (8 bytes/slot)**: `core.heap.alloc(cap * 8)` is correct — each bucket slot stores a single pointer to a heap-allocated Entry (24 bytes). The `@sizeof(Entry<V>)` returns 24 but that's the entry size, not the bucket slot size.
