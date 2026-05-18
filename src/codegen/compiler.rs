@@ -1030,7 +1030,7 @@ impl<'ctx> Compiler<'ctx> {
                         TokenKind::Gt => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SGT, l, r, "gt")?, i64_t, "bool")?.into()),
                         TokenKind::LtEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SLE, l, r, "lteq")?, i64_t, "bool")?.into()), 
                         TokenKind::GtEq => Ok(self.builder.build_int_z_extend(self.builder.build_int_compare(IntPredicate::SGE, l, r, "gteq")?, i64_t, "bool")?.into()),
-                        TokenKind::Percent => Ok(self.builder.build_int_signed_rem(l, r, "rem")?.into()), 
+                        TokenKind::Percent => Ok(self.builder.build_int_unsigned_rem(l, r, "rem")?.into()), 
                         TokenKind::Caret => Ok(self.builder.build_xor(l, r, "xor")?.into()), 
                         _ => Err(CompileError::Internal(format!("Operator {:?} not supported", operator.kind))),
                     }
@@ -1141,8 +1141,13 @@ impl<'ctx> Compiler<'ctx> {
                     self.module.get_function(&fm).ok_or_else(|| CompileError::Internal(format!("Method '{}' not found", fm)))? 
                 };
                 let mut ca = Vec::new(); 
-                let rv = self.compile_expr(receiver, variables, function)?;
-                ca.push(rv.into()); 
+                let has_self = self.decls.get(&fm).map_or(false, |d| {
+                    if let Declaration::Function(fd) = d { fd.params.first().map_or(false, |(n, _, _)| n == "self") } else { false }
+                });
+                if has_self {
+                    let rv = self.compile_expr(receiver, variables, function)?;
+                    ca.push(rv.into()); 
+                }
                 for arg in arguments { 
                     let compiled = self.compile_expr(arg, variables, function)?;
                     // Auto-convert i64 to string for io.println/io.print
@@ -1692,7 +1697,7 @@ impl<'ctx> Compiler<'ctx> {
         res.replace(" ", "")
     }
 
-    pub fn optimize(&self) -> Result<(), CompileError> {
+     pub fn optimize(&self) -> Result<(), CompileError> {
         let builder = PassManagerBuilder::create();
         builder.set_optimization_level(OptimizationLevel::Aggressive);
 
