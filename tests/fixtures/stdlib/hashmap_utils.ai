@@ -1,8 +1,10 @@
 use std.collections.map
+use std.collections.vector
 use std.io
 use std.string
 
 fn main() {
+    // Basic operations
     let mut m = HashMap<String>.new()
     m.insert("hello", "world")
     m.insert("foo", "bar")
@@ -20,19 +22,43 @@ fn main() {
         io.println("no nope")
     }
 
-    m.remove("foo")
-    let l2 = m.len()
+    // Test keys() and values()
+    let mut m2 = HashMap<String>.new()
+    m2.insert("a", "1")
+    m2.insert("b", "2")
+    m2.insert("c", "3")
+
+    let ks = m2.keys()
+    io.print("keys len: ")
+    io.println(string.from_int(ks.len()))
+    io.print("k0: ")
+    io.println(ks.get(0).unwrap())
+
+    let vs = m2.values()
+    io.print("values len: ")
+    io.println(string.from_int(vs.len()))
+    io.print("v0: ")
+    io.println(vs.get(0).unwrap())
+
+    // Test remove
+    let mut m3 = HashMap<String>.new()
+    m3.insert("x", "y")
+    m3.remove("x")
+    let l2 = m3.len()
     io.println(string.from_int(l2))
-    let has_foo2 = m.contains_key("foo")
-    if has_foo2 == false {
-        io.println("foo removed")
+    let has_x = m3.contains_key("x")
+    if has_x == false {
+        io.println("x removed")
     }
 
-    m.clear()
-    let l3 = m.len()
+    // Test clear
+    let mut m4 = HashMap<String>.new()
+    m4.insert("h", "w")
+    m4.clear()
+    let l3 = m4.len()
     io.println(string.from_int(l3))
-    let has_hello = m.contains_key("hello")
-    if has_hello == false {
+    let has_h = m4.contains_key("h")
+    if has_h == false {
         io.println("all cleared")
     }
 }

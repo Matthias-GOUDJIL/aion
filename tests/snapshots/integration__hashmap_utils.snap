@@ -5,7 +5,11 @@ expression: "run_aion_test(\"stdlib/hashmap_utils\")"
 3
 has foo
 no nope
-2
-foo removed
+keys len: 3
+k0: a
+values len: 3
+v0: 1
+0
+x removed
 0
 all cleared
