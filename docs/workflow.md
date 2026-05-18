@@ -47,6 +47,24 @@
 - Reference the issue in commits: `feat: add Span (#2)`
 - PR description should include `Closes #N` to auto-close
 
+### Issue & PR Naming Conventions
+
+**Issue titles**: `[Area] Brief description in imperative mood`
+- Area is one of: `Compiler`, `Codegen`, `Parser`, `Checker`, `Stdlib`, `TypeSystem`, `CI`, `Docs`
+- Examples: `[Codegen] Fix signed remainder producing negative bucket indices`, `[Stdlib] Add HashMap::contains_key`
+
+**PR titles**: `type: Brief description` (conventional commit format)
+- Type: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
+- Examples: `fix: use unsigned remainder for % operator`, `feat: add contains_key to HashMap`
+
+**Branch names**: `{type}/issue-{N}-{short-slug}` or `{type}/{short-slug}`
+- Examples: `fix/issue-61-method-resolution`, `feat/hashmap-utils`
+
+**Labels** (apply to all issues):
+- Priority: `priority-critical`, `priority-high`, `priority-medium`, `priority-low`
+- Type: `type-bug`, `type-feature`, `type-refactor`
+- Area: `area-compiler`, `area-codegen`, `area-parser`, `area-checker`, `area-stdlib`, `area-type-system`, `area-testing`, `area-ci`, `area-docs`
+
 ## Docker Cache Gotcha
 
 If tests fail with linker errors (`undefined reference`, `file in wrong format`, `cannot find temp_*.o`), the Docker image or volumes are stale. Run:
