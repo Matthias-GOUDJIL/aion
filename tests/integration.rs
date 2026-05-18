@@ -144,6 +144,8 @@ fn test_hashmap_basic() { assert_snapshot!(run_aion_test("stdlib/hashmap_basic")
 #[test]
 fn test_hashmap_resize_hashset() { assert_snapshot!(run_aion_test("stdlib/hashmap_resize_hashset")); }
 #[test]
+fn test_hashmap_utils() { assert_snapshot!(run_aion_test("stdlib/hashmap_utils")); }
+#[test]
 fn test_tensor_basic() { assert_snapshot!(run_aion_test("stdlib/tensor_basic")); }
 #[test]
 fn test_fmt_format() { assert_snapshot!(run_aion_test("stdlib/fmt_format")); }
