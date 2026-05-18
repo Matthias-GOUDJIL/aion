@@ -191,21 +191,13 @@ impl HashMap<V> {
             }
             i = i + 1;
         }
-        // Deallocate old bucket array and allocate a fresh zeroed one.
-        // mem_zero only writes a single pointer (8 bytes) which is insufficient
-        // to clear a full Entry<V> struct (24 bytes).  A fresh allocation from
-        // GC_malloc is properly zero-initialised.
+        // Allocate a fresh bucket array.  Using mem_zero here is not
+        // sufficient because the intrinsic only emits a single pointer
+        // constant (8 bytes) while Entry<V> occupies 24 bytes at the
+        // LLVM level.  A fresh GC_malloc is properly zero-initialised.
         unsafe { core.heap.dealloc(self.buckets as *u8); }
         self.cap = 16;
         let buckets = unsafe { core.heap.alloc(self.cap * 8) as *Entry<V> };
-        let mut ri = 0;
-        while ri < self.cap {
-            unsafe {
-                let p = buckets.offset(ri);
-                *p = unsafe { @intrinsic("mem_zero") };
-            }
-            ri = ri + 1;
-        }
         self.buckets = buckets;
         self.len = 0;
     }
