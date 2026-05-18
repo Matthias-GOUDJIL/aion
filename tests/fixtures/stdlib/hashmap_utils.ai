@@ -1,0 +1,38 @@
+use std.collections.map
+use std.io
+use std.string
+
+fn main() {
+    let mut m = HashMap<String>.new()
+    m.insert("hello", "world")
+    m.insert("foo", "bar")
+    m.insert("baz", "qux")
+
+    let l = m.len()
+    io.println(string.from_int(l))
+
+    let has_foo = m.contains_key("foo")
+    let has_nope = m.contains_key("nope")
+    if has_foo {
+        io.println("has foo")
+    }
+    if has_nope == false {
+        io.println("no nope")
+    }
+
+    m.remove("foo")
+    let l2 = m.len()
+    io.println(string.from_int(l2))
+    let has_foo2 = m.contains_key("foo")
+    if has_foo2 == false {
+        io.println("foo removed")
+    }
+
+    m.clear()
+    let l3 = m.len()
+    io.println(string.from_int(l3))
+    let has_hello = m.contains_key("hello")
+    if has_hello == false {
+        io.println("all cleared")
+    }
+}

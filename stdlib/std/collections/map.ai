@@ -41,7 +41,7 @@ impl HashMap<V> {
     }
 
     pub fn insert(mut self, key: String, value: V) {
-        if self.len > self.cap { // Load factor > 1.0 (simplified)
+        if self.len > self.cap * 3 / 4 { // Load factor > 75%
             // Inline resize to avoid mut self copy issue
             let old_cap = self.cap;
             let new_cap = old_cap * 2;
@@ -127,6 +127,87 @@ impl HashMap<V> {
 
     pub fn len(self) -> i64 {
         self.len
+    }
+
+    pub fn contains_key(self, key: String) -> bool {
+        let h = std.hash.hash_string(key);
+        let idx = (h % (self.cap as u64)) as i64;
+        
+        unsafe {
+            let mut current = *self.buckets.offset(idx);
+            while unsafe { @intrinsic("mem_is_null", current) } == false {
+                if std.string.equals(current.key, key) {
+                    return true;
+                }
+                current = current.next;
+            }
+        }
+        false
+    }
+
+    pub fn keys(self) -> Vector<String> {
+        let mut result = Vector<String>.new();
+        let mut i = 0;
+        while i < self.cap {
+            unsafe {
+                let mut current = *self.buckets.offset(i);
+                while unsafe { @intrinsic("mem_is_null", current) } == false {
+                    result.push(current.key);
+                    current = current.next;
+                }
+            }
+            i = i + 1;
+        }
+        result
+    }
+
+    pub fn values(self) -> Vector<V> {
+        let mut result = Vector<V>.new();
+        let mut i = 0;
+        while i < self.cap {
+            unsafe {
+                let mut current = *self.buckets.offset(i);
+                while unsafe { @intrinsic("mem_is_null", current) } == false {
+                    result.push(current.value);
+                    current = current.next;
+                }
+            }
+            i = i + 1;
+        }
+        result
+    }
+
+    pub fn clear(mut self) {
+        let mut i = 0;
+        while i < self.cap {
+            unsafe {
+                let bucket_ptr = self.buckets.offset(i);
+                let mut current = *bucket_ptr;
+                while unsafe { @intrinsic("mem_is_null", current) } == false {
+                    let next = current.next;
+                    core.heap.dealloc(current as *u8);
+                    current = next;
+                }
+            }
+            i = i + 1;
+        }
+        // Deallocate old bucket array and allocate a fresh zeroed one.
+        // mem_zero only writes a single pointer (8 bytes) which is insufficient
+        // to clear a full Entry<V> struct (24 bytes).  A fresh allocation from
+        // GC_malloc is properly zero-initialised.
+        unsafe { core.heap.dealloc(self.buckets as *u8); }
+        self.cap = 16;
+        let buckets = unsafe { core.heap.alloc(self.cap * 8) as *Entry<V> };
+        let mut ri = 0;
+        while ri < self.cap {
+            unsafe {
+                let p = buckets.offset(ri);
+                *p = unsafe { @intrinsic("mem_zero") };
+            }
+            ri = ri + 1;
+        }
+        self.buckets = buckets;
+        self.len = 0;
     }
 
     pub fn remove(mut self, key: String) -> bool {

@@ -1,0 +1,11 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/hashmap_utils\")"
+---
+3
+has foo
+no nope
+2
+foo removed
+0
+all cleared
