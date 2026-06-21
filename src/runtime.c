@@ -28,6 +28,10 @@ void aion_free(void* ptr) {
     // GC handles freeing
 }
 
+void aion_memzero(void* ptr, size_t size) {
+    memset(ptr, 0, size);
+}
+
 void aion_io_print(const char* msg) {
     if (msg) printf("%s", msg);
     fflush(stdout);

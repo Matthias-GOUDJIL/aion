@@ -83,7 +83,7 @@ editors/          — Editor integrations (vscode/)
 
 ## Known Pitfalls (discovered during bug fixing)
 
-- **All structs → `ptr_type` at LLVM level**: `aion_type_to_llvm` maps every struct/enum/string type to an opaque pointer. Field access uses GEP with the LLVM struct type for offset calculation, but load/store operations are always pointer-sized (8 bytes). Consequence: `@intrinsic("mem_zero")` only emits 8 bytes of zeros — it cannot zero a multi-field struct (see #62). A proper fix requires restructuring the type mapping layer so struct LLVM types carry actual field type/size information.
+- **All structs → `ptr_type` at LLVM level**: `aion_type_to_llvm` maps every struct/enum/string type to an opaque pointer. Field access uses GEP with the LLVM struct type for offset calculation, but load/store operations are always pointer-sized (8 bytes). `@intrinsic("mem_zero", Type)` now looks up the actual LLVM struct type from `struct_types` and returns a properly-sized zero constant. `@intrinsic("mem_zero_ptr", ptr, size)` calls `aion_memzero` to zero existing memory blocks (fixed #62).
 
 - **String-based type resolution in codegen**: `get_expr_type_name` and `instantiate_function` resolve types via string manipulation (e.g., `replace("V", "String")`). This corrupts type names when a generic parameter appears as a substring of another type name (e.g., `"V"` in `"Vector"` → `"Stringector"`, fixed in #61). `substitute_generic_params()` handles this by replacing only `<Param>` patterns. The same fragility remains in `instantiate_function` and `substitute_types_in_expr` (see #67).
 

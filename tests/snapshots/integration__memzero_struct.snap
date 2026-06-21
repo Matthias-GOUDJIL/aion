@@ -1,0 +1,9 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/memzero_struct\")"
+---
+0
+before clear: one exists
+after clear: one gone
+after clear: two gone
+re-insert works
