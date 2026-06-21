@@ -58,6 +58,110 @@ impl Vector<T> {
         return self.len;
     }
 
+    pub fn is_empty(self) -> bool {
+        return self.len == 0;
+    }
+
+    pub fn first(self) -> Option<T> {
+        if self.len == 0 {
+            return Option::None;
+        }
+        return self.get(0);
+    }
+
+    pub fn last(self) -> Option<T> {
+        if self.len == 0 {
+            return Option::None;
+        }
+        return self.get(self.len - 1);
+    }
+
+    pub fn contains(self, value: T) -> bool {
+        let mut i = 0;
+        while i < self.len {
+            let elem = self.get(i).unwrap();
+            if elem == value {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    pub fn clear(mut self) {
+        self.len = 0;
+    }
+
+    pub fn swap(mut self, i: i64, j: i64) {
+        if i < 0 || i >= self.len || j < 0 || j >= self.len {
+            return;
+        }
+        unsafe {
+            let p = self.ptr;
+            let pi = p.offset(i);
+            let pj = p.offset(j);
+            let tmp = *pi;
+            *pi = *pj;
+            *pj = tmp;
+        }
+    }
+
+    pub fn insert(mut self, index: i64, value: T) {
+        if index < 0 || index > self.len {
+            return;
+        }
+        if self.len == self.cap {
+            self.grow();
+        }
+        let mut i = self.len;
+        while i > index {
+            unsafe {
+                let p = self.ptr;
+                let src = p.offset(i - 1);
+                let dst = p.offset(i);
+                *dst = *src;
+            }
+            i = i - 1;
+        }
+        unsafe {
+            let p = self.ptr;
+            let dst = p.offset(index);
+            *dst = value;
+        }
+        self.len = self.len + 1;
+    }
+
+    pub fn remove(mut self, index: i64) -> Option<T> {
+        if index < 0 || index >= self.len {
+            return Option::None;
+        }
+        unsafe {
+            let p = self.ptr;
+            let src = p.offset(index);
+            let value = *src;
+            let mut i = index;
+            while i < self.len - 1 {
+                let src_ptr = p.offset(i + 1);
+                let dst_ptr = p.offset(i);
+                *dst_ptr = *src_ptr;
+                i = i + 1;
+            }
+            self.len = self.len - 1;
+            return Option::Some(value);
+        }
+    }
+
+    pub fn set(mut self, index: i64, value: T) {
+        if index < 0 || index >= self.len {
+            return;
+        }
+        unsafe {
+            let p = self.ptr;
+            let dst = p.offset(index);
+            *dst = value;
+        }
+    }
+
     fn grow(mut self) {
         let new_cap = if self.cap == 0 { 4 } else { self.cap * 2 };
         let byte_size = new_cap * @sizeof(T);

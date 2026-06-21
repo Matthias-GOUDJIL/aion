@@ -1,0 +1,74 @@
+use std.collections.vector
+use std.string
+
+fn main() {
+    let mut v = Vector<i64>.new()
+    
+    // Test is_empty
+    if v.is_empty() {
+        io.println("empty at start")
+    }
+    
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    
+    if v.is_empty() == false {
+        io.println("not empty after push")
+    }
+    
+    // Test len
+    let n = v.len()
+    io.println(string.from_int(n))
+    
+    // Test first / last
+    let f = v.first().unwrap()
+    io.println(string.from_int(f))
+    let l = v.last().unwrap()
+    io.println(string.from_int(l))
+    
+    // Test get
+    let g = v.get(1).unwrap()
+    io.println(string.from_int(g))
+    
+    // Test set
+    v.set(1, 99)
+    let s = v.get(1).unwrap()
+    io.println(string.from_int(s))
+    
+    // Test swap
+    v.swap(0, 2)
+    let s0 = v.get(0).unwrap()
+    let s2 = v.get(2).unwrap()
+    io.println(string.from_int(s0))
+    io.println(string.from_int(s2))
+    
+    // Test insert
+    v.insert(1, 55)
+    let i0 = v.get(0).unwrap()
+    let i1 = v.get(1).unwrap()
+    let i2 = v.get(2).unwrap()
+    io.println(string.from_int(i0))
+    io.println(string.from_int(i1))
+    io.println(string.from_int(i2))
+    let new_len = v.len()
+    io.println(string.from_int(new_len))
+    
+    // Test remove
+    let removed = v.remove(0).unwrap()
+    io.println(string.from_int(removed))
+    let after_remove = v.get(0).unwrap()
+    io.println(string.from_int(after_remove))
+    let final_len = v.len()
+    io.println(string.from_int(final_len))
+    
+    // Test clear
+    v.clear()
+    let cleared = v.len()
+    io.println(string.from_int(cleared))
+    if v.is_empty() {
+        io.println("empty after clear")
+    }
+    
+    return 0
+}
