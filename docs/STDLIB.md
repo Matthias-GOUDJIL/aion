@@ -1,20 +1,30 @@
 # Aion Standard Library
 
-This document provides a comprehensive overview of the Aion Standard Library (`stdlib`), organized by domain.
+This document provides an overview of the Aion Standard Library (`stdlib`),
+organized by domain.
+
+> **Implementation status legend**
+> - **[stable]** — implemented, tested via fixtures, used by examples.
+> - **[partial]** — implemented but missing features or with known bugs.
+> - **[stub]** — module skeleton only; declarations present, bodies incomplete.
+> - **[skeleton]** — placeholder file, no usable implementation yet.
+>
+> Status reflects what the current compiler can actually compile and run.
+> Modules marked **[stub]** or **[skeleton]** should not be relied on.
 
 ## 1. Core & Primitives
 
 Fundamental building blocks of the language.
 
-### `core.heap`
+### `core.heap` **[stable]**
 Low-level memory management intrinsics.
 - `alloc`, `dealloc`, `realloc`, `null`.
 
-### `std.mem`
+### `std.mem` **[stub]**
 Memory utilities.
 - `size_of`, `align_of`, `swap`, `replace`.
 
-### `std.prelude`
+### `std.prelude` **[stable]**
 Common imports (`Option`, `Result`, `String`, `Vector`, `print`, `println`).
 
 ---
@@ -22,85 +32,92 @@ Common imports (`Option`, `Result`, `String`, `Vector`, `print`, `println`).
 ## 2. Data Structures & Algorithms
 
 ### `std.collections`
-- **`vector`**: `Vector<T>` (dynamic array).
-- **`list`**: `LinkedList<T>` (singly linked).
-- **`map`**: `HashMap<V>` (generic V, string key).
-- **`set`**: `HashSet`.
+- **`vector`** **[stable]** — `Vector<T>` (dynamic array). Missing `iter`,
+  `map`, `filter`, `fold` (tracked by issue #35).
+- **`list`** **[stub]** — `LinkedList<T>` (singly linked).
+- **`map`** **[stable]** — `HashMap<V>` (generic V, string key). Includes
+  `contains_key`, `keys`, `values`, `clear`, `remove`.
+- **`set`** **[stub]** — `HashSet`.
 
-### `std.string` & `std.char`
-Full string and character manipulation suite.
+### `std.string` **[stable]** & `std.char` **[stable]**
+Full string and character manipulation suite (`len`, `concat`, `from_int`,
+`from_float`, `to_float`, `at`, `substr`, `contains`, `starts_with`,
+`ends_with`, `find`, `trim`, `to_upper`, `to_lower`, `replace`).
 
-### `std.iter`
+### `std.iter` **[stub]**
 `Iterator` interface and `Range`.
 
-### `std.hash`
+### `std.hash` **[stable]**
 `Hashable` interface and FNV-1a implementation.
 
-### `std.bits`
+### `std.bits` **[stub]**
 Bitwise operations on integers.
 
 ---
 
 ## 3. System, OS & I/O
 
-### `std.io` & `std.io.buf`
+### `std.io` **[stable]** & `std.io.buf` **[stub]**
 Standard and Buffered I/O (`BufReader`).
 
-### `std.fs` & `std.path`
+### `std.fs` **[stable]** & `std.path` **[stable]**
 File system access and cross-platform path manipulation.
 
-### `std.process` & `std.signal`
-Process spawning (`Command`, `Child`) and signal handling (`Signal`, `handle`).
+### `std.process` **[stub]** & `std.signal` **[stub]**
+Process spawning (`Command`, `Child`) and signal handling (`Signal`,
+`handle`).
 
-### `std.env` & `std.os`
-Environment variables (`args`, `var`) and OS primitives (`exit`, `cpu_count`).
+### `std.env` **[stable]** & `std.os` **[stub]**
+Environment variables (`args`, `var`) and OS primitives (`exit`,
+`cpu_count`).
 
-### `std.flags`
+### `std.flags` **[stub]**
 Command-line argument parsing (CLI builder).
 
-### `std.error`
+### `std.error` **[stub]**
 Error handling types and utilities.
 
 ---
 
 ## 4. Network & Web
 
-### `std.net`
+### `std.net` **[skeleton]**
 TCP Sockets (`bind`, `accept`).
 
-### `std.net.http`
+### `std.net.http` **[skeleton]**
 HTTP Client/Server structures (`Request`, `Response`, `Client`).
 
-### `std.net.tls`
+### `std.net.tls` **[skeleton]**
 Secure networking (`TlsContext`, `TlsStream`) for HTTPS support.
 
-### `std.net.websocket`
+### `std.net.websocket` **[skeleton]**
 Real-time web communication.
 - **Struct** `WebSocket`: `connect`, `send`, `receive`.
 - **Enum** `Message`: `Text`, `Binary`, `Ping`, `Close`.
 
-### `std.uri`
+### `std.uri` **[skeleton]**
 URI parsing and construction.
 
-### `web.dom`
+### `web.dom` **[skeleton]**
 DOM manipulation primitives.
 
 ---
 
 ## 5. Concurrency & Distribution
 
-### `std.thread`
-Basic threading (`yield_now`).
+### `std.thread` **[stub]**
+Basic threading (`yield_now`). `spawn { ... }` is a language keyword, not
+this module.
 
 ### `std.sync`
-- **`mutex`**: Mutual exclusion.
-- **`channel`**: MPSC Channels for message passing.
-- **`atomic`**: Atomic integers and booleans.
+- **`mutex`** **[stub]** — Mutual exclusion.
+- **`channel`** **[stub]** — MPSC Channels for message passing.
+- **`atomic`** **[stub]** — Atomic integers and booleans.
 
-### `std.task`
+### `std.task` **[skeleton]**
 Async runtime primitives (`Poll`, `Context`).
 
-### `std.distrib`
+### `std.distrib` **[skeleton]**
 Native Clustering.
 - `node` (gossip), `spawn_remote` (remote actors).
 
@@ -108,7 +125,7 @@ Native Clustering.
 
 ## 6. Artificial Intelligence (Native)
 
-### `std.ai.tensor`
+### `std.ai.tensor` **[stable]**
 The core of Aion.
 - `Tensor`: N-dimensional array.
 - `matmul`, `add`: Accelerated math.
@@ -116,90 +133,96 @@ The core of Aion.
 - `to(device)`: GPU/TPU support.
 
 ### `std.media`
-- **`image`**: Load/Save images, convert to Tensor.
-- **`audio`**: Load audio, compute spectrograms for AI.
+- **`image`** **[skeleton]** — Load/Save images, convert to Tensor.
+- **`audio`** **[skeleton]** — Load audio, compute spectrograms for AI.
 
 ---
 
 ## 7. Data Science & Formats
 
 ### `std.data`
-- **`dataframe`**: Native Dataframes (`read_csv`, `select`, `filter`).
-- **`series`**: Typed column arrays.
+- **`dataframe`** **[stable]** — Native Dataframes (`read_csv`, `select`,
+  `filter`).
+- **`series`** **[partial]** — Typed column arrays.
 
-### `std.json`
-JSON parsing and stringification.
+### `std.json` **[partial]**
+JSON parsing and stringification. Primitives only — array/object parsing
+blocked by type checker (see `stdlib/std/json/SPEC.md`).
 
 ### `std.encoding`
-Hex and Base64 encoding.
+- **`hex`** **[stub]** — Hex encoding.
+- **`base64`** **[skeleton]** — Base64 encoding.
 
-### `std.text.template`
+### `std.text.template` **[skeleton]**
 Text templating engine (Jinja-like).
 
 ### `std.archive`
-- **`zip`**: ZIP archive creation and extraction.
+- **`zip`** **[skeleton]** — ZIP archive creation and extraction.
 
 ### `std.compress`
-- **`gzip`**: Gzip compression and decompression.
+- **`gzip`** **[skeleton]** — Gzip compression and decompression.
 
 ### `std.sql`
-- **`driver`**: SQL database driver interface.
+- **`driver`** **[skeleton]** — SQL database driver interface.
 
 ---
 
 ## 8. Math & Cryptography
 
-### `std.math`
-Basic math, `complex` numbers, and `big` integers (arbitrary precision).
+### `std.math` **[stub]**
+Basic math.
+- **`complex`** **[stub]** — Complex numbers.
+- **`big`** **[stub]** — Big integers (arbitrary precision).
 
 ### `std.crypto`
-- **`sha256`**: Hashing.
-- **`aes`**: Symmetric encryption (CBC/GCM).
+- **`sha256`** **[skeleton]** — Hashing.
+- **`aes`** **[skeleton]** — Symmetric encryption (CBC/GCM).
 
-### `std.random`
+### `std.random` **[stub]**
 Pseudo-random number generation.
 
 ---
 
 ## 9. Observability & Global
 
-### `std.telemetry`
+### `std.telemetry` **[skeleton]**
 Tracing (`Span`) and Metrics (`Counter`, `Gauge`).
 
-### `std.log`
+### `std.log` **[stub]**
 Structured logging (`debug`, `info`, `warn`, `error`).
 
-### `std.i18n`
+### `std.i18n` **[skeleton]**
 Internationalization (`Locale`, `Catalog`).
 
-### `std.test`
+### `std.test` **[stub]**
 Unit testing assertions.
 
-### `std.ffi`
+### `std.ffi` **[stub]**
 C Interop (`CString`, `c_malloc`).
 
-### `std.reflect`
+### `std.reflect` **[skeleton]**
 Runtime Introspection (`type_of`, `type_name`, `has_field`).
 
-### `std.regex`
+### `std.regex` **[skeleton]**
 Regular expression matching.
 
-### `std.convert`
+### `std.convert` **[stub]**
 Type conversion utilities.
 
-### `std.fmt`
-Formatting utilities.
+### `std.fmt` **[stable]**
+Formatting utilities. `Display`/`Debug` interfaces and `format(template,
+args)` for `'{}'`-placeholder interpolation.
 
 ---
 
 ## 10. User Interface & Real-time
 
-### `std.ui.core`
+### `std.ui.core` **[skeleton]**
 Native Declarative UI.
 - **Widgets**: `Window`, `Text`, `Button`, `Column`, `Row`.
 - `Window::run()`: Starts the UI event loop.
 
-### `std.uuid`
+### `std.uuid` **[skeleton]**
 Universally Unique Identifiers.
 - `new_v4()`: Random based.
 - `new_v7()`: Time-ordered.
@@ -208,8 +231,8 @@ Universally Unique Identifiers.
 
 ## 11. Time & Date
 
-### `std.time`
+### `std.time` **[stable]**
 Duration and Date types with arithmetic operations.
 
-### `std.date`
+### `std.date` **[stable]**
 Date utilities and formatting.

@@ -5,9 +5,8 @@ Aion is a system programming language designed for AI-native applications, prior
 ## Core Pillars
 
 1. **AI-Native**: First-class support for Tensors, Time Series, and Probabilistic reasoning.
-2. **Safety & Speed**: Compiles to optimized native code via LLVM, with a linear type system for memory safety without GC.
-3. **Parsability**: Designed with a simple, context-free grammar to be easily read and written by LLMs.
-4. **Interop**: Zero-cost FFI with C and Python ecosystems.
+2. **Safety & Speed**: Compiles to optimized native code via LLVM, with a strict `unsafe` boundary and automatic memory management via the Boehm GC.
+3. **Parsability**: Designed with a simple, context-free grammar to be easily read and written by LLMs.4. **Interop**: Zero-cost FFI with C and Python ecosystems.
 
 ## Target Audience
 
