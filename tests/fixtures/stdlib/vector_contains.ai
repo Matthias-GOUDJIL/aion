@@ -1,0 +1,41 @@
+use std.collections.vector
+use std.string
+
+fn main() {
+    let mut v = Vector<i64>.new()
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    
+    if v.contains(20) {
+        io.println("contains 20")
+    } else {
+        io.println("BUG: missing 20")
+    }
+    
+    if v.contains(99) {
+        io.println("BUG: false positive 99")
+    } else {
+        io.println("does not contain 99")
+    }
+    
+    // String vector
+    let mut s = Vector<String>.new()
+    s.push("alpha")
+    s.push("beta")
+    s.push("gamma")
+    
+    if s.contains("beta") {
+        io.println("contains beta")
+    } else {
+        io.println("BUG: missing beta")
+    }
+    
+    if s.contains("zzz") {
+        io.println("BUG: false positive zzz")
+    } else {
+        io.println("does not contain zzz")
+    }
+    
+    return 0
+}

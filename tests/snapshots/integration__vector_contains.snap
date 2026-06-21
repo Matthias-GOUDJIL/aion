@@ -1,0 +1,8 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/vector_contains\")"
+---
+contains 20
+does not contain 99
+contains beta
+does not contain zzz

@@ -1,0 +1,24 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/vector_edge\")"
+---
+first on empty: None
+last on empty: None
+remove on empty: None
+contains on empty: false
+5
+10
+20
+30
+99
+99
+4
+5
+5
+5
+remove OOB: None
+alpha
+beta
+gamma
+alpha
+beta

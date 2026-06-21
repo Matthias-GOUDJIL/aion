@@ -32,8 +32,7 @@ Common imports (`Option`, `Result`, `String`, `Vector`, `print`, `println`).
 ## 2. Data Structures & Algorithms
 
 ### `std.collections`
-- **`vector`** **[stable]** — `Vector<T>` (dynamic array). Missing `iter`,
-  `map`, `filter`, `fold` (tracked by issue #35).
+- **`vector`** **[stable]** — `Vector<T>` (dynamic array). Includes `new`, `push`, `pop`, `get`, `set`, `len`, `is_empty`, `first`, `last`, `contains`, `clear`, `swap`, `insert`, `remove`. Missing `iter`/`map`/`filter`/`fold` (blocked: no closures in Aion yet).
 - **`list`** **[stub]** — `LinkedList<T>` (singly linked).
 - **`map`** **[stable]** — `HashMap<V>` (generic V, string key). Includes
   `contains_key`, `keys`, `values`, `clear`, `remove`.
