@@ -1,0 +1,50 @@
+use std.collections.map
+use std.string
+
+struct Counter {
+    count: i64,
+    label: String,
+}
+
+fn main() {
+    // Test 1: mem_zero_ptr on a raw buffer
+    let buf = unsafe { core.heap.alloc(24) as *i64 };
+    unsafe { 
+        *buf = 42;
+        @intrinsic("mem_zero_ptr", buf as *u8, 8);
+    }
+    let val = unsafe { *buf };
+    let val_str = string.from_int(val)
+    io.println(val_str)
+    
+    // Test 2: HashMap clear() properly zeroes buckets
+    let mut map = HashMap<String>.new()
+    map.insert("one", "first")
+    map.insert("two", "second")
+    
+    if map.contains_key("one") {
+        io.println("before clear: one exists")
+    }
+    
+    map.clear()
+    
+    if map.contains_key("one") {
+        io.println("after clear: one still exists (BUG)")
+    } else {
+        io.println("after clear: one gone")
+    }
+    
+    if map.contains_key("two") {
+        io.println("after clear: two still exists (BUG)")
+    } else {
+        io.println("after clear: two gone")
+    }
+    
+    // Test 3: re-insert after clear works
+    map.insert("three", "third")
+    if map.contains_key("three") {
+        io.println("re-insert works")
+    }
+    
+    return 0
+}

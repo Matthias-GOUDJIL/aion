@@ -5,6 +5,7 @@
 - **Strict Conciseness**: Respond directly and without unnecessary politeness to save output tokens. Get straight to the point (no "hello", "I will do it", or "here is").
 - **Quiet Shell Commands**: Always use quiet flags (`-q`, `--quiet`, or `> /dev/null`) for shell commands when detailed output is not needed (e.g. dependency installation, successful builds).
 - **Doc Freshness**: When modifying code behavior, architecture, or workflow, update the corresponding `docs/*.md` file in the same commit. Never leave stale docs — they will mislead future sessions.
+- **Test Coverage**: When adding or changing compiler/lexer/parser/codegen behavior, add or update test fixtures under `tests/fixtures/` covering the new behavior (nominal case + edge cases). Run `INSTA_UPDATE=always cargo test` to generate snapshots, then verify their content before committing. Never ship a behavior change without an accompanying test.
 
 ## Project Overview
 

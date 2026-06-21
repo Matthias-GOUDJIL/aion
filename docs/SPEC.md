@@ -80,8 +80,11 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   via `aion_char_to_str` — do not use this for integer formatting.
 - **Comparison**: `==` and `!=` compare string content via `aion_str_eq`
   when both operands are `String`; otherwise pointer comparison.
-- **Safety**: `unsafe` blocks required for pointer dereferences, FFI,
-  and specific intrinsics (see `docs/SPEC_SANDBOX.md`).
+- **`mem_zero`**: `@intrinsic("mem_zero")` returns a null pointer (8 bytes). `@intrinsic("mem_zero", Type)` returns a properly-sized zero constant for struct/enum types by looking up the actual LLVM struct type. For primitives, returns the zero value of that type.
+- **`mem_zero_ptr`**: `@intrinsic("mem_zero_ptr", ptr, size)` calls `aion_memzero` to zero `size` bytes of existing memory. Used for in-place zeroing of bucket arrays and reusable buffers.
+- **`mem_is_null`**: `@intrinsic("mem_is_null", ptr)` returns `true` if the pointer is null.
+- **`sizeof`**: `@intrinsic("sizeof", Type)` returns the LLVM size of the type in bytes. Works on both variable instances and type names.
+- **Safety**: `unsafe` blocks required for pointer dereferences, FFI, and specific intrinsics (see `docs/SPEC_SANDBOX.md`).
 
 ## 4. Temporal Primitives
 
@@ -162,7 +165,6 @@ The Aion-written compiler lives in `compiler/`:
 - No RAII / destructors (GC-only memory model).
 - LLVM opaque pointers require explicit type casting in edge cases.
 - Cross-compilation targets are not yet supported (x86_64-linux only).
-- `mem_zero` intrinsic cannot zero multi-field structs (#62).
 - `instantiate_function` and `substitute_types_in_expr` still use naive
   string-based type resolution (#67).
 - f-string interpolation requires explicit `string.from_*` wrapping for

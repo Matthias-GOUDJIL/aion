@@ -1,0 +1,8 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/memzero_typed\")"
+---
+mem_zero no-arg is null
+before mem_zero: non-zero
+after mem_zero(Triple): zero
+mem_zero(i64) is zero

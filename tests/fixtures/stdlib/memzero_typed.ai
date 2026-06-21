@@ -1,0 +1,51 @@
+use std.string
+use core.heap
+
+struct Triple {
+    a: i64,
+    b: i64,
+    c: i64,
+}
+
+fn main() {
+    // Test 1: mem_zero without an argument returns a null pointer (8 bytes).
+    // Used throughout HashMap for null-initializing bucket slots.
+    let null_ptr = unsafe { @intrinsic("mem_zero") as *i64 }
+    let is_null = unsafe { @intrinsic("mem_is_null", null_ptr) }
+    if is_null {
+        io.println("mem_zero no-arg is null")
+    } else {
+        io.println("BUG: mem_zero no-arg not null")
+    }
+
+    // Test 2: mem_zero with a struct type produces a zeroed struct.
+    // Write a struct pointer into a slot, then overwrite with mem_zero(Triple).
+    // The slot should go from non-zero (pointer) to zero (zeroed struct).
+    let p = unsafe { core.heap.alloc(24) as *Triple }
+    unsafe { *p = Triple { a: 7, b: 8, c: 9 } }
+    let raw = unsafe { p as *i64 }
+    let before = unsafe { *raw }
+    if before != 0 {
+        io.println("before mem_zero: non-zero")
+    } else {
+        io.println("BUG: before mem_zero: zero")
+    }
+
+    unsafe { *p = @intrinsic("mem_zero", Triple) }
+    let after = unsafe { *raw }
+    if after == 0 {
+        io.println("after mem_zero(Triple): zero")
+    } else {
+        io.println("BUG: after mem_zero(Triple): non-zero")
+    }
+
+    // Test 3: mem_zero on a primitive type returns the zero value.
+    let zero_int = @intrinsic("mem_zero", i64)
+    if zero_int == 0 {
+        io.println("mem_zero(i64) is zero")
+    } else {
+        io.println("BUG: mem_zero(i64) non-zero")
+    }
+
+    return 0
+}

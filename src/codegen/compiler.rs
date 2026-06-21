@@ -379,6 +379,7 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function("aion_get_argc", i64_t.fn_type(&[], false), None); 
         self.module.add_function("aion_get_argv_index", pt.fn_type(&[i64_t.into()], false), None); 
         self.module.add_function("aion_malloc", pt.fn_type(&[i64_t.into()], false), None); 
+        self.module.add_function("aion_memzero", self.context.void_type().fn_type(&[pt.into(), i64_t.into()], false), None); 
         self.module.add_function("aion_str_at", i64_t.fn_type(&[pt.into(), i64_t.into()], false), None); 
         self.module.add_function("aion_str_substr", pt.fn_type(&[pt.into(), i64_t.into(), i64_t.into()], false), None); 
         self.module.add_function("aion_char_to_str", pt.fn_type(&[i64_t.into()], false), None);
@@ -1300,12 +1301,29 @@ impl<'ctx> Compiler<'ctx> {
                             Expression::TypeRef { name, .. } => name.clone(), 
                             _ => "i64".to_string() 
                         };
+                        if let Some(sn) = self.resolve_fuzzy_name(&self.struct_types, &tnm) {
+                            if let Some(st) = self.struct_types.get(&sn) {
+                                return Ok(st.const_zero().into());
+                            }
+                        }
+                        if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, &tnm) {
+                            if let Some(et) = self.enum_types.get(&en) {
+                                return Ok(et.const_zero().into());
+                            }
+                        }
                         let lt = self.aion_type_to_llvm(&tnm);
                         if lt.is_pointer_type() { return Ok(lt.into_pointer_type().const_null().into()); }
                         if lt.is_int_type() { return Ok(lt.into_int_type().const_zero().into()); }
                         if lt.is_float_type() { return Ok(lt.into_float_type().const_zero().into()); }
                     }
                     return Ok(pt.const_null().into());
+                }
+                if an == "mem_zero_ptr" && aa.len() >= 2 {
+                    let ptr = self.compile_expr(&aa[0], variables, function)?.into_pointer_value();
+                    let size = self.compile_expr(&aa[1], variables, function)?.into_int_value();
+                    let fnc = self.module.get_function("aion_memzero").ok_or_else(|| CompileError::Internal("aion_memzero not found".to_string()))?;
+                    self.builder.build_call(fnc, &[ptr.into(), size.into()], "memzero")?;
+                    return Ok(i64_t.const_zero().into());
                 }
                 let lnm = match an.as_str() { "str_len" => "strlen".to_string(), "str_ptr" => return Ok(self.compile_expr(&aa[0], variables, function)?), "fs_read_to_string" => "aion_read_file".to_string(), "fs_write" => "aion_write_file".to_string(), "fs_append" => "aion_append_file".to_string(), "exit" => "exit".to_string(), _ if an.starts_with("libc.") => an.replace("libc.", ""), _ => format!("aion_{}", an) };
                 let fv = self.module.get_function(&lnm).ok_or_else(|| CompileError::Internal(format!("Intrinsic '{}' not found", lnm)))?; 

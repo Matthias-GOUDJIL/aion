@@ -191,14 +191,10 @@ impl HashMap<V> {
             }
             i = i + 1;
         }
-        // Allocate a fresh bucket array.  Using mem_zero here is not
-        // sufficient because the intrinsic only emits a single pointer
-        // constant (8 bytes) while Entry<V> occupies 24 bytes at the
-        // LLVM level.  A fresh GC_malloc is properly zero-initialised.
-        unsafe { core.heap.dealloc(self.buckets as *u8); }
-        self.cap = 16;
-        let buckets = unsafe { core.heap.alloc(self.cap * 8) as *Entry<V> };
-        self.buckets = buckets;
+        // Zero the bucket array in-place. GC_malloc already returns zeroed
+        // memory, but after insert/removal the buckets may contain stale
+        // pointers. aion_memzero properly zeroes all cap*8 bytes.
+        unsafe { @intrinsic("mem_zero_ptr", self.buckets as *u8, self.cap * 8) };
         self.len = 0;
     }
 
