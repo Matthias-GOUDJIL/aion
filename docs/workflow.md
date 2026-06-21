@@ -61,9 +61,20 @@
 - Examples: `fix/issue-61-method-resolution`, `feat/hashmap-utils`
 
 **Labels** (apply to all issues):
-- Priority: `priority-critical`, `priority-high`, `priority-medium`, `priority-low`
-- Type: `type-bug`, `type-feature`, `type-refactor`
-- Area: `area-compiler`, `area-codegen`, `area-parser`, `area-checker`, `area-stdlib`, `area-type-system`, `area-testing`, `area-ci`, `area-docs`
+
+| Category | Labels |
+|----------|--------|
+| Priority | `priority-critical`, `priority-high`, `priority-medium`, `priority-low` |
+| Type | `type-bug`, `type-feature`, `type-refactor`, `type-docs`, `type-chore`, `type-test` |
+| Area | `area-compiler`, `area-lexer`, `area-parser`, `area-checker`, `area-codegen`, `area-type-system`, `area-stdlib`, `area-runtime`, `area-transpiler`, `area-testing`, `area-ci`, `area-docs` |
+| Phase | `phase-1`, `phase-2`, `phase-3` |
+| Meta | `good first issue`, `help wanted`, `duplicate`, `invalid`, `wontfix` |
+
+**Label rules**:
+- Every issue must have exactly one **priority** and exactly one **type** label.
+- Every issue must have at least one **area** label.
+- **phase** labels are optional — apply only when the issue maps to a ROADMAP phase.
+- **Meta** labels are optional overlays (e.g. `good first issue` + `type-feature`).
 
 ## Docker Cache Gotcha
 
