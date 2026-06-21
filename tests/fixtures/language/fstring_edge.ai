@@ -1,0 +1,28 @@
+fn main() {
+    let name = "Aion"
+    
+    // Empty f-string
+    let empty = f""
+    io.println(empty)
+    
+    // No interpolation — literal-only f-string
+    let literal = f"just text"
+    io.println(literal)
+    
+    // Expression-only f-string
+    let only_expr = f"{name}"
+    io.println(only_expr)
+    
+    // Multiple consecutive interpolations
+    let a = "X"
+    let b = "Y"
+    let multi = f"{a}{b}{a}"
+    io.println(multi)
+    
+    // Arithmetic inside interpolation
+    let n = string.from_int(2 + 3)
+    let arith = f"sum is {n}"
+    io.println(arith)
+    
+    return 0
+}

@@ -1,0 +1,7 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/fstring_exprs\")"
+---
+Greeting: Hi Aion!
+trimmed: hello
+count=42

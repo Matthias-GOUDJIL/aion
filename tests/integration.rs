@@ -59,6 +59,12 @@ fn test_unsafe_check_fail() { assert_snapshot!(run_aion_test("language/unsafe_ch
 #[test]
 fn test_fstring_interpolation() { assert_snapshot!(run_aion_test("language/fstring_interpolation")); }
 #[test]
+fn test_fstring_edge() { assert_snapshot!(run_aion_test("language/fstring_edge")); }
+#[test]
+fn test_fstring_exprs() { assert_snapshot!(run_aion_test("language/fstring_exprs")); }
+#[test]
+fn test_fstring_nested_braces() { assert_snapshot!(run_aion_test("language/fstring_nested_braces")); }
+#[test]
 fn test_operators() { assert_snapshot!(run_aion_test("language/operators")); }
 #[test]
 fn test_unsafe_block() { assert_snapshot!(run_aion_test("language/unsafe_block")); }
