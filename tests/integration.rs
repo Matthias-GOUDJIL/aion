@@ -150,6 +150,8 @@ fn test_vector_utils() { assert_snapshot!(run_aion_test("stdlib/vector_utils"));
 #[test]
 fn test_vector_contains() { assert_snapshot!(run_aion_test("stdlib/vector_contains")); }
 #[test]
+fn test_vector_edge() { assert_snapshot!(run_aion_test("stdlib/vector_edge")); }
+#[test]
 fn test_hashmap_basic() { assert_snapshot!(run_aion_test("stdlib/hashmap_basic")); }
 #[test]
 fn test_hashmap_resize_hashset() { assert_snapshot!(run_aion_test("stdlib/hashmap_resize_hashset")); }

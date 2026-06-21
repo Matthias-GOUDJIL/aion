@@ -1,0 +1,82 @@
+use std.collections.vector
+use std.string
+
+fn main() {
+    let mut v = Vector<i64>.new()
+
+    // Edge: operations on empty vector
+    if v.first().is_none() {
+        io.println("first on empty: None")
+    }
+    if v.last().is_none() {
+        io.println("last on empty: None")
+    }
+    if v.remove(0).is_none() {
+        io.println("remove on empty: None")
+    }
+    if v.contains(42) == false {
+        io.println("contains on empty: false")
+    }
+
+    // Edge: insert at front (index 0) — all elements shift
+    v.push(10)
+    v.push(20)
+    v.push(30)
+    v.insert(0, 5)
+    let e0 = v.get(0).unwrap()
+    let e1 = v.get(1).unwrap()
+    let e2 = v.get(2).unwrap()
+    let e3 = v.get(3).unwrap()
+    io.println(string.from_int(e0))
+    io.println(string.from_int(e1))
+    io.println(string.from_int(e2))
+    io.println(string.from_int(e3))
+
+    // Edge: insert at end (index == len) — no shift, behaves like push
+    let cur_len = v.len()
+    v.insert(cur_len, 99)
+    let last_elem = v.last().unwrap()
+    io.println(string.from_int(last_elem))
+
+    // Edge: remove at last index — no shift
+    let before_len = v.len()
+    let removed_last = v.remove(before_len - 1).unwrap()
+    io.println(string.from_int(removed_last))
+    let after_len = v.len()
+    io.println(string.from_int(after_len))
+
+    // Edge: swap with same index — no-op
+    v.swap(0, 0)
+    let same = v.get(0).unwrap()
+    io.println(string.from_int(same))
+
+    // Edge: out-of-bounds operations are no-ops
+    v.set(999, 42)
+    let still_ok = v.get(0).unwrap()
+    io.println(string.from_int(still_ok))
+    v.swap(0, 999)
+    let after_bad_swap = v.get(0).unwrap()
+    io.println(string.from_int(after_bad_swap))
+    if v.remove(999).is_none() {
+        io.println("remove OOB: None")
+    }
+
+    // Edge: String vector insert/remove — pointer types, not i64
+    let mut sv = Vector<String>.new()
+    sv.push("alpha")
+    sv.push("gamma")
+    sv.insert(1, "beta")
+    let s0 = sv.get(0).unwrap()
+    let s1 = sv.get(1).unwrap()
+    let s2 = sv.get(2).unwrap()
+    io.println(s0)
+    io.println(s1)
+    io.println(s2)
+
+    let removed_str = sv.remove(0).unwrap()
+    io.println(removed_str)
+    let after_str = sv.get(0).unwrap()
+    io.println(after_str)
+
+    return 0
+}
