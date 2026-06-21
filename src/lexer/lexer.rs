@@ -261,9 +261,15 @@ impl<'a> Lexer<'a> {
 
     fn read_fstring(&mut self) -> TokenKind {
         let mut s = String::new();
+        let mut depth: i32 = 0;
         while let Some(&ch) = self.input.peek() {
-            if ch == '"' { self.read_char(); break; }
-            if let Some(c) = self.read_char() { s.push(c); }
+            if ch == '"' && depth == 0 { self.read_char(); break; }
+            let c = self.read_char().unwrap();
+            if c == '{' { depth += 1; }
+            else if c == '}' {
+                if depth > 0 { depth -= 1; }
+            }
+            s.push(c);
         }
         TokenKind::FString(s)
     }

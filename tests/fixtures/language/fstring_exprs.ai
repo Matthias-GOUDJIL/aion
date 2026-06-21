@@ -1,0 +1,23 @@
+use std.string
+
+fn make_greeting(who: String) -> String {
+    return f"Hi {who}!"
+}
+
+fn main() {
+    // Function call returning a String inside interpolation
+    let g = f"Greeting: {make_greeting("Aion")}"
+    io.println(g)
+    
+    // Method call inside interpolation
+    let s = "  hello  "
+    let trimmed = f"trimmed: {string.trim(s)}"
+    io.println(trimmed)
+    
+    // string.from_int inside interpolation
+    let count = 42
+    let with_int = f"count={string.from_int(count)}"
+    io.println(with_int)
+    
+    return 0
+}

@@ -1251,7 +1251,61 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fstring(&mut self, s: String, span: Span) -> Expression {
-        Expression::String(s, span)
+        enum Seg { Lit(String), Expr(String) }
+        let mut segments: Vec<Seg> = Vec::new();
+        let mut cur = String::new();
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '{' {
+                if !cur.is_empty() { segments.push(Seg::Lit(std::mem::take(&mut cur))); }
+                let mut depth = 1;
+                let mut expr_src = String::new();
+                while let Some(&nc) = chars.peek() {
+                    if nc == '{' { depth += 1; expr_src.push(nc); chars.next(); }
+                    else if nc == '}' {
+                        chars.next();
+                        depth -= 1;
+                        if depth == 0 { break; }
+                        expr_src.push('}');
+                    } else {
+                        expr_src.push(nc);
+                        chars.next();
+                    }
+                }
+                segments.push(Seg::Expr(expr_src));
+            } else if c == '}' {
+                cur.push(c);
+            } else {
+                cur.push(c);
+            }
+        }
+        if !cur.is_empty() { segments.push(Seg::Lit(cur)); }
+
+        let plus_tok = Token::new(TokenKind::Plus, span.line, span.col);
+        let mut result: Option<Expression> = None;
+        for seg in segments {
+            let part = match seg {
+                Seg::Lit(lit) => Expression::String(lit, span),
+                Seg::Expr(src) => self.parse_fstring_expr(&src, span),
+            };
+            result = Some(match result {
+                None => part,
+                Some(left) => Expression::Infix {
+                    left: Box::new(left),
+                    operator: plus_tok.clone(),
+                    right: Box::new(part),
+                    span,
+                },
+            });
+        }
+        result.unwrap_or_else(|| Expression::String(String::new(), span))
+    }
+
+    fn parse_fstring_expr(&mut self, src: &str, _span: Span) -> Expression {
+        let leaked: &'static str = Box::leak(src.to_string().into_boxed_str());
+        let lexer = Lexer::new(leaked);
+        let mut sub = Parser::new(lexer);
+        sub.parse_expression()
     }
 }
 
