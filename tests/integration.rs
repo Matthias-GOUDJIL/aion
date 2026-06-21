@@ -165,6 +165,8 @@ fn test_sql_advanced() { assert_snapshot!(run_aion_test("stdlib/sql_advanced"));
 fn test_json_parse_basic() { assert_snapshot!(run_aion_test("stdlib/json_parse_basic")); }
 #[test]
 fn test_memzero_struct() { assert_snapshot!(run_aion_test("stdlib/memzero_struct")); }
+#[test]
+fn test_memzero_typed() { assert_snapshot!(run_aion_test("stdlib/memzero_typed")); }
 
 // --- Compiler Tests ---
 
