@@ -5,7 +5,10 @@
 - **Strict Conciseness**: Respond directly and without unnecessary politeness to save output tokens. Get straight to the point (no "hello", "I will do it", or "here is").
 - **Quiet Shell Commands**: Always use quiet flags (`-q`, `--quiet`, or `> /dev/null`) for shell commands when detailed output is not needed (e.g. dependency installation, successful builds).
 - **Doc Freshness**: When modifying code behavior, architecture, or workflow, update the corresponding `docs/*.md` file in the same commit. Never leave stale docs — they will mislead future sessions.
-- **Test Coverage**: When adding or changing compiler/lexer/parser/codegen behavior, add or update test fixtures under `tests/fixtures/` covering the new behavior (nominal case + edge cases). Run `INSTA_UPDATE=always cargo test` to generate snapshots, then verify their content before committing. Never ship a behavior change without an accompanying test.
+- **Test Coverage**: When adding or changing compiler/lexer/parser/codegen behavior, add or update test fixtures under `tests/fixtures/` covering the new behavior. Run `INSTA_UPDATE=always cargo test` to generate snapshots, then verify their content before committing. Never ship a behavior change without an accompanying test. Each fixture must cover:
+  - **Nominal case**: the happy path — normal inputs producing expected output.
+  - **Edge cases**: empty inputs, boundary indices (0, len-1, len), out-of-bounds, type variations (i64 vs String vs struct), no-op conditions (e.g. `swap(i, i)`), and any overflow/truncation scenarios relevant to the feature.
+  - **Error cases**: where applicable — invalid inputs should produce the documented error, not a crash. Snapshot the stderr for expected-failure tests.
 - **Never run git add, commit, or push without explicit user approval**.
 
 ## Project Overview
