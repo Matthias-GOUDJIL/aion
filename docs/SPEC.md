@@ -52,7 +52,10 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   before LLVM generation. Generic params are substituted via
   `<Param>`-pattern matching to avoid corrupting nested type names.
 - **Pointers**: `*T` for explicit pointer types. All complex types are
-  passed by reference.
+  passed by reference. Dereferencing `*T` yields `T` in the type checker,
+  so `(*p).field` works for `p: *Struct` (member access also resolves when
+  the pointee is a struct placeholder, e.g. `*Triple`). `*i64` derefs to
+  `i64`; member access on a non-struct deref is a type error.
 - **Fuzzy resolution**: if a simple name is not found, the compiler
   searches for qualified names ending with that suffix (e.g. `args` →
   `std.env.args`). Avoids complex AST rewriting for imports.

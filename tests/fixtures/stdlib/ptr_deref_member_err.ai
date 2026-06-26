@@ -1,0 +1,8 @@
+use core.heap
+
+fn main() {
+    let p = unsafe { core.heap.alloc(8) as *i64 }
+    unsafe { *p = 11 }
+    let v = unsafe { (*p).foo }
+    return 0
+}

@@ -1,0 +1,56 @@
+use std.string
+use core.heap
+
+struct Triple {
+    a: i64,
+    b: i64,
+    c: i64,
+}
+
+struct Single {
+    only: i64,
+}
+
+fn main() {
+    let p = unsafe { core.heap.alloc(24) as *Triple }
+    unsafe { *p = Triple { a: 7, b: 8, c: 9 } }
+
+    let a = unsafe { (*p).a }
+    let b = unsafe { (*p).b }
+    let c = unsafe { (*p).c }
+
+    if a == 7 {
+        io.println("(*p).a == 7")
+    } else {
+        io.println("BUG: (*p).a != 7")
+    }
+    if b == 8 {
+        io.println("(*p).b == 8")
+    } else {
+        io.println("BUG: (*p).b != 8")
+    }
+    if c == 9 {
+        io.println("(*p).c == 9")
+    } else {
+        io.println("BUG: (*p).c != 9")
+    }
+
+    unsafe { (*p).b = 42 }
+    let b2 = unsafe { (*p).b }
+    if b2 == 42 {
+        io.println("write (*p).b = 42 ok")
+    } else {
+        io.println("BUG: write (*p).b failed")
+    }
+
+    let s = unsafe { core.heap.alloc(8) as *Single }
+    unsafe { *s = Single { only: 123 } }
+    let so = unsafe { (*s).only }
+    if so == 123 {
+        io.println("single-field (*s).only == 123")
+    } else {
+        io.println("BUG: single-field (*s).only != 123")
+    }
+
+    return 0
+}
