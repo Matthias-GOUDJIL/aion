@@ -114,7 +114,7 @@ When a ROADMAP item has no issue yet and you are asked to work on it, **open the
 Each stdlib module has a `SPEC.md` co-located with its source code. This documents purpose, API, language requirements, known limitations, and design decisions. Always read the module's `SPEC.md` before modifying it.
 
 Current module specs:
-- `stdlib/std/json/SPEC.md` — JSON parser/serializer (in progress)
+- `stdlib/std/json_SPEC.md` — JSON parser/serializer (in progress)
 
 **Naming convention**: `stdlib/std/{module}/SPEC.md` (e.g. `stdlib/std/collections/SPEC.md`). If a module is a single file at the parent level (`stdlib/std/{module}.ai`), its spec lives at `stdlib/std/{module}_SPEC.md` (see issue #41 for the json layout inconsistency).
 

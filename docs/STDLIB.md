@@ -146,7 +146,7 @@ The core of Aion.
 
 ### `std.json` **[partial]**
 JSON parsing and stringification. Primitives only — array/object parsing
-blocked by type checker (see `stdlib/std/json/SPEC.md`).
+blocked by type checker (see `stdlib/std/json_SPEC.md`).
 
 ### `std.encoding`
 - **`hex`** **[stub]** — Hex encoding.

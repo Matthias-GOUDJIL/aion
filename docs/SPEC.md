@@ -175,7 +175,7 @@ The Aion-written compiler lives in `compiler/`:
 - f-string interpolation requires explicit `string.from_*` wrapping for
   non-String values.
 - `std.json` cannot parse arrays or objects (type checker limitation on
-  non-generic `Vector<Value>` — see `stdlib/std/json/SPEC.md`).
+  non-generic `Vector<Value>` — see `stdlib/std/json_SPEC.md`).
 - Integer widths are not distinguished (only `i64`); `i8/i32/u64` are
   not yet supported (#52).
 
