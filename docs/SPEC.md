@@ -83,7 +83,7 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   via `aion_char_to_str` — do not use this for integer formatting.
 - **Comparison**: `==` and `!=` compare string content via `aion_str_eq`
   when both operands are `String`; otherwise pointer comparison.
-- **`mem_zero`**: `@intrinsic("mem_zero")` returns a null pointer (8 bytes). `@intrinsic("mem_zero", Type)` returns a properly-sized zero constant for struct/enum types by looking up the actual LLVM struct type. For primitives, returns the zero value of that type.
+- **`mem_zero`**: `@intrinsic("mem_zero")` (no argument) returns a null pointer (8 bytes) — used to null-init pointer slots. `@intrinsic("mem_zero", Type)` returns the zero value of `Type` in the language's native representation: for struct/enum types it returns a **boxed pointer** to a freshly heap-allocated, zeroed struct/enum (same convention as `StructInst`/`EnumInst`), so `*p = @intrinsic("mem_zero", T)` then `(*p).field` is consistent; for pointer types it returns a null pointer; for primitives it returns the zero value of that type.
 - **`mem_zero_ptr`**: `@intrinsic("mem_zero_ptr", ptr, size)` calls `aion_memzero` to zero `size` bytes of existing memory. Used for in-place zeroing of bucket arrays and reusable buffers.
 - **`mem_is_null`**: `@intrinsic("mem_is_null", ptr)` returns `true` if the pointer is null.
 - **`sizeof`**: `@intrinsic("sizeof", Type)` returns the LLVM size of the type in bytes. Works on both variable instances and type names.

@@ -1,0 +1,10 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/ptr_memzero_field\")"
+---
+after mem_zero: all fields 0
+write after mem_zero: (*p).b == 42
+write isolated: (*p).a still 0
+reassign after mem_zero: ok
+single-field after mem_zero: (*s).only == 0
+mem_zero(i64) still zero

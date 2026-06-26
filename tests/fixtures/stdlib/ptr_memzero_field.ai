@@ -1,0 +1,69 @@
+use std.string
+use core.heap
+
+struct Triple {
+    a: i64,
+    b: i64,
+    c: i64,
+}
+
+struct Single {
+    only: i64,
+}
+
+fn main() {
+    let p = unsafe { core.heap.alloc(24) as *Triple }
+    unsafe { *p = Triple { a: 7, b: 8, c: 9 } }
+
+    unsafe { *p = @intrinsic("mem_zero", Triple) }
+    let za = unsafe { (*p).a }
+    let zb = unsafe { (*p).b }
+    let zc = unsafe { (*p).c }
+    if za == 0 && zb == 0 && zc == 0 {
+        io.println("after mem_zero: all fields 0")
+    } else {
+        io.println("BUG: fields not all 0")
+    }
+
+    unsafe { (*p).b = 42 }
+    let wb = unsafe { (*p).b }
+    if wb == 42 {
+        io.println("write after mem_zero: (*p).b == 42")
+    } else {
+        io.println("BUG: write after mem_zero failed")
+    }
+    let wa = unsafe { (*p).a }
+    if wa == 0 {
+        io.println("write isolated: (*p).a still 0")
+    } else {
+        io.println("BUG: (*p).a not 0 after isolated write")
+    }
+
+    unsafe { *p = Triple { a: 100, b: 200, c: 300 } }
+    let ra = unsafe { (*p).a }
+    let rc = unsafe { (*p).c }
+    if ra == 100 && rc == 300 {
+        io.println("reassign after mem_zero: ok")
+    } else {
+        io.println("BUG: reassign after mem_zero failed")
+    }
+
+    let s = unsafe { core.heap.alloc(8) as *Single }
+    unsafe { *s = Single { only: 5 } }
+    unsafe { *s = @intrinsic("mem_zero", Single) }
+    let so = unsafe { (*s).only }
+    if so == 0 {
+        io.println("single-field after mem_zero: (*s).only == 0")
+    } else {
+        io.println("BUG: single-field after mem_zero != 0")
+    }
+
+    let zi = @intrinsic("mem_zero", i64)
+    if zi == 0 {
+        io.println("mem_zero(i64) still zero")
+    } else {
+        io.println("BUG: mem_zero(i64) non-zero")
+    }
+
+    return 0
+}
