@@ -436,13 +436,33 @@ impl<'ctx> Compiler<'ctx> {
         
         for s in body {
             match s {
-                Statement::Let { name, value, .. } => {
+                Statement::Let { name, value, explicit_type, .. } => {
                     let v = self.compile_expr(value, variables, function)?;
-                    let vt = v.get_type();
-                    let vtn = self.get_expr_type_name(value, variables).replace(" ", "");
-                    let a = self.builder.build_alloca(vt, name)?;
-                    self.builder.build_store(a, v)?;
-                    variables.insert(name.clone(), (a, vt, vtn));
+                    let inferred_vt = v.get_type();
+                    let inferred_vtn = self.get_expr_type_name(value, variables).replace(" ", "");
+                    // An explicit type annotation (`let x: T = expr`) wins over inference
+                    // for the variable's stored type-name (used by `get_expr_type_name`
+                    // downstream) and for the LLVM alloca type when the inferred type
+                    // is ambiguous (e.g. intrinsics that lower to i64 but carry a
+                    // struct/pointer meaning, or pointer-vs-int casts). #78.
+                    if let Some(et) = explicit_type {
+                        let et_clean = et.replace(" ", "");
+                        let llvm_t = self.aion_type_to_llvm(&et_clean);
+                        let final_v = if llvm_t != inferred_vt {
+                            if llvm_t.is_pointer_type() && v.is_int_value() {
+                                self.builder.build_int_to_ptr(v.into_int_value(), llvm_t.into_pointer_type(), "let_coerce")?.into()
+                            } else if llvm_t.is_int_type() && v.is_pointer_value() {
+                                self.builder.build_ptr_to_int(v.into_pointer_value(), llvm_t.into_int_type(), "let_coerce")?.into()
+                            } else { v }
+                        } else { v };
+                        let a = self.builder.build_alloca(llvm_t, name)?;
+                        self.builder.build_store(a, final_v)?;
+                        variables.insert(name.clone(), (a, llvm_t, et_clean));
+                    } else {
+                        let a = self.builder.build_alloca(inferred_vt, name)?;
+                        self.builder.build_store(a, v)?;
+                        variables.insert(name.clone(), (a, inferred_vt, inferred_vtn));
+                    }
                     lv = None;
                 },
                 Statement::Assignment { target, value, .. } => { 

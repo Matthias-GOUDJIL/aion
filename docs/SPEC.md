@@ -121,6 +121,19 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
   (register prototypes, then compile bodies) enables forward references.
   Tested up to 1B+ recursion depth (limited only by the OS 8MB stack).
 
+### Variable Bindings
+
+- `let name = expr` — inferred-type binding (default).
+- `let name: Type = expr` — explicit type annotation. The annotation
+  wins over inference for the variable's stored type and the LLVM alloca
+  type, disambiguating cases where inference is ambiguous (e.g.
+  `let p: *Triple = unsafe { core.heap.alloc(24) as *Triple }`,
+  `let m: HashMap<String> = ...`, intrinsics that lower to `i64` but
+  carry a struct/pointer meaning). The value is coerced to the annotated
+  LLVM type when needed (int↔pointer). #78.
+- `let mut name = expr` / `let mut name: Type = expr` — mutable binding.
+- Assignment is a statement (`name = expr`), not an expression.
+
 ## 6. Concurrency & AI-Native Features
 
 - **Threading**: 1:1 via `pthread`. `spawn { ... }` creates detached

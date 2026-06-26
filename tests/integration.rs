@@ -91,6 +91,8 @@ fn test_generics_multi_arg() { assert_snapshot!(run_aion_test("language/generics
 #[test]
 fn test_generics_multi_arg_err() { assert_snapshot!(run_aion_test("language/generics_multi_arg_err")); }
 #[test]
+fn test_let_type_annotation() { assert_snapshot!(run_aion_test("language/let_type_annotation")); }
+#[test]
 fn test_method_chaining() { assert_snapshot!(run_aion_test("language/method_chaining")); }
 #[test]
 fn test_short_circuit() { assert_snapshot!(run_aion_test("language/short_circuit")); }

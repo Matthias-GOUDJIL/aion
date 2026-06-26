@@ -1,0 +1,9 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/let_type_annotation\")"
+---
+let x: i64 = 42 ok
+let p: *Triple -> (*p).a ok
+let flag: bool = true ok
+hello
+let mut y: i64 -> mutate ok

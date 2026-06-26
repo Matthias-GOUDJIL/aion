@@ -1,0 +1,50 @@
+use std.string
+use core.heap
+
+struct Triple {
+    a: i64,
+    b: i64,
+    c: i64,
+}
+
+fn main() {
+    // Nominal: primitive annotation.
+    let x: i64 = 42
+    if x == 42 {
+        io.println("let x: i64 = 42 ok")
+    } else {
+        io.println("BUG let x: i64")
+    }
+
+    // Edge: pointer annotation disambiguates the int-typed alloc result.
+    let p: *Triple = unsafe { core.heap.alloc(24) as *Triple }
+    unsafe { *p = Triple { a: 1, b: 2, c: 3 } }
+    let a = unsafe { (*p).a }
+    if a == 1 {
+        io.println("let p: *Triple -> (*p).a ok")
+    } else {
+        io.println("BUG let p: *Triple")
+    }
+
+    // Edge: annotated bool (lowers to i64).
+    let flag: bool = true
+    if flag {
+        io.println("let flag: bool = true ok")
+    } else {
+        io.println("BUG let flag: bool")
+    }
+
+    // Edge: explicit String annotation on a literal.
+    let s: String = "hello"
+    io.println(s)
+
+    let mut y: i64 = 10
+    y = y + 5
+    if y == 15 {
+        io.println("let mut y: i64 -> mutate ok")
+    } else {
+        io.println("BUG let mut y: i64")
+    }
+
+    return 0
+}

@@ -2,7 +2,7 @@ use super::{Span, Expression};
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    Let { name: String, value: Expression, intent: Option<String>, is_mut: bool, span: Span },
+    Let { name: String, value: Expression, explicit_type: Option<String>, intent: Option<String>, is_mut: bool, span: Span },
     Return { value: Expression, intent: Option<String>, span: Span },
     ExpressionStmt(Expression, Span),
     If { condition: Expression, then_branch: Vec<Statement>, else_branch: Option<Vec<Statement>>, span: Span },
