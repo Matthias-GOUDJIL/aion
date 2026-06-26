@@ -1,0 +1,7 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/generics_substring\")"
+---
+pair_size: @sizeof(Pair) == 16
+tensor_size: @sizeof(Tensor) == 32
+alloc_slot<i64>: pointer-to-param deref ok
