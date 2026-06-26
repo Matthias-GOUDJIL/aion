@@ -49,8 +49,12 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
 - **Enums** compile as `{ i64, [64 x i8] }` — index 0 = Tag, index 1 =
   Payload (64 bytes). Tags: `Some/Ok = 0`, `None/Err = 1`.
 - **Generics**: monomorphization at compile time. Full type substitution
-  before LLVM generation. Generic params are substituted via
-  `<Param>`-pattern matching to avoid corrupting nested type names.
+  before LLVM generation. Generic params are substituted via token-aware
+  identifier matching (`substitute_type_string`) to avoid corrupting
+  nested type names (param `T` no longer clobbers `Tensor`). Explicit
+  instantiation supports single- and multi-arg calls (`foo<A, B>(...)`)
+  and nested arg lists (`Vector<HashMap<K, V>>`); the comma separating
+  args is recognized inside the angle list.
 - **Pointers**: `*T` for explicit pointer types. All complex types are
   passed by reference. Dereferencing `*T` yields `T` in the type checker,
   so `(*p).field` works for `p: *Struct` (member access also resolves when

@@ -1,0 +1,11 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/generics_multi_arg\")"
+---
+first<i64, String>: 11
+hi
+both<i64, String>: 42
+middle
+identity<i64>(99): 99
+lt: 3 < 5
+lt-in-call-args: max(true, false) == 1

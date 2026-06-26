@@ -1,0 +1,80 @@
+use std.string
+
+// Two-parameter generics: explicit instantiation `foo<A, B>(...)` previously
+// failed to parse because is_generic_args_ahead aborted on Comma (#91).
+fn first<K, V>(k: K, v: V) -> K {
+    return k
+}
+
+fn second<K, V>(k: K, v: V) -> V {
+    return v
+}
+
+fn both<K, V>(k: K, v: V) -> i64 {
+    let _ = k
+    let _ = v
+    return 42
+}
+
+// Three-parameter generic — boundary for the comma scan.
+fn pick3<A, B, C>(a: A, b: B, c: C) -> B {
+    return b
+}
+
+// Single-param generic — regression guard for the comma-free path.
+fn identity<T>(x: T) -> T {
+    return x
+}
+
+// Helper whose call args use `<` separated by commas — the parser must treat
+// these as less-than comparisons, NOT as a generic-args list (RParen aborts the
+// generic scan, so removing Comma from the abort set must not regress this).
+fn max(a: i64, b: i64) -> i64 {
+    if a > b { return a }
+    return b
+}
+
+fn main() {
+    // Nominal: 2-param explicit instantiation.
+    let a = first<i64, String>(11, "hi")
+    if a == 11 {
+        io.println("first<i64, String>: 11")
+    } else {
+        io.println("BUG first")
+    }
+
+    let b = second<i64, String>(11, "hi")
+    io.println(b)
+
+    let r = both<i64, String>(11, "hi")
+    if r == 42 {
+        io.println("both<i64, String>: 42")
+    } else {
+        io.println("BUG both")
+    }
+
+    // Edge: 3-param explicit instantiation (boundary for the comma scan).
+    let p = pick3<i64, String, bool>(1, "middle", false)
+    io.println(p)
+
+    // Edge: single-arg generic still parses (comma-free).
+    let id = identity<i64>(99)
+    if id == 99 {
+        io.println("identity<i64>(99): 99")
+    } else {
+        io.println("BUG identity regression")
+    }
+
+    // Regression: less-than inside comma-separated call args parses as comparison.
+    if 3 < 5 {
+        io.println("lt: 3 < 5")
+    }
+    let m = max(1 < 2, 9 < 3)
+    if m == 1 {
+        io.println("lt-in-call-args: max(true, false) == 1")
+    } else {
+        io.println("BUG lt-in-call-args")
+    }
+
+    return 0
+}

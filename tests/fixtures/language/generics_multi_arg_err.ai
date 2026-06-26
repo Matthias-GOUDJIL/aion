@@ -1,0 +1,9 @@
+fn make<K, V>(k: K) -> K { return k }
+
+// Unterminated generic-args list (no closing `>` before end of expression):
+// is_generic_args_ahead aborts on EOF/Semicolon and treats `<` as less-than,
+// yielding a clean type-checker error rather than a crash.
+fn main() {
+    let z = make<i64,
+    return 0
+}

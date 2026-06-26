@@ -87,6 +87,10 @@ fn test_generics_local() { assert_snapshot!(run_aion_test("language/generics_loc
 #[test]
 fn test_generics_substring() { assert_snapshot!(run_aion_test("language/generics_substring")); }
 #[test]
+fn test_generics_multi_arg() { assert_snapshot!(run_aion_test("language/generics_multi_arg")); }
+#[test]
+fn test_generics_multi_arg_err() { assert_snapshot!(run_aion_test("language/generics_multi_arg_err")); }
+#[test]
 fn test_method_chaining() { assert_snapshot!(run_aion_test("language/method_chaining")); }
 #[test]
 fn test_short_circuit() { assert_snapshot!(run_aion_test("language/short_circuit")); }

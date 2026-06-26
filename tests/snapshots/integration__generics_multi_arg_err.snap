@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/generics_multi_arg_err\")"
+---
+Incompatible operator Lt for types Function { is_unsafe: false, params: [Placeholder("K")], return_type: Placeholder("K") } and Unknown
