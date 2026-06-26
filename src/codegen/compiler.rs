@@ -157,46 +157,38 @@ impl<'ctx> Compiler<'ctx> {
                 self.substitute_types_in_expr(left, ph, conc); 
                 self.substitute_types_in_expr(right, ph, conc); 
             },
-            Expression::Call { function, generic_args, arguments, .. } => { 
-                for i in 0..ph.len() { 
-                    *function = function.replace(&ph[i], &conc[i]); 
-                    for arg in generic_args.iter_mut() { *arg = arg.replace(&ph[i], &conc[i]); } 
-                } 
-                for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); } 
+            Expression::Call { function, generic_args, arguments, .. } => {
+                *function = Self::substitute_type_string(function, ph, conc);
+                for arg in generic_args.iter_mut() { *arg = Self::substitute_type_string(arg, ph, conc); }
+                for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); }
             },
-            Expression::EnumInst { name, generic_args, arguments, .. } => { 
-                for i in 0..ph.len() { 
-                    *name = name.replace(&ph[i], &conc[i]); 
-                    for arg in generic_args.iter_mut() { *arg = arg.replace(&ph[i], &conc[i]); } 
-                } 
-                for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); } 
+            Expression::EnumInst { name, generic_args, arguments, .. } => {
+                *name = Self::substitute_type_string(name, ph, conc);
+                for arg in generic_args.iter_mut() { *arg = Self::substitute_type_string(arg, ph, conc); }
+                for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); }
             },
-            Expression::StructInst { name, generic_args, fields, .. } => { 
-                for i in 0..ph.len() { 
-                    *name = name.replace(&ph[i], &conc[i]); 
-                    for arg in generic_args.iter_mut() { *arg = arg.replace(&ph[i], &conc[i]); } 
-                } 
-                for (_, val) in fields { self.substitute_types_in_expr(val, ph, conc); } 
+            Expression::StructInst { name, generic_args, fields, .. } => {
+                *name = Self::substitute_type_string(name, ph, conc);
+                for arg in generic_args.iter_mut() { *arg = Self::substitute_type_string(arg, ph, conc); }
+                for (_, val) in fields { self.substitute_types_in_expr(val, ph, conc); }
             },
-            Expression::Cast { expr, target, .. } => { 
-                self.substitute_types_in_expr(expr, ph, conc); 
-                for i in 0..ph.len() { *target = target.replace(&ph[i], &conc[i]); } 
+            Expression::Cast { expr, target, .. } => {
+                self.substitute_types_in_expr(expr, ph, conc);
+                *target = Self::substitute_type_string(target, ph, conc);
             },
             Expression::Deref { expr, .. } => self.substitute_types_in_expr(expr, ph, conc),
-            Expression::Intrinsic { arguments, .. } => { 
-                for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); } 
+            Expression::Intrinsic { arguments, .. } => {
+                for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); }
             },
             Expression::Block { statements, .. } => self.substitute_types_in_body(statements, ph, conc),
-            Expression::Identifier(n, _) => { 
-                for i in 0..ph.len() { *n = n.replace(&ph[i], &conc[i]); } 
+            Expression::Identifier(n, _) => {
+                *n = Self::substitute_type_string(n, ph, conc);
             },
             Expression::MemberAccess { receiver, .. } => self.substitute_types_in_expr(receiver, ph, conc),
-            Expression::MethodCall { receiver, generic_args, arguments, .. } => { 
-                self.substitute_types_in_expr(receiver, ph, conc); 
-                for arg in generic_args { 
-                    for i in 0..ph.len() { *arg = arg.replace(&ph[i], &conc[i]); } 
-                } 
-                for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); } 
+            Expression::MethodCall { receiver, generic_args, arguments, .. } => {
+                self.substitute_types_in_expr(receiver, ph, conc);
+                for arg in generic_args { *arg = Self::substitute_type_string(arg, ph, conc); }
+                for arg in arguments { self.substitute_types_in_expr(arg, ph, conc); }
             },
             Expression::Match { condition, arms, .. } => {
                 self.substitute_types_in_expr(condition, ph, conc);
@@ -213,15 +205,14 @@ impl<'ctx> Compiler<'ctx> {
             let nn = format!("{}_{}", bn, ga.join("_"));
             if let Some(e) = self.module.get_function(&nn) { return Ok(e); }
             
-            f.name = nn.clone(); 
+            f.name = nn.clone();
             f.generic_params = vec![];
-            for i in 0..ph.len().min(ga.len()) { 
-                let p = &ph[i]; 
-                let c = &ga[i]; 
-                for (_, pt, _) in f.params.iter_mut() { *pt = pt.replace(p, c); } 
-                f.return_type = f.return_type.replace(p, c); 
+            let n = ph.len().min(ga.len());
+            for (_, pt, _) in f.params.iter_mut() {
+                *pt = Self::substitute_type_string(pt, &ph[..n], &ga[..n]);
             }
-            if let Some(body) = &mut f.body { self.substitute_types_in_body(body, &ph[..ph.len().min(ga.len())], &ga[..ph.len().min(ga.len())]); }
+            f.return_type = Self::substitute_type_string(&f.return_type, &ph[..n], &ga[..n]);
+            if let Some(body) = &mut f.body { self.substitute_types_in_body(body, &ph[..n], &ga[..n]); }
             
             self.decls.insert(nn.clone(), Declaration::Function(f.clone()));
             self.compiled_instances.insert(nn.clone()); 
@@ -1598,18 +1589,50 @@ impl<'ctx> Compiler<'ctx> {
         }
         "unknown".to_string()
     }
-    fn substitute_generic_params(res_type: &str, params: &[String], args: &[String]) -> String {
-        let mut result = res_type.to_string();
-        for (i, p) in params.iter().enumerate() {
-            if i < args.len() {
-                let arg = &args[i];
-                // Replace <Param> with <Arg> — handles Vector<Param>, Option<Param>, etc.
-                result = result.replace(&format!("<{}>", p), &format!("<{}>", arg));
-                // Handle standalone Param as the full return type (e.g. fn foo() -> T)
-                if result == *p { result = arg.clone(); }
+    /// Token-aware substitution of generic parameters in a type string.
+    ///
+    /// Scans `s` into identifier tokens ([A-Za-z0-9_.]) separated by punctuation
+    /// (`<`, `>`, `,`, `*`, whitespace, ...). A token is replaced with the
+    /// corresponding concrete arg IFF it EXACTLY equals a param name. This avoids
+    /// the naive `str::replace` substring bug where a param `P` corrupts a
+    /// concrete type `Pair` -> `i64air` (#67). Because Aion's type syntax only
+    /// ever uses a generic param as a standalone identifier (`T`, `*T`,
+    /// `Vector<T>`, `HashMap<K, V>`), exact-token matching is lossless.
+    ///
+    /// A token containing `.` (a qualified name like `std.foo`) is never
+    /// replaced: generic params are always bare identifiers, never dotted paths.
+    fn substitute_type_string(s: &str, params: &[String], args: &[String]) -> String {
+        if params.is_empty() || s.is_empty() { return s.to_string(); }
+        let mut out = String::with_capacity(s.len());
+        let mut tok = String::new();
+        let flush = |tok: &mut String, out: &mut String| {
+            if !tok.is_empty() {
+                let mut replaced = false;
+                for (i, p) in params.iter().enumerate() {
+                    if i < args.len() && *tok == *p {
+                        out.push_str(&args[i]);
+                        replaced = true;
+                        break;
+                    }
+                }
+                if !replaced { out.push_str(tok); }
+                tok.clear();
+            }
+        };
+        for ch in s.chars() {
+            if ch.is_alphanumeric() || ch == '_' || ch == '.' {
+                tok.push(ch);
+            } else {
+                flush(&mut tok, &mut out);
+                out.push(ch);
             }
         }
-        result
+        flush(&mut tok, &mut out);
+        out
+    }
+
+    fn substitute_generic_params(res_type: &str, params: &[String], args: &[String]) -> String {
+        Self::substitute_type_string(res_type, params, args)
     }
 
     fn get_expr_type_name(&self, e: &Expression, variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>) -> String {

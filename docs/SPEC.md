@@ -168,8 +168,6 @@ The Aion-written compiler lives in `compiler/`:
 - No RAII / destructors (GC-only memory model).
 - LLVM opaque pointers require explicit type casting in edge cases.
 - Cross-compilation targets are not yet supported (x86_64-linux only).
-- `instantiate_function` and `substitute_types_in_expr` still use naive
-  string-based type resolution (#67).
 - f-string interpolation requires explicit `string.from_*` wrapping for
   non-String values.
 - `std.json` cannot parse arrays or objects (type checker limitation on

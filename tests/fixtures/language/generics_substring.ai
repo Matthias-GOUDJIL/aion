@@ -1,0 +1,61 @@
+use std.string
+use core.heap
+
+struct Pair {
+    a: i64,
+    b: i64,
+}
+
+// Generic fn whose body references the concrete type `Pair` (`P` is a substring of `Pair`).
+// Naive replace("P","i64") would corrupt @sizeof(Pair) -> @sizeof(i64air) -> ptr size 8
+// instead of the real { i64, i64 } size 16.
+fn pair_size<P>(p: P) -> i64 {
+    return @sizeof(Pair)
+}
+
+struct Tensor {
+    a: i64,
+    b: i64,
+    c: i64,
+    d: i64,
+}
+
+// Same class of bug with a different param letter (`T` is a substring of `Tensor`).
+// Naive replace("T","i64") would corrupt @sizeof(Tensor) -> @sizeof(i64ensor).
+fn tensor_size<T>(t: T) -> i64 {
+    return @sizeof(Tensor)
+}
+
+// Pointer-to-param: `*T` must substitute to `*i64` (the tokenizer handles this
+// losslessly; the old <Param>-only matcher did not).
+fn alloc_slot<T>(cap: i64) -> *T {
+    let raw = unsafe { core.heap.alloc(cap * 8) }
+    return unsafe { raw as *T }
+}
+
+fn main() {
+    let s = pair_size<i64>(0)
+    if s == 16 {
+        io.println("pair_size: @sizeof(Pair) == 16")
+    } else {
+        io.println("BUG pair_size: got wrong size")
+    }
+
+    let t = tensor_size<i64>(0)
+    if t == 32 {
+        io.println("tensor_size: @sizeof(Tensor) == 32")
+    } else {
+        io.println("BUG tensor_size: got wrong size")
+    }
+
+    let slot = alloc_slot<i64>(4)
+    unsafe { *slot = 99 }
+    let v = unsafe { *slot }
+    if v == 99 {
+        io.println("alloc_slot<i64>: pointer-to-param deref ok")
+    } else {
+        io.println("BUG alloc_slot: deref failed")
+    }
+
+    return 0
+}
