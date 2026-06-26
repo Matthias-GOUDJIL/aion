@@ -173,6 +173,10 @@ fn test_json_parse_basic() { assert_snapshot!(run_aion_test("stdlib/json_parse_b
 fn test_memzero_struct() { assert_snapshot!(run_aion_test("stdlib/memzero_struct")); }
 #[test]
 fn test_memzero_typed() { assert_snapshot!(run_aion_test("stdlib/memzero_typed")); }
+#[test]
+fn test_ptr_deref_member() { assert_snapshot!(run_aion_test("stdlib/ptr_deref_member")); }
+#[test]
+fn test_ptr_deref_member_err() { assert_snapshot!(run_aion_test("stdlib/ptr_deref_member_err")); }
 
 // --- Compiler Tests ---
 

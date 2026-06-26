@@ -1,0 +1,9 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/ptr_deref_member\")"
+---
+(*p).a == 7
+(*p).b == 8
+(*p).c == 9
+write (*p).b = 42 ok
+single-field (*s).only == 123

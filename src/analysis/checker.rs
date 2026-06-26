@@ -351,7 +351,10 @@ impl TypeChecker {
             Expression::MemberAccess { receiver, member, .. } => {
                 let rt = self.check_expression(receiver)?;
                 let span = receiver.span();
-                let tn = match rt { Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } => n.clone(), _ => return Err(CompileError::new(format!("member access on {:?}", rt), span.line, span.col).with_snippet(&self.source)) };
+                let tn = match rt {
+                    Type::GenericInstance(ref n, _) | Type::Struct { name: ref n } | Type::Placeholder(ref n) => n.clone(),
+                    _ => return Err(CompileError::new(format!("member access on {:?}", rt), span.line, span.col).with_snippet(&self.source)),
+                };
                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
                 self.env.get(&format!("{}.{}", full, member))
                     .ok_or_else(|| CompileError::new(format!("field '{}' not found on struct '{}'", member, full), span.line, span.col).with_snippet(&self.source))

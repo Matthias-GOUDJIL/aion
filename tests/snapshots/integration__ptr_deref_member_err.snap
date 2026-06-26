@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/ptr_deref_member_err\")"
+---
+Type Error: member access on Integer
