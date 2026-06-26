@@ -754,9 +754,15 @@ impl<'a> Parser<'a> {
             while angle_count > 0 {
                 let tok = self.peek_at(i);
                 match tok.kind {
+                    // Tokens that cannot appear inside a generic-argument list but do
+                    // appear in a less-than comparison context. Comma is intentionally
+                    // NOT here: Aion has no comma operator at the expression level, and
+                    // `foo<A, B>(...)` needs the comma to keep scanning. Less-than inside
+                    // call/struct/aggregate args is still rejected because RParen/LBrace
+                    // abort the scan before the angles can balance.
                     TokenKind::EOF | TokenKind::LBrace | TokenKind::Semicolon | TokenKind::Eq | 
                     TokenKind::Or | TokenKind::And | TokenKind::Plus | TokenKind::Minus | 
-                    TokenKind::RParen | TokenKind::Comma => return false,
+                    TokenKind::RParen => return false,
                     TokenKind::Lt => angle_count += 1,
                     TokenKind::Gt => angle_count -= 1,
                     _ => {}
