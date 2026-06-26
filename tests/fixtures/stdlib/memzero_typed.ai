@@ -18,25 +18,24 @@ fn main() {
         io.println("BUG: mem_zero no-arg not null")
     }
 
-    // Test 2: mem_zero with a struct type produces a zeroed struct.
-    // Write a struct pointer into a slot, then overwrite with mem_zero(Triple).
-    // The slot should go from non-zero (pointer) to zero (zeroed struct).
+    // Test 2: mem_zero with a struct type returns a boxed, zeroed struct
+    // (matching the StructInst convention). Overwriting *p with it must keep
+    // (*p).field consistent: the field reads 0 afterwards.
     let p = unsafe { core.heap.alloc(24) as *Triple }
     unsafe { *p = Triple { a: 7, b: 8, c: 9 } }
-    let raw = unsafe { p as *i64 }
-    let before = unsafe { *raw }
-    if before != 0 {
-        io.println("before mem_zero: non-zero")
+    let before = unsafe { (*p).a }
+    if before == 7 {
+        io.println("before mem_zero: (*p).a == 7")
     } else {
-        io.println("BUG: before mem_zero: zero")
+        io.println("BUG: before mem_zero: (*p).a != 7")
     }
 
     unsafe { *p = @intrinsic("mem_zero", Triple) }
-    let after = unsafe { *raw }
+    let after = unsafe { (*p).a }
     if after == 0 {
-        io.println("after mem_zero(Triple): zero")
+        io.println("after mem_zero(Triple): (*p).a == 0")
     } else {
-        io.println("BUG: after mem_zero(Triple): non-zero")
+        io.println("BUG: after mem_zero(Triple): (*p).a != 0")
     }
 
     // Test 3: mem_zero on a primitive type returns the zero value.

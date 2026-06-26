@@ -1302,13 +1302,31 @@ impl<'ctx> Compiler<'ctx> {
                             _ => "i64".to_string() 
                         };
                         if let Some(sn) = self.resolve_fuzzy_name(&self.struct_types, &tnm) {
-                            if let Some(st) = self.struct_types.get(&sn) {
-                                return Ok(st.const_zero().into());
+                            if let Some(&st) = self.struct_types.get(&sn) {
+                                // Return a boxed pointer to a freshly zeroed heap struct, matching
+                                // the StructInst convention (heap-alloc + opaque ptr). Returning an
+                                // inline struct value here would break (*p).field after *p = mem_zero(T)
+                                // — the Deref+MemberAccess path assumes the slot holds a box pointer.
+                                let size = st.size_of().ok_or_else(|| CompileError::Internal("Struct size unknown".to_string()))?;
+                                let malloc_fn = self.module.get_function("aion_malloc").ok_or_else(|| CompileError::Internal("aion_malloc not found".to_string()))?;
+                                let box_ptr = match self.builder.build_call(malloc_fn, &[size.into()], "memzero_box")?.try_as_basic_value() {
+                                    ValueKind::Basic(v) => v.into_pointer_value(),
+                                    _ => return Err(CompileError::Internal("aion_malloc did not return a value".to_string())),
+                                };
+                                self.builder.build_store(box_ptr, st.const_zero())?;
+                                return Ok(box_ptr.into());
                             }
                         }
                         if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, &tnm) {
-                            if let Some(et) = self.enum_types.get(&en) {
-                                return Ok(et.const_zero().into());
+                            if let Some(&et) = self.enum_types.get(&en) {
+                                let size = et.size_of().ok_or_else(|| CompileError::Internal("Enum size unknown".to_string()))?;
+                                let malloc_fn = self.module.get_function("aion_malloc").ok_or_else(|| CompileError::Internal("aion_malloc not found".to_string()))?;
+                                let box_ptr = match self.builder.build_call(malloc_fn, &[size.into()], "memzero_box")?.try_as_basic_value() {
+                                    ValueKind::Basic(v) => v.into_pointer_value(),
+                                    _ => return Err(CompileError::Internal("aion_malloc did not return a value".to_string())),
+                                };
+                                self.builder.build_store(box_ptr, et.const_zero())?;
+                                return Ok(box_ptr.into());
                             }
                         }
                         let lt = self.aion_type_to_llvm(&tnm);

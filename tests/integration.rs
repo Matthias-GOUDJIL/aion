@@ -177,6 +177,8 @@ fn test_memzero_typed() { assert_snapshot!(run_aion_test("stdlib/memzero_typed")
 fn test_ptr_deref_member() { assert_snapshot!(run_aion_test("stdlib/ptr_deref_member")); }
 #[test]
 fn test_ptr_deref_member_err() { assert_snapshot!(run_aion_test("stdlib/ptr_deref_member_err")); }
+#[test]
+fn test_ptr_memzero_field() { assert_snapshot!(run_aion_test("stdlib/ptr_memzero_field")); }
 
 // --- Compiler Tests ---
 

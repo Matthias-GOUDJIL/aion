@@ -435,6 +435,21 @@ impl TypeChecker {
                 else if actual_name == "str_concat" || actual_name == "fs_read_to_string" || actual_name == "int_to_str" || actual_name == "float_to_str" || actual_name == "char_to_str" || actual_name == "str_substr" { Ok(Type::String) }
                 else if actual_name == "str_ptr" { Ok(Type::Pointer(Box::new(Type::Integer))) }
                 else if actual_name == "mem_is_null" { Ok(Type::Boolean) }
+                else if actual_name == "mem_zero" && !args.is_empty() {
+                    // mem_zero(Type): return value uses the language's boxed struct/enum
+                    // representation (matches StructInst/EnumInst), so the field-access path
+                    // (*p).field stays consistent after *p = mem_zero(T).
+                    let tnm = match &args[0] {
+                        Expression::Identifier(s, _) | Expression::TypeRef { name: s, .. } => s.clone(),
+                        _ => return Ok(Type::Integer),
+                    };
+                    let full = self.resolve_fuzzy_name(&self.decls, &tnm).unwrap_or(tnm);
+                    match self.decls.get(&full) {
+                        Some(Declaration::Struct(_)) => Ok(Type::Struct { name: full }),
+                        Some(Declaration::Enum(_)) => Ok(Type::Enum { name: full }),
+                        _ => Ok(Type::Integer),
+                    }
+                }
                 else if actual_name.starts_with("ai_tensor_") { Ok(Type::Struct { name: "std.ai.tensor.Tensor".to_string() }) }
                 else { Ok(Type::Integer) }
             },
