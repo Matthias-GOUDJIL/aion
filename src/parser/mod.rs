@@ -448,11 +448,15 @@ impl<'a> Parser<'a> {
                 let is_mut = if self.current_token.kind == TokenKind::Mut { self.next_token(); true } else { false };
                 let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
                 self.next_token();
-                if self.current_token.kind == TokenKind::Eq { 
-                    self.next_token(); 
-                    let value = self.parse_expression(); 
+                let explicit_type = if self.current_token.kind == TokenKind::Colon {
+                    self.next_token();
+                    Some(self.parse_type_name())
+                } else { None };
+                if self.current_token.kind == TokenKind::Eq {
+                    self.next_token();
+                    let value = self.parse_expression();
                     if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
-                    Some(Statement::Let { name, value, intent: None, is_mut, span }) 
+                    Some(Statement::Let { name, value, explicit_type, intent: None, is_mut, span })
                 } else { None }
             },
             TokenKind::Return => { 
