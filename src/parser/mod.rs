@@ -413,6 +413,24 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_type_name(&mut self) -> String {
+        // Tuple type: `(T, U, ...)`. Build the string with nested parens.
+        // #53.
+        if self.current_token.kind == TokenKind::LParen {
+            self.next_token();
+            let mut parts = Vec::new();
+            while self.current_token.kind != TokenKind::RParen
+                && self.current_token.kind != TokenKind::EOF
+            {
+                parts.push(self.parse_type_name());
+                if self.current_token.kind == TokenKind::Comma {
+                    self.next_token();
+                }
+            }
+            if self.current_token.kind == TokenKind::RParen {
+                self.next_token();
+            }
+            return format!("({})", parts.join(", "));
+        }
         if self.current_token.kind == TokenKind::Star {
             self.next_token();
             return format!("*{}", self.parse_type_name());
@@ -616,6 +634,36 @@ impl<'a> Parser<'a> {
                 };
                 let name = match &self.current_token.kind {
                     TokenKind::Identifier(n) => n.clone(),
+                    // Destructuring let: `let (a, b, ...) = expr`. #53.
+                    TokenKind::LParen => {
+                        self.next_token();
+                        let mut names = Vec::new();
+                        while self.current_token.kind != TokenKind::RParen
+                            && self.current_token.kind != TokenKind::EOF
+                        {
+                            if let TokenKind::Identifier(n) = &self.current_token.kind {
+                                names.push(n.clone());
+                                self.next_token();
+                            } else {
+                                self.next_token();
+                            }
+                            if self.current_token.kind == TokenKind::Comma {
+                                self.next_token();
+                            }
+                        }
+                        if self.current_token.kind == TokenKind::RParen {
+                            self.next_token();
+                        }
+                        if self.current_token.kind == TokenKind::Eq {
+                            self.next_token();
+                            let value = self.parse_expression();
+                            if self.current_token.kind == TokenKind::Semicolon {
+                                self.next_token();
+                            }
+                            return Some(Statement::LetTuple { names, value, span });
+                        }
+                        return None;
+                    }
                     _ => return None,
                 };
                 self.next_token();
@@ -1390,12 +1438,30 @@ impl<'a> Parser<'a> {
                 }
             }
             TokenKind::LParen => {
+                let span = Span::from_token(&self.current_token);
                 self.next_token();
                 let e = self.parse_expression();
-                if self.current_token.kind == TokenKind::RParen {
-                    self.next_token();
+                // Tuple literal: `(e1, e2, ...)`. A single-element `(e)` is
+                // just a parenthesized expression. #53.
+                if self.current_token.kind == TokenKind::Comma {
+                    let mut elements = vec![e];
+                    while self.current_token.kind == TokenKind::Comma {
+                        self.next_token();
+                        if self.current_token.kind == TokenKind::RParen {
+                            break;
+                        }
+                        elements.push(self.parse_expression());
+                    }
+                    if self.current_token.kind == TokenKind::RParen {
+                        self.next_token();
+                    }
+                    Expression::TupleLiteral { elements, span }
+                } else {
+                    if self.current_token.kind == TokenKind::RParen {
+                        self.next_token();
+                    }
+                    e
                 }
-                e
             }
             TokenKind::True => {
                 let span = Span::from_token(&self.current_token);
@@ -1546,7 +1612,15 @@ impl<'a> Parser<'a> {
                 TokenKind::Dot => {
                     let dot_span = Span::from_token(&self.current_token);
                     self.next_token();
-                    if let TokenKind::Identifier(member) = self.current_token.clone().kind {
+                    // Tuple field access: `pair.0`, `pair.1`. #53.
+                    if let TokenKind::IntLiteral(idx) = self.current_token.clone().kind {
+                        self.next_token();
+                        expr = Expression::TupleAccess {
+                            tuple: Box::new(expr.clone()),
+                            index: idx as usize,
+                            span: dot_span,
+                        };
+                    } else if let TokenKind::Identifier(member) = self.current_token.clone().kind {
                         let member_name = member;
                         self.next_token();
                         let m_generic_args = self.parse_generic_args();

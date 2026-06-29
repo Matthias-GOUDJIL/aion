@@ -457,6 +457,40 @@ impl TypeChecker {
                 self.env.set(name.clone(), final_type);
                 Ok(Type::Unit)
             }
+            Statement::LetTuple { names, value, .. } => {
+                let val_type = self.check_expression(value)?;
+                match val_type {
+                    Type::Tuple(elems) => {
+                        if elems.len() != names.len() {
+                            return Err(CompileError::Type {
+                                message: format!(
+                                    "tuple destructuring arity mismatch: {} names for tuple of {}",
+                                    names.len(),
+                                    elems.len()
+                                ),
+                                line: 0,
+                                col: 0,
+                                snippet: None,
+                            });
+                        }
+                        for (n, t) in names.iter().zip(elems.iter()) {
+                            self.env.set(n.clone(), t.clone());
+                        }
+                    }
+                    other => {
+                        return Err(CompileError::Type {
+                            message: format!(
+                                "cannot destructure non-tuple value of type {}",
+                                other.name()
+                            ),
+                            line: 0,
+                            col: 0,
+                            snippet: None,
+                        });
+                    }
+                }
+                Ok(Type::Unit)
+            }
             Statement::Assignment { target, value, .. } => {
                 self.check_expression(target)?;
                 self.check_expression(value)?;
@@ -1055,6 +1089,44 @@ impl TypeChecker {
                     self.env = old_env;
                 }
                 Ok(result_type)
+            }
+            Expression::TupleLiteral { elements, .. } => {
+                let mut tys = Vec::with_capacity(elements.len());
+                for e in elements {
+                    tys.push(self.check_expression(e)?);
+                }
+                Ok(Type::Tuple(tys))
+            }
+            Expression::TupleAccess { tuple, index, span } => {
+                let t = self.check_expression(tuple)?;
+                match t {
+                    Type::Tuple(elems) => {
+                        if *index < elems.len() {
+                            Ok(elems[*index].clone())
+                        } else {
+                            Err(self.err(
+                                format!(
+                                    "tuple index {} out of bounds (len {})",
+                                    index,
+                                    elems.len()
+                                ),
+                                &Expression::TupleAccess {
+                                    tuple: tuple.clone(),
+                                    index: *index,
+                                    span: *span,
+                                },
+                            ))
+                        }
+                    }
+                    _ => Err(self.err(
+                        format!("tuple access on non-tuple {}", t.name()),
+                        &Expression::TupleAccess {
+                            tuple: tuple.clone(),
+                            index: *index,
+                            span: *span,
+                        },
+                    )),
+                }
             }
             _ => Err(CompileError::internal(format!(
                 "Unsupported expression {:?}",

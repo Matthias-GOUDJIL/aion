@@ -228,6 +228,18 @@ fn test_integer_sizes() {
 fn test_integer_mismatch() {
     assert_snapshot!(run_aion_test("language/integer_mismatch"));
 }
+#[test]
+fn test_tuple_basic() {
+    assert_snapshot!(run_aion_test("language/tuple_basic"));
+}
+#[test]
+fn test_tuple_return() {
+    assert_snapshot!(run_aion_test("language/tuple_return"));
+}
+#[test]
+fn test_tuple_nested() {
+    assert_snapshot!(run_aion_test("language/tuple_nested"));
+}
 
 // --- Stdlib Tests ---
 

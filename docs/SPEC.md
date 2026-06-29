@@ -68,6 +68,14 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   so `(*p).field` works for `p: *Struct` (member access also resolves when
   the pointee is a struct placeholder, e.g. `*Triple`). `*i64` derefs to
   `i64`; member access on a non-struct deref is a type error.
+- **Tuples**: `(T, U, ...)` — heterogeneous fixed-size sequences (#53).
+  Tuple literals `(1, "x", true)`, field access by index `pair.0`/`pair.1`,
+  and destructuring `let (a, b) = pair` are supported. Functions may
+  return tuples (`fn f() -> (i64, String)`) and callers destructure the
+  result. Tuples lower to anonymous LLVM struct types, heap-allocated and
+  passed by pointer (same convention as `StructInst`). Nested tuples
+  `(i64, (String, bool))` are supported; the element type is recovered
+  via depth-aware type-name parsing.
 - **Fuzzy resolution**: if a simple name is not found, the compiler
   searches for qualified names ending with that suffix (e.g. `args` →
   `std.env.args`). Avoids complex AST rewriting for imports.

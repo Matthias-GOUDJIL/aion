@@ -1,0 +1,21 @@
+use std.io
+use std.string
+
+// Function returning a tuple; caller destructures. #53.
+
+fn make_pair(n: i64, s: String) -> (i64, String) {
+    return (n, s)
+}
+
+fn main() {
+    let (id, label) = make_pair(7, "agent")
+    io.println(string.from_int(id))
+    io.println(label)
+
+    // Also test field access on the call result directly.
+    let p = make_pair(42, "x")
+    io.println(string.from_int(p.0))
+    io.println(p.1)
+
+    return 0
+}

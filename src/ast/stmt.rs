@@ -10,6 +10,12 @@ pub enum Statement {
         is_mut: bool,
         span: Span,
     },
+    /// Destructuring let: `let (a, b) = pair`. #53.
+    LetTuple {
+        names: Vec<String>,
+        value: Expression,
+        span: Span,
+    },
     Return {
         value: Expression,
         intent: Option<String>,

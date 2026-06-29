@@ -134,6 +134,8 @@ impl SqlTranspiler {
             Expression::Duration(..) => "Duration",
             Expression::Date(..) => "Date",
             Expression::Match { .. } => "i64",
+            // Tuples are not yet transpiled to SQL. #53.
+            Expression::TupleLiteral { .. } | Expression::TupleAccess { .. } => "JSONB",
         }
         .to_string()
     }

@@ -1,0 +1,18 @@
+use std.io
+use std.string
+
+// Tuple basic: literal, field access, destructuring. #53.
+
+fn main() {
+    let p = (1, "hello", true)
+    io.println(string.from_int(p.0))
+    io.println(p.1)
+    io.println(string.from_int(if p.2 { 1 } else { 0 }))
+
+    let (a, b, c) = (10, "world", false)
+    io.println(string.from_int(a))
+    io.println(b)
+    io.println(string.from_int(if c { 1 } else { 0 }))
+
+    return 0
+}
