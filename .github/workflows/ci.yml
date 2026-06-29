@@ -15,7 +15,7 @@ jobs:
         run: |
           title="${{ github.event.pull_request.title }}"
           echo "PR title: $title"
-          if echo "$title" | grep -qP '^(feat|fix|refactor|docs|test|chore)(\(.+\))?: '; then
+          if echo "$title" | grep -qP '^(feat|fix|refactor|docs|test|chore|style|perf|build|ci)(\(.+\))?: '; then
             echo "ok"
           else
             echo "PR title must match: type: description (e.g. feat: add foo, fix: correct bar)"
