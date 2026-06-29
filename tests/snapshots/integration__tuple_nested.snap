@@ -1,0 +1,10 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/tuple_nested\")"
+---
+5
+deep
+1
+9
+x
+0

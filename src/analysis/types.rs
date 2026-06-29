@@ -31,6 +31,9 @@ pub enum Type {
     Placeholder(String),
     GenericInstance(String, Vec<Type>),
     Pointer(Box<Type>),
+    /// Heterogeneous fixed-size sequence: `(i64, String, bool)`. Codegen
+    /// lowers to an anonymous LLVM struct type. #53.
+    Tuple(Vec<Type>),
     Unknown,
 }
 
@@ -83,6 +86,25 @@ impl Type {
         let trimmed = s.trim();
         if let Some(stripped) = trimmed.strip_prefix('*') {
             return Type::Pointer(Box::new(Type::parse(stripped.trim())));
+        }
+        // Tuple type: `(T, U, ...)`. #53.
+        if trimmed.starts_with('(') && trimmed.ends_with(')') {
+            let inner = &trimmed[1..trimmed.len() - 1];
+            let mut elems = Vec::new();
+            for part in split_top_level_commas(inner) {
+                let p = part.trim();
+                if !p.is_empty() {
+                    elems.push(Type::parse(p));
+                }
+            }
+            if elems.len() >= 2 {
+                return Type::Tuple(elems);
+            }
+            // `(T)` is a parenthesized single type — return the inner type.
+            if elems.len() == 1 {
+                return elems.remove(0);
+            }
+            return Type::Unit;
         }
         match trimmed {
             "i64" => Type::i64(),
@@ -159,6 +181,16 @@ impl Type {
             Type::Duration => "Duration".to_string(),
             Type::Date => "Date".to_string(),
             Type::Pointer(inner) => format!("*{}", inner.name()),
+            Type::Tuple(elems) => {
+                format!(
+                    "({})",
+                    elems
+                        .iter()
+                        .map(|t| t.name())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
             Type::Struct { name } => name.clone(),
             Type::Enum { name } => name.clone(),
             Type::GenericInstance(base, args) => {
@@ -183,4 +215,34 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name())
     }
+}
+
+/// Split `s` on top-level commas (depth 0), respecting nested `<>` and `()`
+/// so that `(i64, (String, bool))` splits into `["i64", " (String, bool)"]`.
+/// Used by `Type::parse` for tuple type element extraction. #53.
+fn split_top_level_commas(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth: i32 = 0;
+    let mut cur = String::new();
+    for c in s.chars() {
+        match c {
+            '<' | '(' => {
+                depth += 1;
+                cur.push(c);
+            }
+            '>' | ')' => {
+                depth -= 1;
+                cur.push(c);
+            }
+            ',' if depth == 0 => {
+                parts.push(cur.clone());
+                cur.clear();
+            }
+            _ => cur.push(c),
+        }
+    }
+    if !cur.is_empty() || !parts.is_empty() {
+        parts.push(cur);
+    }
+    parts
 }

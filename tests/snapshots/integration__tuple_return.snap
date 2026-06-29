@@ -1,0 +1,8 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/tuple_return\")"
+---
+7
+agent
+42
+x

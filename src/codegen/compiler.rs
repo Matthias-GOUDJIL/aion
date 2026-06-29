@@ -147,6 +147,60 @@ impl<'ctx> Compiler<'ctx> {
         self.type_to_llvm(&crate::analysis::types::Type::parse(tn))
     }
 
+    /// Ensure a tuple struct type is registered for `tn` (e.g. "(i64,String)").
+    /// If already in `struct_types`, return it; otherwise build the anonymous
+    /// struct from the element type names, register it + its field map, and
+    /// return it. This handles forward references (a caller may need the
+    /// tuple type before the defining function's body is compiled, since
+    /// `self.decls` is a HashMap with non-deterministic order). #53.
+    fn ensure_tuple_type(&mut self, tn: &str) -> Result<StructType<'ctx>, CompileError> {
+        if let Some(&st) = self.struct_types.get(tn) {
+            return Ok(st);
+        }
+        let clean = tn.replace(" ", "");
+        let inner = clean
+            .strip_prefix('(')
+            .and_then(|s| s.strip_suffix(')'))
+            .ok_or_else(|| CompileError::internal(format!("not a tuple type: {}", tn)))?;
+        // Depth-aware comma split so nested tuples `(i64,(String,bool))`
+        // split into `["i64", "(String,bool)"]`. #53.
+        let mut elem_tys = Vec::new();
+        let mut fm = std::collections::HashMap::new();
+        let mut depth = 0i32;
+        let mut cur = String::new();
+        let mut parts: Vec<String> = Vec::new();
+        for c in inner.chars() {
+            match c {
+                '(' | '<' => {
+                    depth += 1;
+                    cur.push(c);
+                }
+                ')' | '>' => {
+                    depth -= 1;
+                    cur.push(c);
+                }
+                ',' if depth == 0 => {
+                    parts.push(cur.clone());
+                    cur.clear();
+                }
+                _ => cur.push(c),
+            }
+        }
+        parts.push(cur);
+        for (i, part) in parts.iter().enumerate() {
+            let p = part.trim();
+            if p.is_empty() {
+                continue;
+            }
+            elem_tys.push(self.aion_type_to_llvm(p));
+            fm.insert(i.to_string(), i as u32);
+        }
+        let st = self.context.struct_type(&elem_tys, false);
+        self.struct_types.insert(tn.to_string(), st);
+        self.struct_fields.insert(tn.to_string(), fm);
+        Ok(st)
+    }
+
     /// Coerce an integer value to the target LLVM int type, choosing
     /// sign-extension / zero-extension / truncation based on the Aion type
     /// name (`et_clean` like "i32"/"u8"). Used by `let x: i32 = <i64 literal>`
@@ -194,7 +248,8 @@ impl<'ctx> Compiler<'ctx> {
             | Type::Pointer(_)
             | Type::Enum { .. }
             | Type::Struct { .. }
-            | Type::GenericInstance(..) => self.context.ptr_type(AddressSpace::default()).into(),
+            | Type::GenericInstance(..)
+            | Type::Tuple(..) => self.context.ptr_type(AddressSpace::default()).into(),
             _ => self.context.ptr_type(AddressSpace::default()).into(),
         }
     }
@@ -861,6 +916,32 @@ impl<'ctx> Compiler<'ctx> {
                         let a = self.builder.build_alloca(inferred_vt, name)?;
                         self.builder.build_store(a, v)?;
                         variables.insert(name.clone(), (a, inferred_vt, inferred_vtn));
+                    }
+                    lv = None;
+                }
+                Statement::LetTuple { names, value, .. } => {
+                    // Compile the tuple value (a pointer to an anonymous
+                    // struct registered in struct_types), then extract each
+                    // field into its own alloca. #53.
+                    let ptr_val = self.compile_expr(value, variables, function)?;
+                    let ptr = ptr_val.into_pointer_value();
+                    let tn = self.get_expr_type_name(value, variables);
+                    let st = self.ensure_tuple_type(&tn)?;
+                    for (i, n) in names.iter().enumerate() {
+                        let gep = self.builder.build_struct_gep(
+                            st,
+                            ptr,
+                            i as u32,
+                            &format!("letup_{}", i),
+                        )?;
+                        let elem_ty = st.get_field_type_at_index(i as u32).ok_or_else(|| {
+                            CompileError::internal("tuple field type missing".to_string())
+                        })?;
+                        let loaded = self.builder.build_load(elem_ty, gep, "letup_ld")?;
+                        let a = self.builder.build_alloca(elem_ty, n)?;
+                        self.builder.build_store(a, loaded)?;
+                        let elem_tn = self.get_field_type(&tn, &i.to_string());
+                        variables.insert(n.clone(), (a, elem_ty, elem_tn));
                     }
                     lv = None;
                 }
@@ -3046,6 +3127,72 @@ impl<'ctx> Compiler<'ctx> {
                     Ok(i64_t.const_zero().into())
                 }
             }
+            Expression::TupleLiteral { elements, .. } => {
+                // Build an anonymous LLVM struct from the element types,
+                // register it under the tuple type name `(T,U,...)` in
+                // struct_types/struct_fields (so TupleAccess can gep it),
+                // heap-alloc, store each field. Returns a pointer. #53.
+                let mut vals = Vec::new();
+                let mut tys = Vec::new();
+                let mut name_parts = Vec::new();
+                for e in elements {
+                    let v = self.compile_expr(e, variables, function)?;
+                    name_parts.push(self.get_expr_type_name(e, variables));
+                    tys.push(v.get_type());
+                    vals.push(v);
+                }
+                let tuple_name = format!("({})", name_parts.join(","));
+                let st = self.context.struct_type(&tys, false);
+                // Register the tuple struct type + field map (idempotent —
+                // same tuple shape reuses the same LLVM type).
+                self.struct_types.insert(tuple_name.clone(), st);
+                let mut fm = std::collections::HashMap::new();
+                for i in 0..vals.len() {
+                    fm.insert(i.to_string(), i as u32);
+                }
+                self.struct_fields.insert(tuple_name.clone(), fm);
+                let malloc_fn = self
+                    .module
+                    .get_function("aion_malloc")
+                    .ok_or_else(|| CompileError::internal("aion_malloc not found".to_string()))?;
+                let size = st
+                    .size_of()
+                    .ok_or_else(|| CompileError::internal("Tuple size unknown".to_string()))?;
+                let ptr = match self
+                    .builder
+                    .build_call(malloc_fn, &[size.into()], "tuple_alloc")?
+                    .try_as_basic_value()
+                {
+                    ValueKind::Basic(v) => v.into_pointer_value(),
+                    _ => return Err(CompileError::internal("malloc failed".to_string())),
+                };
+                for (i, v) in vals.into_iter().enumerate() {
+                    let gep =
+                        self.builder
+                            .build_struct_gep(st, ptr, i as u32, &format!("tupd{}", i))?;
+                    self.builder.build_store(gep, v)?;
+                }
+                Ok(ptr.into())
+            }
+            Expression::TupleAccess { tuple, index, .. } => {
+                // Resolve the tuple struct type by name (registered by
+                // TupleLiteral or ensure_tuple_type), gep the field, load it.
+                // #53.
+                let ptr_val = self.compile_expr(tuple, variables, function)?;
+                let ptr = ptr_val.into_pointer_value();
+                let tn = self.get_expr_type_name(tuple, variables);
+                let st = self.ensure_tuple_type(&tn)?;
+                let gep = self.builder.build_struct_gep(
+                    st,
+                    ptr,
+                    *index as u32,
+                    &format!("tupacc{}", index),
+                )?;
+                let elem_ty = st.get_field_type_at_index(*index as u32).ok_or_else(|| {
+                    CompileError::internal("tuple field type missing".to_string())
+                })?;
+                Ok(self.builder.build_load(elem_ty, gep, "tupld")?)
+            }
             _ => Ok(i64_t.const_zero().into()),
         }
     }
@@ -3055,6 +3202,38 @@ impl<'ctx> Compiler<'ctx> {
         let mut cs = clean.as_str();
         while cs.starts_with('*') {
             cs = &cs[1..];
+        }
+        // Tuple field access by numeric index: `(i64,String)` + "0" -> "i64".
+        // Depth-aware split so nested tuples work. #53.
+        if cs.starts_with('(') && cs.ends_with(')') {
+            if let Ok(idx) = fnm.parse::<usize>() {
+                let inner = &cs[1..cs.len() - 1];
+                let mut depth = 0i32;
+                let mut cur = String::new();
+                let mut parts: Vec<String> = Vec::new();
+                for c in inner.chars() {
+                    match c {
+                        '(' | '<' => {
+                            depth += 1;
+                            cur.push(c);
+                        }
+                        ')' | '>' => {
+                            depth -= 1;
+                            cur.push(c);
+                        }
+                        ',' if depth == 0 => {
+                            parts.push(cur.clone());
+                            cur.clear();
+                        }
+                        _ => cur.push(c),
+                    }
+                }
+                parts.push(cur);
+                if idx < parts.len() {
+                    return parts[idx].trim().to_string();
+                }
+            }
+            return "unknown".to_string();
         }
         let (btn, tga) = if cs.contains('<') {
             let p: Vec<&str> = cs
@@ -3399,6 +3578,20 @@ impl<'ctx> Compiler<'ctx> {
                 } else {
                     "unknown".to_string()
                 }
+            }
+            Expression::TupleLiteral { elements, .. } => {
+                // Render the tuple type name `(T, U, ...)` so downstream
+                // lookups can find the registered struct type. #53.
+                let elems: Vec<String> = elements
+                    .iter()
+                    .map(|e| self.get_expr_type_name(e, variables))
+                    .collect();
+                format!("({})", elems.join(","))
+            }
+            Expression::TupleAccess { tuple, index, .. } => {
+                // The element type name of field `index`. #53.
+                let tn = self.get_expr_type_name(tuple, variables);
+                self.get_field_type(&tn, &index.to_string())
             }
             _ => "unknown".to_string(),
         };

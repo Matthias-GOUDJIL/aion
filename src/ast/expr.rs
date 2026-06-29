@@ -90,6 +90,17 @@ pub enum Expression {
         arms: Vec<MatchArm>,
         span: Span,
     },
+    /// Tuple literal: `(1, "x", true)`. #53.
+    TupleLiteral {
+        elements: Vec<Expression>,
+        span: Span,
+    },
+    /// Tuple field access: `pair.0`, `pair.1`. #53.
+    TupleAccess {
+        tuple: Box<Expression>,
+        index: usize,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -116,7 +127,9 @@ impl Expression {
             | Expression::MemberAccess { span: s, .. }
             | Expression::MethodCall { span: s, .. }
             | Expression::TypeRef { span: s, .. }
-            | Expression::Match { span: s, .. } => *s,
+            | Expression::Match { span: s, .. }
+            | Expression::TupleLiteral { span: s, .. }
+            | Expression::TupleAccess { span: s, .. } => *s,
         }
     }
 }
