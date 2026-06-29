@@ -83,3 +83,5 @@ If tests fail with linker errors (`undefined reference`, `file in wrong format`,
 ```bash
 docker rmi aion-compiler && docker volume rm aion-target-cache aion-cargo-cache && docker build -t aion-compiler .
 ```
+
+Note: the Dockerfile pre-compiles `src/runtime.c` to `/opt/aion_runtime.bc` (build-time, `clang-15`). If you edit `src/runtime.c`, rebuild the image so the bitcode is refreshed — `docker rmi aion-compiler && docker build -t aion-compiler .` (#73).

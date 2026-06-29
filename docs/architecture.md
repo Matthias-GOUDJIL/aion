@@ -46,7 +46,7 @@ editors/          — Editor integrations (vscode/)
 
 **Compiler pipeline**: `compile_file()` in `src/lib.rs` runs: imports resolution → TypeChecker → LLVM Compiler → optimization passes (FPM + MPM) → writes `.ll` file.
 
-**`./aion run` flow**: compiles to temp `.ll` → `llc-15` to `.o` (PIC) → `gcc` links with `src/runtime.c` → executes binary → cleans up temp files.
+**`./aion run` flow**: compiles to temp `.ll` → `llc-15` to `.o` (PIC) → `clang-15 -fuse-ld=lld` links the object with the pre-compiled runtime bitcode (`/opt/aion_runtime.bc` in the Docker image, env `AION_RUNTIME_BC`) + `-lpthread -lgc` → executes binary → cleans up temp files. The link path is gcc-free (lld-15 driven by clang-15, both LLVM tools); a legacy `gcc` fallback is used only when `clang-15` is absent (non-Docker dev without the LLVM toolchain). #73.
 
 ## Architectural Invariants
 
@@ -61,6 +61,7 @@ editors/          — Editor integrations (vscode/)
 - **LLVM 15** is hardcoded (inkwell feature `llvm15-0`, Docker installs `llvm-15-dev`)
 - **Boehm GC** is required (`-lgc` in link step, `GC_init()` called in main)
 - **PIC relocation** is mandatory (`-relocation-model=pic` in llc-15 call)
+- **gcc-free link path**: the user binary is linked with `clang-15 -fuse-ld=lld` (lld-15) against the pre-compiled runtime bitcode. `gcc` remains in the Docker image only as the C compiler for `cargo`/`build-optional` deps (inkwell, llvm-sys); it is **not** invoked by `aion run`. #73.
 - **Rust edition 2024** (see `Cargo.toml`)
 - Import resolution: `compiler.*` → project root, everything else → `stdlib/`
 

@@ -30,4 +30,9 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /workspace
 COPY . .
 
+# Pre-compile the C runtime to LLVM bitcode at build time so the `aion run`
+# link step can use lld-15 (via clang-15 -fuse-ld=lld) instead of gcc. #73.
+RUN clang-15 -c -emit-llvm -O2 -I/usr/include src/runtime.c -o /opt/aion_runtime.bc
+ENV AION_RUNTIME_BC=/opt/aion_runtime.bc
+
 CMD ["cargo", "run"]

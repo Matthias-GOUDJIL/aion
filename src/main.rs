@@ -89,23 +89,36 @@ fn main() {
                 std::process::exit(1);
             }
 
-            let gcc_status = Command::new("gcc")
-                .args([
-                    &obj_file,
-                    "src/runtime.c",
-                    "-o",
-                    &bin_file,
-                    "-lpthread",
-                    "-lgc",
-                ])
-                .status();
-
-            if let Err(e) = gcc_status {
-                eprintln!("error: gcc failed: {}", e);
-                std::process::exit(1);
-            } else if !gcc_status.unwrap().success() {
-                eprintln!("error: gcc failed with non-zero exit");
-                std::process::exit(1);
+            // Link the object with the pre-compiled C runtime bitcode using
+            // lld-15 (driven by clang-15, an LLVM tool — no gcc in the link
+            // path). Falls back to the legacy gcc link if clang-15 is absent
+            // (e.g. bare-metal dev without the LLVM toolchain). #73.
+            let link_ok = link_with_lld(&obj_file, &bin_file, &args);
+            match link_ok {
+                Ok(()) => {}
+                Err(LinkError::GccFallback) => {
+                    let gcc_status = Command::new("gcc")
+                        .args([
+                            &obj_file,
+                            "src/runtime.c",
+                            "-o",
+                            &bin_file,
+                            "-lpthread",
+                            "-lgc",
+                        ])
+                        .status();
+                    if let Err(e) = gcc_status {
+                        eprintln!("error: gcc failed: {}", e);
+                        std::process::exit(1);
+                    } else if !gcc_status.unwrap().success() {
+                        eprintln!("error: gcc failed with non-zero exit");
+                        std::process::exit(1);
+                    }
+                }
+                Err(LinkError::Failed(e)) => {
+                    eprintln!("error: link failed: {}", e);
+                    std::process::exit(1);
+                }
             }
 
             println!("-------------------------------");
@@ -151,4 +164,99 @@ fn main() {
             }
         }
     }
+}
+
+/// Outcome of the lld link attempt. `GccFallback` signals that clang-15 is
+/// unavailable and the caller should retry with the legacy gcc link path. #73.
+enum LinkError {
+    GccFallback,
+    Failed(String),
+}
+
+/// Link `obj_file` + the C runtime bitcode into `bin_file` using lld-15
+/// (driven by `clang-15 -fuse-ld=lld`). The runtime bitcode is resolved as:
+/// `AION_RUNTIME_BC` env → `/opt/aion_runtime.bc` (Docker image) → on-the-fly
+/// compile of `src/runtime.c`. Returns `GccFallback` if clang-15 is missing
+/// so the caller can fall back to the gcc path. #73.
+fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(), LinkError> {
+    let clang = which("clang-15").or_else(|| which("clang"));
+    let clang = match clang {
+        Some(c) => c,
+        None => return Err(LinkError::GccFallback),
+    };
+
+    // Resolve the pre-compiled runtime bitcode.
+    let runtime_bc = std::env::var("AION_RUNTIME_BC")
+        .ok()
+        .filter(|p| std::path::Path::new(p).exists())
+        .or_else(|| {
+            let opt = std::path::Path::new("/opt/aion_runtime.bc");
+            if opt.exists() {
+                Some(opt.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        });
+
+    let runtime_bc = match runtime_bc {
+        Some(p) => p,
+        None => {
+            // On-the-fly bitcode compile (non-Docker dev). Use a temp file
+            // scoped to this run so concurrent runs don't clobber each other.
+            let tmp = format!("aion_runtime_{}.bc", std::process::id());
+            let status = Command::new(&clang)
+                .args([
+                    "-c",
+                    "-emit-llvm",
+                    "-O2",
+                    "-I/usr/include",
+                    "src/runtime.c",
+                    "-o",
+                    &tmp,
+                ])
+                .status()
+                .map_err(|e| LinkError::Failed(format!("clang bitcode compile: {}", e)))?;
+            if !status.success() {
+                return Err(LinkError::Failed(format!(
+                    "clang bitcode compile exited with {}",
+                    status.code().unwrap_or(-1)
+                )));
+            }
+            tmp
+        }
+    };
+
+    let status = Command::new(&clang)
+        .args([
+            "-fuse-ld=lld",
+            obj_file,
+            &runtime_bc,
+            "-o",
+            bin_file,
+            "-lpthread",
+            "-lgc",
+        ])
+        .status()
+        .map_err(|e| LinkError::Failed(format!("lld link: {}", e)))?;
+
+    if !status.success() {
+        return Err(LinkError::Failed(format!(
+            "lld link exited with {}",
+            status.code().unwrap_or(-1)
+        )));
+    }
+    Ok(())
+}
+
+/// Minimal `which` lookup — returns the first PATH hit for `name`. We avoid
+/// pulling in the `which` crate for a one-shot PATH scan. #73.
+fn which(name: &str) -> Option<String> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
+    }
+    None
 }
