@@ -711,7 +711,7 @@ impl<'a> Parser<'a> {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 let body = self.parse_block();
-                let condition = Expression::Boolean(true, span.clone());
+                let condition = Expression::Boolean(true, span);
                 Some(Statement::While {
                     condition,
                     body,
@@ -1813,8 +1813,6 @@ impl<'a> Parser<'a> {
                     }
                 }
                 segments.push(Seg::Expr(expr_src));
-            } else if c == '}' {
-                cur.push(c);
             } else {
                 cur.push(c);
             }
@@ -1879,7 +1877,7 @@ mod tests {
                 assert_eq!(op2.kind, TokenKind::Star);
             }
         } else {
-            assert!(false, "Expected infix expression (+), got {:?}", expr);
+            panic!("Expected infix expression (+), got {:?}", expr);
         }
     }
 

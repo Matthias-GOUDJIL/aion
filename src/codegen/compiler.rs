@@ -144,7 +144,7 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn aion_type_to_llvm(&self, tn: &str) -> BasicTypeEnum<'ctx> {
-        self.type_to_llvm(&crate::analysis::types::Type::from_str(tn))
+        self.type_to_llvm(&crate::analysis::types::Type::parse(tn))
     }
 
     fn type_to_llvm(&self, ty: &crate::analysis::types::Type) -> BasicTypeEnum<'ctx> {
@@ -434,45 +434,41 @@ impl<'ctx> Compiler<'ctx> {
                 }
 
                 let lbv = self.compile_block(body, &mut local_vars, function)?;
-                if let Some(cb) = self.builder.get_insert_block() {
-                    if cb.get_terminator().is_none() {
-                        let rt = function.get_type().get_return_type();
-                        if let Some(mut v) = lbv {
-                            if let Some(tt) = rt {
-                                if v.get_type() != tt {
-                                    if tt.is_pointer_type() && v.is_int_value() {
-                                        v = self
-                                            .builder
-                                            .build_int_to_ptr(
-                                                v.into_int_value(),
-                                                self.context.ptr_type(AddressSpace::default()),
-                                                "ret_ptr",
-                                            )?
-                                            .into();
-                                    } else if tt.is_int_type() && v.is_pointer_value() {
-                                        v = self
-                                            .builder
-                                            .build_ptr_to_int(
-                                                v.into_pointer_value(),
-                                                i64_t,
-                                                "ret_int",
-                                            )?
-                                            .into();
-                                    }
-                                }
+                if let Some(cb) = self.builder.get_insert_block()
+                    && cb.get_terminator().is_none()
+                {
+                    let rt = function.get_type().get_return_type();
+                    if let Some(mut v) = lbv {
+                        if let Some(tt) = rt
+                            && v.get_type() != tt
+                        {
+                            if tt.is_pointer_type() && v.is_int_value() {
+                                v = self
+                                    .builder
+                                    .build_int_to_ptr(
+                                        v.into_int_value(),
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        "ret_ptr",
+                                    )?
+                                    .into();
+                            } else if tt.is_int_type() && v.is_pointer_value() {
+                                v = self
+                                    .builder
+                                    .build_ptr_to_int(v.into_pointer_value(), i64_t, "ret_int")?
+                                    .into();
                             }
-                            self.builder.build_return(Some(&v))?;
-                        } else {
-                            let def: BasicValueEnum = if rt.map_or(false, |t| t.is_pointer_type()) {
-                                self.context
-                                    .ptr_type(AddressSpace::default())
-                                    .const_null()
-                                    .into()
-                            } else {
-                                i64_t.const_zero().into()
-                            };
-                            self.builder.build_return(Some(&def))?;
                         }
+                        self.builder.build_return(Some(&v))?;
+                    } else {
+                        let def: BasicValueEnum = if rt.is_some_and(|t| t.is_pointer_type()) {
+                            self.context
+                                .ptr_type(AddressSpace::default())
+                                .const_null()
+                                .into()
+                        } else {
+                            i64_t.const_zero().into()
+                        };
+                        self.builder.build_return(Some(&def))?;
                     }
                 }
                 if let Some(p) = pb {
@@ -722,38 +718,38 @@ impl<'ctx> Compiler<'ctx> {
 
         let ad: Vec<Declaration> = self.decls.values().cloned().collect();
         for d in &ad {
-            if let Declaration::Function(f) = d {
-                if f.generic_params.is_empty() {
-                    let mut pv = Vec::new();
-                    if f.name == "main" {
-                        pv.push(self.context.i32_type().into());
-                        pv.push(pt.into());
-                    } else {
-                        for (_, ptn, _) in &f.params {
-                            pv.push(self.aion_type_to_llvm(ptn).into());
-                        }
+            if let Declaration::Function(f) = d
+                && f.generic_params.is_empty()
+            {
+                let mut pv = Vec::new();
+                if f.name == "main" {
+                    pv.push(self.context.i32_type().into());
+                    pv.push(pt.into());
+                } else {
+                    for (_, ptn, _) in &f.params {
+                        pv.push(self.aion_type_to_llvm(ptn).into());
                     }
-                    let mut ln = f.name.clone();
-                    for (an, av) in &f.attributes {
-                        if an == "intrinsic" {
-                            ln = av.replace("libc.", "");
-                            break;
-                        }
-                    }
-                    self.module.add_function(
-                        &ln,
-                        self.aion_type_to_llvm(&f.return_type).fn_type(&pv, false),
-                        None,
-                    );
                 }
+                let mut ln = f.name.clone();
+                for (an, av) in &f.attributes {
+                    if an == "intrinsic" {
+                        ln = av.replace("libc.", "");
+                        break;
+                    }
+                }
+                self.module.add_function(
+                    &ln,
+                    self.aion_type_to_llvm(&f.return_type).fn_type(&pv, false),
+                    None,
+                );
             }
         }
 
         for d in &ad {
-            if let Declaration::Function(f) = d {
-                if f.generic_params.is_empty() {
-                    self.compile_function(d)?;
-                }
+            if let Declaration::Function(f) = d
+                && f.generic_params.is_empty()
+            {
+                self.compile_function(d)?;
             }
         }
         Ok(())
@@ -844,19 +840,19 @@ impl<'ctx> Compiler<'ctx> {
                         .is_none()
                     {
                         let rt = function.get_type().get_return_type();
-                        if let Some(tt) = rt {
-                            if v.get_type() != tt {
-                                if tt.is_pointer_type() && v.is_int_value() {
-                                    v = self
-                                        .builder
-                                        .build_int_to_ptr(v.into_int_value(), pt, "ret_ptr")?
-                                        .into();
-                                } else if tt.is_int_type() && v.is_pointer_value() {
-                                    v = self
-                                        .builder
-                                        .build_ptr_to_int(v.into_pointer_value(), i64_t, "ret_int")?
-                                        .into();
-                                }
+                        if let Some(tt) = rt
+                            && v.get_type() != tt
+                        {
+                            if tt.is_pointer_type() && v.is_int_value() {
+                                v = self
+                                    .builder
+                                    .build_int_to_ptr(v.into_int_value(), pt, "ret_ptr")?
+                                    .into();
+                            } else if tt.is_int_type() && v.is_pointer_value() {
+                                v = self
+                                    .builder
+                                    .build_ptr_to_int(v.into_pointer_value(), i64_t, "ret_int")?
+                                    .into();
                             }
                         }
                         self.builder.build_return(Some(&v))?;
@@ -1063,50 +1059,50 @@ impl<'ctx> Compiler<'ctx> {
                             let is_default = all_patterns.iter().any(|p| p == "_");
                             let mut arm_match_cond: Option<inkwell::values::IntValue<'ctx>> = None;
 
-                            if !is_default {
-                                if let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen) {
-                                    for pat in &all_patterns {
-                                        let mut at = i as u64;
-                                        for (vi, v) in e_decl.variants.iter().enumerate() {
-                                            if pat == &v.name
-                                                || pat.ends_with(&format!(".{}", v.name))
-                                                || pat.ends_with(&format!("::{}", v.name))
-                                            {
-                                                at = vi as u64;
-                                                break;
-                                            }
-                                        }
-                                        // Fallback for common variants
-                                        if at == i as u64
-                                            && (pat == "Some"
-                                                || pat == "Ok"
-                                                || pat.ends_with(".Some")
-                                                || pat.ends_with("::Some"))
+                            if !is_default
+                                && let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen)
+                            {
+                                for pat in &all_patterns {
+                                    let mut at = i as u64;
+                                    for (vi, v) in e_decl.variants.iter().enumerate() {
+                                        if pat == &v.name
+                                            || pat.ends_with(&format!(".{}", v.name))
+                                            || pat.ends_with(&format!("::{}", v.name))
                                         {
-                                            at = 0;
+                                            at = vi as u64;
+                                            break;
                                         }
-                                        if at == i as u64
-                                            && (pat == "None"
-                                                || pat == "Err"
-                                                || pat.ends_with(".None")
-                                                || pat.ends_with("::None"))
-                                        {
-                                            at = 1;
-                                        }
-
-                                        let cond = self.builder.build_int_compare(
-                                            IntPredicate::EQ,
-                                            tag,
-                                            i64_t.const_int(at, false),
-                                            "is_arm",
-                                        )?;
-                                        arm_match_cond = Some(match arm_match_cond {
-                                            Some(prev) => {
-                                                self.builder.build_or(prev, cond, "arm_or")?
-                                            }
-                                            None => cond,
-                                        });
                                     }
+                                    // Fallback for common variants
+                                    if at == i as u64
+                                        && (pat == "Some"
+                                            || pat == "Ok"
+                                            || pat.ends_with(".Some")
+                                            || pat.ends_with("::Some"))
+                                    {
+                                        at = 0;
+                                    }
+                                    if at == i as u64
+                                        && (pat == "None"
+                                            || pat == "Err"
+                                            || pat.ends_with(".None")
+                                            || pat.ends_with("::None"))
+                                    {
+                                        at = 1;
+                                    }
+
+                                    let cond = self.builder.build_int_compare(
+                                        IntPredicate::EQ,
+                                        tag,
+                                        i64_t.const_int(at, false),
+                                        "is_arm",
+                                    )?;
+                                    arm_match_cond = Some(match arm_match_cond {
+                                        Some(prev) => {
+                                            self.builder.build_or(prev, cond, "arm_or")?
+                                        }
+                                        None => cond,
+                                    });
                                 }
                             }
 
@@ -1220,7 +1216,7 @@ impl<'ctx> Compiler<'ctx> {
 
                             let is_default = all_patterns.iter().any(|p| p == "_");
                             // If pattern is a binding variable (not a number) and we have params or guard, treat as wildcard
-                            let is_binding_var = arm.params.len() > 0 || arm.guard.is_some();
+                            let is_binding_var = !arm.params.is_empty() || arm.guard.is_some();
                             let mut prim_match_cond: Option<inkwell::values::IntValue<'ctx>> = None;
 
                             if !is_default && !is_binding_var {
@@ -1464,36 +1460,33 @@ impl<'ctx> Compiler<'ctx> {
         let pt = self.context.ptr_type(AddressSpace::default());
         match e {
             Expression::Identifier(name, _) => {
-                if let Some((vn, fnm)) = name.split_once('.') {
-                    if let Some((vptr, vt, vtn)) = variables.get(vn) {
-                        let btn = if vtn.contains('<') {
-                            vtn.split('<').next().ok_or_else(|| {
-                                CompileError::internal("Invalid type name".to_string())
-                            })?
-                        } else {
-                            vtn
-                        };
-                        let ftn = self
-                            .resolve_fuzzy_name(&self.struct_types, btn)
-                            .unwrap_or(btn.to_string());
-                        if let Some(flds) = self.struct_fields.get(ftn.as_str()) {
-                            if let Some(&idx) = flds.get(fnm) {
-                                let st = *self.struct_types.get(&ftn).ok_or_else(|| {
-                                    CompileError::internal(format!(
-                                        "LLVM struct type '{}' not found",
-                                        ftn
-                                    ))
-                                })?;
-                                let st_ptr = self
-                                    .builder
-                                    .build_load(*vt, *vptr, "st_load")?
-                                    .into_pointer_value();
-                                return Ok((
-                                    self.builder.build_struct_gep(st, st_ptr, idx, "fldptr")?,
-                                    self.aion_type_to_llvm(&self.get_field_type(vtn, fnm)),
-                                ));
-                            }
-                        }
+                if let Some((vn, fnm)) = name.split_once('.')
+                    && let Some((vptr, vt, vtn)) = variables.get(vn)
+                {
+                    let btn = if vtn.contains('<') {
+                        vtn.split('<').next().ok_or_else(|| {
+                            CompileError::internal("Invalid type name".to_string())
+                        })?
+                    } else {
+                        vtn
+                    };
+                    let ftn = self
+                        .resolve_fuzzy_name(&self.struct_types, btn)
+                        .unwrap_or(btn.to_string());
+                    if let Some(flds) = self.struct_fields.get(ftn.as_str())
+                        && let Some(&idx) = flds.get(fnm)
+                    {
+                        let st = *self.struct_types.get(&ftn).ok_or_else(|| {
+                            CompileError::internal(format!("LLVM struct type '{}' not found", ftn))
+                        })?;
+                        let st_ptr = self
+                            .builder
+                            .build_load(*vt, *vptr, "st_load")?
+                            .into_pointer_value();
+                        return Ok((
+                            self.builder.build_struct_gep(st, st_ptr, idx, "fldptr")?,
+                            self.aion_type_to_llvm(&self.get_field_type(vtn, fnm)),
+                        ));
                     }
                 }
                 if let Some((ptr, vt, _)) = variables.get(name) {
@@ -1550,7 +1543,7 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Deref { expr, .. } => {
                 let v = self.compile_expr(expr, variables, function)?;
                 let tn = self.get_expr_type_name(expr, variables);
-                let et = self.aion_type_to_llvm(if tn.starts_with('*') { &tn[1..] } else { "i64" });
+                let et = self.aion_type_to_llvm(tn.strip_prefix('*').unwrap_or("i64"));
                 let p = if v.is_int_value() {
                     self.builder
                         .build_int_to_ptr(v.into_int_value(), pt, "i2p")?
@@ -1587,23 +1580,17 @@ impl<'ctx> Compiler<'ctx> {
                     if let Ok((ptr, vt)) = self.compile_lvalue(e, variables, function) {
                         return Ok(self.builder.build_load(vt, ptr, name)?);
                     }
-                    if name == "argc" {
-                        if let Some(g) = self.module.get_global("aion_argc") {
-                            return Ok(self.builder.build_load(
-                                i64_t,
-                                g.as_pointer_value(),
-                                "argc",
-                            )?);
-                        }
+                    if name == "argc"
+                        && let Some(g) = self.module.get_global("aion_argc")
+                    {
+                        return Ok(self
+                            .builder
+                            .build_load(i64_t, g.as_pointer_value(), "argc")?);
                     }
-                    if name == "argv" {
-                        if let Some(g) = self.module.get_global("aion_argv") {
-                            return Ok(self.builder.build_load(
-                                pt,
-                                g.as_pointer_value(),
-                                "argv",
-                            )?);
-                        }
+                    if name == "argv"
+                        && let Some(g) = self.module.get_global("aion_argv")
+                    {
+                        return Ok(self.builder.build_load(pt, g.as_pointer_value(), "argv")?);
                     }
                     Err(self.err(format!("variable '{}' not found", name), e))
                 }
@@ -1642,8 +1629,8 @@ impl<'ctx> Compiler<'ctx> {
                             self.compile_expr(&re, variables, function)?
                                 .into_pointer_value()
                         };
-                        let element_type = if tn.starts_with('*') {
-                            self.aion_type_to_llvm(&tn[1..])
+                        let element_type = if let Some(stripped) = tn.strip_prefix('*') {
+                            self.aion_type_to_llvm(stripped)
                         } else {
                             self.context.i64_type().into()
                         };
@@ -1683,7 +1670,7 @@ impl<'ctx> Compiler<'ctx> {
                             .unwrap_or(format!("{}.{}", tp, mn));
                         if let Some(Declaration::Function(f_decl)) = self.decls.get(&fc) {
                             let has_self =
-                                f_decl.params.get(0).map_or(false, |(n, _, _)| n == "self");
+                                f_decl.params.first().is_some_and(|(n, _, _)| n == "self");
                             if has_self {
                                 aa.insert(0, re);
                                 if aga.is_empty() {
@@ -1738,7 +1725,7 @@ impl<'ctx> Compiler<'ctx> {
                 for (i, arg) in aa.iter().enumerate() {
                     let ep = pts
                         .get(i)
-                        .map_or(false, |t: &inkwell::types::BasicMetadataTypeEnum| {
+                        .is_some_and(|t: &inkwell::types::BasicMetadataTypeEnum| {
                             t.is_pointer_type()
                         });
                     let val = if i == 0 && is_mc {
@@ -1836,7 +1823,7 @@ impl<'ctx> Compiler<'ctx> {
                         i64_t.const_int(1, false)
                     };
                     phi.add_incoming(&[(&lv_v, lfb), (&ri, rfb)]);
-                    return Ok(phi.as_basic_value().into());
+                    return Ok(phi.as_basic_value());
                 }
 
                 let lhs = self.compile_expr(left, variables, function)?;
@@ -1849,30 +1836,23 @@ impl<'ctx> Compiler<'ctx> {
                         right: r_right,
                         ..
                     } = &**right
+                        && r_op.kind == TokenKind::Range
                     {
-                        if r_op.kind == TokenKind::Range {
-                            let l = lhs.into_int_value();
-                            let min = self
-                                .compile_expr(r_left, variables, function)?
-                                .into_int_value();
-                            let max = self
-                                .compile_expr(r_right, variables, function)?
-                                .into_int_value();
-                            let c1 = self.builder.build_int_compare(
-                                IntPredicate::SGE,
-                                l,
-                                min,
-                                "in_ge",
-                            )?;
-                            let c2 = self.builder.build_int_compare(
-                                IntPredicate::SLT,
-                                l,
-                                max,
-                                "in_lt",
-                            )?;
-                            let res = self.builder.build_and(c1, c2, "in_res")?;
-                            return Ok(self.builder.build_int_z_extend(res, i64_t, "bool")?.into());
-                        }
+                        let l = lhs.into_int_value();
+                        let min = self
+                            .compile_expr(r_left, variables, function)?
+                            .into_int_value();
+                        let max = self
+                            .compile_expr(r_right, variables, function)?
+                            .into_int_value();
+                        let c1 =
+                            self.builder
+                                .build_int_compare(IntPredicate::SGE, l, min, "in_ge")?;
+                        let c2 =
+                            self.builder
+                                .build_int_compare(IntPredicate::SLT, l, max, "in_lt")?;
+                        let res = self.builder.build_and(c1, c2, "in_res")?;
+                        return Ok(self.builder.build_int_z_extend(res, i64_t, "bool")?.into());
                     }
                     return Err(CompileError::internal(
                         "Operator 'inside' currently only supports ranges (min..max)".to_string(),
@@ -2253,9 +2233,9 @@ impl<'ctx> Compiler<'ctx> {
                     })?
                 };
                 let mut ca = Vec::new();
-                let has_self = self.decls.get(&fm).map_or(false, |d| {
+                let has_self = self.decls.get(&fm).is_some_and(|d| {
                     if let Declaration::Function(fd) = d {
-                        fd.params.first().map_or(false, |(n, _, _)| n == "self")
+                        fd.params.first().is_some_and(|(n, _, _)| n == "self")
                     } else {
                         false
                     }
@@ -2331,7 +2311,7 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Deref { expr, .. } => {
                 let v = self.compile_expr(expr, variables, function)?;
                 let tn = self.get_expr_type_name(expr, variables);
-                let et = self.aion_type_to_llvm(if tn.starts_with('*') { &tn[1..] } else { "i64" });
+                let et = self.aion_type_to_llvm(tn.strip_prefix('*').unwrap_or("i64"));
                 let p = if v.is_int_value() {
                     self.builder
                         .build_int_to_ptr(v.into_int_value(), pt, "i2p")?
@@ -2444,11 +2424,12 @@ impl<'ctx> Compiler<'ctx> {
             } => {
                 let mut an = name.clone();
                 let mut aa = arguments.clone();
-                if name == "intrinsic" && !arguments.is_empty() {
-                    if let Expression::String(s, _) = &arguments[0] {
-                        an = s.clone();
-                        aa.remove(0);
-                    }
+                if name == "intrinsic"
+                    && !arguments.is_empty()
+                    && let Expression::String(s, _) = &arguments[0]
+                {
+                    an = s.clone();
+                    aa.remove(0);
                 }
                 if an == "sizeof" && !aa.is_empty() {
                     let tnm = match &aa[0] {
@@ -2471,25 +2452,23 @@ impl<'ctx> Compiler<'ctx> {
                     } else {
                         &clean
                     };
-                    if let Some(sn) = self.resolve_fuzzy_name(&self.struct_types, btn) {
-                        if let Some(st) = self.struct_types.get(&sn) {
-                            return Ok(st
-                                .size_of()
-                                .ok_or_else(|| {
-                                    CompileError::internal("Struct size unknown".to_string())
-                                })?
-                                .into());
-                        }
+                    if let Some(sn) = self.resolve_fuzzy_name(&self.struct_types, btn)
+                        && let Some(st) = self.struct_types.get(&sn)
+                    {
+                        return Ok(st
+                            .size_of()
+                            .ok_or_else(|| {
+                                CompileError::internal("Struct size unknown".to_string())
+                            })?
+                            .into());
                     }
-                    if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, btn) {
-                        if let Some(et) = self.enum_types.get(&en) {
-                            return Ok(et
-                                .size_of()
-                                .ok_or_else(|| {
-                                    CompileError::internal("Enum size unknown".to_string())
-                                })?
-                                .into());
-                        }
+                    if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, btn)
+                        && let Some(et) = self.enum_types.get(&en)
+                    {
+                        return Ok(et
+                            .size_of()
+                            .ok_or_else(|| CompileError::internal("Enum size unknown".to_string()))?
+                            .into());
                     }
                     let lt = self.aion_type_to_llvm(&tnm);
                     let res = if lt.is_pointer_type() {
@@ -2518,59 +2497,59 @@ impl<'ctx> Compiler<'ctx> {
                             Expression::TypeRef { name, .. } => name.clone(),
                             _ => "i64".to_string(),
                         };
-                        if let Some(sn) = self.resolve_fuzzy_name(&self.struct_types, &tnm) {
-                            if let Some(&st) = self.struct_types.get(&sn) {
-                                // Return a boxed pointer to a freshly zeroed heap struct, matching
-                                // the StructInst convention (heap-alloc + opaque ptr). Returning an
-                                // inline struct value here would break (*p).field after *p = mem_zero(T)
-                                // — the Deref+MemberAccess path assumes the slot holds a box pointer.
-                                let size = st.size_of().ok_or_else(|| {
-                                    CompileError::internal("Struct size unknown".to_string())
+                        if let Some(sn) = self.resolve_fuzzy_name(&self.struct_types, &tnm)
+                            && let Some(&st) = self.struct_types.get(&sn)
+                        {
+                            // Return a boxed pointer to a freshly zeroed heap struct, matching
+                            // the StructInst convention (heap-alloc + opaque ptr). Returning an
+                            // inline struct value here would break (*p).field after *p = mem_zero(T)
+                            // — the Deref+MemberAccess path assumes the slot holds a box pointer.
+                            let size = st.size_of().ok_or_else(|| {
+                                CompileError::internal("Struct size unknown".to_string())
+                            })?;
+                            let malloc_fn =
+                                self.module.get_function("aion_malloc").ok_or_else(|| {
+                                    CompileError::internal("aion_malloc not found".to_string())
                                 })?;
-                                let malloc_fn =
-                                    self.module.get_function("aion_malloc").ok_or_else(|| {
-                                        CompileError::internal("aion_malloc not found".to_string())
-                                    })?;
-                                let box_ptr = match self
-                                    .builder
-                                    .build_call(malloc_fn, &[size.into()], "memzero_box")?
-                                    .try_as_basic_value()
-                                {
-                                    ValueKind::Basic(v) => v.into_pointer_value(),
-                                    _ => {
-                                        return Err(CompileError::internal(
-                                            "aion_malloc did not return a value".to_string(),
-                                        ));
-                                    }
-                                };
-                                self.builder.build_store(box_ptr, st.const_zero())?;
-                                return Ok(box_ptr.into());
-                            }
+                            let box_ptr = match self
+                                .builder
+                                .build_call(malloc_fn, &[size.into()], "memzero_box")?
+                                .try_as_basic_value()
+                            {
+                                ValueKind::Basic(v) => v.into_pointer_value(),
+                                _ => {
+                                    return Err(CompileError::internal(
+                                        "aion_malloc did not return a value".to_string(),
+                                    ));
+                                }
+                            };
+                            self.builder.build_store(box_ptr, st.const_zero())?;
+                            return Ok(box_ptr.into());
                         }
-                        if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, &tnm) {
-                            if let Some(&et) = self.enum_types.get(&en) {
-                                let size = et.size_of().ok_or_else(|| {
-                                    CompileError::internal("Enum size unknown".to_string())
+                        if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, &tnm)
+                            && let Some(&et) = self.enum_types.get(&en)
+                        {
+                            let size = et.size_of().ok_or_else(|| {
+                                CompileError::internal("Enum size unknown".to_string())
+                            })?;
+                            let malloc_fn =
+                                self.module.get_function("aion_malloc").ok_or_else(|| {
+                                    CompileError::internal("aion_malloc not found".to_string())
                                 })?;
-                                let malloc_fn =
-                                    self.module.get_function("aion_malloc").ok_or_else(|| {
-                                        CompileError::internal("aion_malloc not found".to_string())
-                                    })?;
-                                let box_ptr = match self
-                                    .builder
-                                    .build_call(malloc_fn, &[size.into()], "memzero_box")?
-                                    .try_as_basic_value()
-                                {
-                                    ValueKind::Basic(v) => v.into_pointer_value(),
-                                    _ => {
-                                        return Err(CompileError::internal(
-                                            "aion_malloc did not return a value".to_string(),
-                                        ));
-                                    }
-                                };
-                                self.builder.build_store(box_ptr, et.const_zero())?;
-                                return Ok(box_ptr.into());
-                            }
+                            let box_ptr = match self
+                                .builder
+                                .build_call(malloc_fn, &[size.into()], "memzero_box")?
+                                .try_as_basic_value()
+                            {
+                                ValueKind::Basic(v) => v.into_pointer_value(),
+                                _ => {
+                                    return Err(CompileError::internal(
+                                        "aion_malloc did not return a value".to_string(),
+                                    ));
+                                }
+                            };
+                            self.builder.build_store(box_ptr, et.const_zero())?;
+                            return Ok(box_ptr.into());
                         }
                         let lt = self.aion_type_to_llvm(&tnm);
                         if lt.is_pointer_type() {
@@ -2601,7 +2580,7 @@ impl<'ctx> Compiler<'ctx> {
                 }
                 let lnm = match an.as_str() {
                     "str_len" => "strlen".to_string(),
-                    "str_ptr" => return Ok(self.compile_expr(&aa[0], variables, function)?),
+                    "str_ptr" => return self.compile_expr(&aa[0], variables, function),
                     "fs_read_to_string" => "aion_read_file".to_string(),
                     "fs_write" => "aion_write_file".to_string(),
                     "fs_append" => "aion_append_file".to_string(),
@@ -2674,49 +2653,46 @@ impl<'ctx> Compiler<'ctx> {
                         let is_default = all_patterns.iter().any(|p| p == "_");
                         let mut arm_match_cond: Option<inkwell::values::IntValue<'ctx>> = None;
 
-                        if !is_default {
-                            if let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen) {
-                                for pat in &all_patterns {
-                                    let mut at = i as u64;
-                                    for (vi, v) in e_decl.variants.iter().enumerate() {
-                                        if pat == &v.name
-                                            || pat.ends_with(&format!(".{}", v.name))
-                                            || pat.ends_with(&format!("::{}", v.name))
-                                        {
-                                            at = vi as u64;
-                                            break;
-                                        }
-                                    }
-                                    if at == i as u64
-                                        && (pat == "Some"
-                                            || pat == "Ok"
-                                            || pat.ends_with(".Some")
-                                            || pat.ends_with("::Some"))
+                        if !is_default && let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen)
+                        {
+                            for pat in &all_patterns {
+                                let mut at = i as u64;
+                                for (vi, v) in e_decl.variants.iter().enumerate() {
+                                    if pat == &v.name
+                                        || pat.ends_with(&format!(".{}", v.name))
+                                        || pat.ends_with(&format!("::{}", v.name))
                                     {
-                                        at = 0;
+                                        at = vi as u64;
+                                        break;
                                     }
-                                    if at == i as u64
-                                        && (pat == "None"
-                                            || pat == "Err"
-                                            || pat.ends_with(".None")
-                                            || pat.ends_with("::None"))
-                                    {
-                                        at = 1;
-                                    }
-
-                                    let cond = self.builder.build_int_compare(
-                                        IntPredicate::EQ,
-                                        tag,
-                                        i64_t.const_int(at, false),
-                                        "is_arm",
-                                    )?;
-                                    arm_match_cond = Some(match arm_match_cond {
-                                        Some(prev) => {
-                                            self.builder.build_or(prev, cond, "arm_or")?
-                                        }
-                                        None => cond,
-                                    });
                                 }
+                                if at == i as u64
+                                    && (pat == "Some"
+                                        || pat == "Ok"
+                                        || pat.ends_with(".Some")
+                                        || pat.ends_with("::Some"))
+                                {
+                                    at = 0;
+                                }
+                                if at == i as u64
+                                    && (pat == "None"
+                                        || pat == "Err"
+                                        || pat.ends_with(".None")
+                                        || pat.ends_with("::None"))
+                                {
+                                    at = 1;
+                                }
+
+                                let cond = self.builder.build_int_compare(
+                                    IntPredicate::EQ,
+                                    tag,
+                                    i64_t.const_int(at, false),
+                                    "is_arm",
+                                )?;
+                                arm_match_cond = Some(match arm_match_cond {
+                                    Some(prev) => self.builder.build_or(prev, cond, "arm_or")?,
+                                    None => cond,
+                                });
                             }
                         }
 
@@ -2827,7 +2803,7 @@ impl<'ctx> Compiler<'ctx> {
                         };
 
                         let is_default = all_patterns.iter().any(|p| p == "_");
-                        let is_binding_var = arm.params.len() > 0 || arm.guard.is_some();
+                        let is_binding_var = !arm.params.is_empty() || arm.guard.is_some();
                         let mut prim_match_cond: Option<inkwell::values::IntValue<'ctx>> = None;
 
                         if !is_default && !is_binding_var {
@@ -3027,7 +3003,7 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn get_field_type(&self, it: &String, fnm: &str) -> String {
+    fn get_field_type(&self, it: &str, fnm: &str) -> String {
         let clean = it.replace(" ", "");
         let mut cs = clean.as_str();
         while cs.starts_with('*') {
@@ -3130,11 +3106,11 @@ impl<'ctx> Compiler<'ctx> {
                     } else {
                         "unknown".to_string()
                     };
-                    for i in 1..parts.len() {
+                    for p in parts.iter().skip(1) {
                         if ct == "unknown" {
                             break;
                         }
-                        ct = self.get_field_type(&ct, parts[i]);
+                        ct = self.get_field_type(&ct, p);
                     }
                     return ct.replace(" ", "");
                 }
@@ -3345,8 +3321,8 @@ impl<'ctx> Compiler<'ctx> {
             }
             Expression::Deref { expr, .. } => {
                 let t = self.get_expr_type_name(expr, variables);
-                if t.starts_with('*') {
-                    t[1..].to_string().replace(" ", "")
+                if let Some(stripped) = t.strip_prefix('*') {
+                    stripped.to_string().replace(" ", "")
                 } else {
                     "unknown".to_string()
                 }

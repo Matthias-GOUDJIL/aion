@@ -46,7 +46,7 @@ Aion is a system programming language for AI-native apps. The compiler (`aionc`)
 
 - **Issues**: https://github.com/Matthias-GOUDJIL/aion/issues
 - **Branches**: Feature branches → PR → merge to `main`
-- **Commits**: Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`)
+- **Commits**: Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`, `style:`, `perf:`, `build:`, `ci:`)
 - **CI**: GitHub Actions runs tests on every push/PR
 
 ### Issue & PR Templates

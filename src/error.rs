@@ -232,10 +232,10 @@ fn extract_snippet(source: &str, line: usize, col: usize) -> Option<String> {
     let end = (line + 1).min(lines.len());
 
     let mut result = String::new();
-    for i in start..end {
+    for (i, text) in lines.iter().enumerate().skip(start).take(end - start) {
         let line_num = i + 1;
         let prefix = if line_num == line { " > " } else { "   " };
-        result.push_str(&format!("{}{:4} | {}\n", prefix, line_num, lines[i]));
+        result.push_str(&format!("{}{:4} | {}\n", prefix, line_num, text));
         if line_num == line && col > 0 {
             let offset = 6 + col;
             result.push_str(&format!("{}^\n", " ".repeat(offset)));
