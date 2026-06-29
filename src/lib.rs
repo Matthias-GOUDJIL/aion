@@ -184,7 +184,7 @@ pub fn generate_docs(input_path: &str) -> Result<String, CompileError> {
             let path = imp.path.join(".");
             doc.push_str(&format!("- `{}`\n", path));
         }
-        doc.push_str("\n");
+        doc.push('\n');
     }
 
     for decl in &program.declarations {
@@ -195,7 +195,7 @@ pub fn generate_docs(input_path: &str) -> Result<String, CompileError> {
                     doc.push_str(&format!("{}\n\n", comment));
                 }
                 doc.push_str(&generate_function_signature(f));
-                doc.push_str("\n");
+                doc.push('\n');
             }
             ast::Declaration::Struct(s) => {
                 doc.push_str(&format!("## Struct `{}`\n\n", s.name));
@@ -213,7 +213,7 @@ pub fn generate_docs(input_path: &str) -> Result<String, CompileError> {
                     for (name, ty) in &s.fields {
                         doc.push_str(&format!("| `{}` | `{}` |\n", name, ty));
                     }
-                    doc.push_str("\n");
+                    doc.push('\n');
                 }
             }
             ast::Declaration::Enum(e) => {
@@ -237,7 +237,7 @@ pub fn generate_docs(input_path: &str) -> Result<String, CompileError> {
                         };
                         doc.push_str(&format!("| `{}` | {} |\n", v.name, data));
                     }
-                    doc.push_str("\n");
+                    doc.push('\n');
                 }
             }
             ast::Declaration::Interface(iface) => {
@@ -251,7 +251,7 @@ pub fn generate_docs(input_path: &str) -> Result<String, CompileError> {
                         doc.push_str(&format!("{}\n\n", mc));
                     }
                     doc.push_str(&generate_function_signature(method));
-                    doc.push_str("\n");
+                    doc.push('\n');
                 }
             }
             ast::Declaration::Impl(impl_block) => {
@@ -274,7 +274,7 @@ pub fn generate_docs(input_path: &str) -> Result<String, CompileError> {
                         doc.push_str(&format!("{}\n\n", mc));
                     }
                     doc.push_str(&generate_function_signature(method));
-                    doc.push_str("\n");
+                    doc.push('\n');
                 }
             }
         }
@@ -323,7 +323,7 @@ fn generate_function_signature(f: &ast::Function) -> String {
     }
 
     if f.body.is_none() {
-        sig.push_str(";");
+        sig.push(';');
     }
 
     sig.push_str("\n```\n");

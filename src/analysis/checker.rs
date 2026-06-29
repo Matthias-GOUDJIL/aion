@@ -108,7 +108,7 @@ impl TypeChecker {
                 return t;
             }
         }
-        Type::from_str(trimmed)
+        Type::parse(trimmed)
     }
 
     fn register_builtins(&mut self) {
@@ -499,10 +499,10 @@ impl TypeChecker {
                     };
 
                     // Check if this is a binding variable pattern (lowercase identifier that should bind)
-                    let _is_binding_pattern = arm.params.len() > 0
+                    let _is_binding_pattern = !arm.params.is_empty()
                         && all_patterns
                             .iter()
-                            .all(|p| !p.parse::<i64>().is_ok() && !p.starts_with('"'));
+                            .all(|p| p.parse::<i64>().is_err() && !p.starts_with('"'));
 
                     if !arm.params.is_empty() {
                         self.env = Environment::new_enclosed(old_env.clone());
@@ -841,7 +841,7 @@ impl TypeChecker {
                         .variants
                         .iter()
                         .find(|v| v.name == *variant)
-                        .map_or(false, |v| !v.data_types.is_empty())
+                        .is_some_and(|v| !v.data_types.is_empty())
                 } else {
                     false
                 };

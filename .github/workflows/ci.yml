@@ -40,3 +40,35 @@ jobs:
             -w /workspace \
             aion-compiler \
             bash -c "mkdir -p tests/tmp && INSTA_UPDATE=always cargo test -- --test-threads=1"
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t aion-compiler .
+
+      - name: Run clippy with -D warnings
+        run: |
+          docker run --rm \
+            -v "$(pwd)":/workspace \
+            -w /workspace \
+            aion-compiler \
+            cargo clippy --all-targets -- -D warnings
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t aion-compiler .
+
+      - name: Check formatting
+        run: |
+          docker run --rm \
+            -v "$(pwd)":/workspace \
+            -w /workspace \
+            aion-compiler \
+            cargo fmt --check

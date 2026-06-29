@@ -27,10 +27,10 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         let trimmed = s.trim();
         if let Some(stripped) = trimmed.strip_prefix('*') {
-            return Type::Pointer(Box::new(Type::from_str(stripped.trim())));
+            return Type::Pointer(Box::new(Type::parse(stripped.trim())));
         }
         match trimmed {
             "i64" | "u64" | "i32" | "u32" | "i8" | "u8" => Type::Integer,
@@ -41,19 +41,20 @@ impl Type {
             "Duration" => Type::Duration,
             "void" | "Unit" => Type::Unit,
             _ => {
-                if trimmed.contains('<') && trimmed.ends_with('>') {
-                    if let Some(start) = trimmed.find('<') {
-                        let base = trimmed[..start].to_string();
-                        let args_str = &trimmed[start + 1..trimmed.len() - 1];
-                        let mut ga = Vec::new();
-                        for part in args_str.split(',') {
-                            let pt = part.trim().to_string();
-                            if !pt.is_empty() {
-                                ga.push(Type::from_str(&pt));
-                            }
+                if trimmed.contains('<')
+                    && trimmed.ends_with('>')
+                    && let Some(start) = trimmed.find('<')
+                {
+                    let base = trimmed[..start].to_string();
+                    let args_str = &trimmed[start + 1..trimmed.len() - 1];
+                    let mut ga = Vec::new();
+                    for part in args_str.split(',') {
+                        let pt = part.trim().to_string();
+                        if !pt.is_empty() {
+                            ga.push(Type::parse(&pt));
                         }
-                        return Type::GenericInstance(base, ga);
                     }
+                    return Type::GenericInstance(base, ga);
                 }
                 Type::Placeholder(trimmed.to_string())
             }
