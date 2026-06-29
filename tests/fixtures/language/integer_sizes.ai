@@ -1,0 +1,21 @@
+use std.io
+use std.string
+
+// Verify that annotated integer types get distinct LLVM sizes via @sizeof.
+// #52 — integer sizes (i8/u8/i32/u32/i64/u64).
+
+fn main() {
+    let a: i32 = 0
+    let b: u8 = 0
+    let c: i64 = 0
+    let d: u32 = 0
+    let e: i8 = 0
+
+    io.println(string.from_int(@sizeof(a))) // 4
+    io.println(string.from_int(@sizeof(b))) // 1
+    io.println(string.from_int(@sizeof(c))) // 8
+    io.println(string.from_int(@sizeof(d))) // 4
+    io.println(string.from_int(@sizeof(e))) // 1
+
+    return 0
+}

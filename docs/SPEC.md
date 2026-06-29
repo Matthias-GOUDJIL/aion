@@ -37,10 +37,18 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
 ## 2. Type System
 
 ### Primitives
-- `i64` (default integer), `f64` (float), `bool`, `String` (pointer to
-  C-string), `Duration` (i64 millis), `Date` (i64 millis timestamp).
+- Integer types: `i8`, `u8`, `i32`, `u32`, `i64` (default), `u64`. All are
+  distinct in the type system and codegen emits the matching LLVM width
+  (`i8_type()`, `i32_type()`, ...). Integer literals default to `i64` and
+  coerce to any annotated integer type at `let`/`return` (`let x: i32 = 0`
+  stores an `i32`). Arithmetic requires both operands to share the same
+  bit width; mixing `i32` and `i64` is a type error (#52). Same-width
+  signed/unsigned mixing (`i64 ^ u64`) is allowed, result takes the LHS.
+- `f64` (float), `bool`, `String` (pointer to C-string), `Duration` (i64
+  millis), `Date` (i64 millis timestamp).
 - Char literals: `'a'` → integer char code.
-- Type system is **monomorphic at codegen**: only `i64`, `f64`, `bool`,
+- Type system is **monomorphic at codegen**: each integer keeps its width,
+  `f64`, `bool`,
   `String`, `Duration`, `Date` exist at the LLVM level. All composite
   types lower to opaque pointers (see §3).
 
@@ -205,8 +213,9 @@ The Aion-written compiler lives in `compiler/`:
   non-String values.
 - `std.json` cannot parse arrays or objects (type checker limitation on
   non-generic `Vector<Value>` — see `stdlib/std/json_SPEC.md`).
-- Integer widths are not distinguished (only `i64`); `i8/i32/u64` are
-  not yet supported (#52).
+- Integer arithmetic between **different bit widths** (e.g. `i32 + i64`)
+  is a type error. Same-width signed/unsigned mixing (`i64 ^ u64`, used
+  by the stdlib hash) is allowed; the result takes the LHS type. #52.
 
 ## 11. Backwards-Incompatible Notes
 

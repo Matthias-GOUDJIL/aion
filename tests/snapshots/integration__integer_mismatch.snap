@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/integer_mismatch\")"
+---
+Type Error: cannot apply 'Plus' to mismatched integer types i32 and i64

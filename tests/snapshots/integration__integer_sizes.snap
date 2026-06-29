@@ -1,0 +1,9 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/integer_sizes\")"
+---
+4
+1
+8
+4
+1
