@@ -14,16 +14,39 @@ impl Token {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TokenKind {
     // System Keywords
-    Fn, Let, Mut, Struct, Enum, Return, If, Else, Match, As, While,
-    Use, Pub, Async, Unsafe, Require, Extern,
-    Interface, Impl, Channel,
-    For, In, Type, SelfToken, Spawn,
-    Break, Continue, Loop,
-    
+    Fn,
+    Let,
+    Mut,
+    Struct,
+    Enum,
+    Return,
+    If,
+    Else,
+    Match,
+    As,
+    While,
+    Use,
+    Pub,
+    Async,
+    Unsafe,
+    Require,
+    Extern,
+    Interface,
+    Impl,
+    Channel,
+    For,
+    In,
+    Type,
+    SelfToken,
+    Spawn,
+    Break,
+    Continue,
+    Loop,
+
     // AI-Native & Logic
-    Intent, 
+    Intent,
     Invariant,
-    Inside, 
+    Inside,
 
     // Identifiers and Literals
     Identifier(String),
@@ -34,26 +57,48 @@ pub enum TokenKind {
     FloatLiteral(f64),
     DurationLiteral(u64, u32),
     DateLiteral(i64),
-    True, False, // Keywords
+    True,
+    False, // Keywords
 
     // Symbols and Operators
-    Plus, Minus, Star, Slash, Percent, Caret, // Arithmetic (+ % ^)
-    Eq, EqEq, NotEq, Arrow, 
-    LArrow, // <- (Send/Receive)
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Caret, // Arithmetic (+ % ^)
+    Eq,
+    EqEq,
+    NotEq,
+    Arrow,
+    LArrow,   // <- (Send/Receive)
     Pipeline, // |>
-    And, Or, Bang, // Logic (&& || !)
-    Gt, Lt, GtEq, LtEq,
-    LParen, RParen, LBrace, RBrace, LBracket, RBracket, 
-    Colon, Semicolon, Comma, Dot, 
+    And,
+    Or,
+    Bang, // Logic (&& || !)
+    Gt,
+    Lt,
+    GtEq,
+    LtEq,
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
+    Colon,
+    Semicolon,
+    Comma,
+    Dot,
     Pipe,
-    DoubleColon, 
-    Range,       
+    DoubleColon,
+    Range,
     At,
     Question,
 
     // End of File
     EOF,
-    
+
     // Doc Comments
     DocComment(String),
 

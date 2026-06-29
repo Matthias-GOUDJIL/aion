@@ -1,7 +1,7 @@
 use super::Span;
 use super::stmt::MatchArm;
-use crate::lexer::token::Token;
 use crate::ast::Statement;
+use crate::lexer::token::Token;
 
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -13,7 +13,12 @@ pub enum Expression {
     Date(i64, Span),
     Identifier(String, Span),
     Boolean(bool, Span),
-    Infix { left: Box<Expression>, operator: Token, right: Box<Expression>, span: Span },
+    Infix {
+        left: Box<Expression>,
+        operator: Token,
+        right: Box<Expression>,
+        span: Span,
+    },
     Call {
         function: String,
         generic_args: Vec<String>,
@@ -26,12 +31,36 @@ pub enum Expression {
         fields: Vec<(String, Expression)>,
         span: Span,
     },
-    Range { start: Box<Expression>, end: Box<Expression>, span: Span },
-    Block { statements: Vec<Statement>, is_unsafe: bool, span: Span },
-    If { condition: Box<Expression>, then_branch: Vec<Statement>, else_branch: Option<Vec<Statement>>, span: Span },
-    Deref { expr: Box<Expression>, span: Span },
-    Cast { expr: Box<Expression>, target: String, span: Span },
-    Intrinsic { name: String, arguments: Vec<Expression>, span: Span },
+    Range {
+        start: Box<Expression>,
+        end: Box<Expression>,
+        span: Span,
+    },
+    Block {
+        statements: Vec<Statement>,
+        is_unsafe: bool,
+        span: Span,
+    },
+    If {
+        condition: Box<Expression>,
+        then_branch: Vec<Statement>,
+        else_branch: Option<Vec<Statement>>,
+        span: Span,
+    },
+    Deref {
+        expr: Box<Expression>,
+        span: Span,
+    },
+    Cast {
+        expr: Box<Expression>,
+        target: String,
+        span: Span,
+    },
+    Intrinsic {
+        name: String,
+        arguments: Vec<Expression>,
+        span: Span,
+    },
     EnumInst {
         name: String,
         variant: String,

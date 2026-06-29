@@ -1,7 +1,7 @@
-use crate::lexer::token::{Token, TokenKind};
-use crate::lexer::Lexer;
 use crate::ast::*;
 use crate::error::CompileError;
+use crate::lexer::Lexer;
+use crate::lexer::token::{Token, TokenKind};
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
@@ -13,7 +13,12 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     pub fn new(mut lexer: Lexer<'a>) -> Self {
         let current_token = lexer.next_token();
-        Self { lexer, current_token, peek_buffer: Vec::new(), errors: Vec::new() }
+        Self {
+            lexer,
+            current_token,
+            peek_buffer: Vec::new(),
+            errors: Vec::new(),
+        }
     }
 
     fn next_token(&mut self) {
@@ -25,7 +30,10 @@ impl<'a> Parser<'a> {
     }
 
     fn error(&self, message: &str) -> String {
-        format!("{} at line {}, col {}", message, self.current_token.line, self.current_token.col)
+        format!(
+            "{} at line {}, col {}",
+            message, self.current_token.line, self.current_token.col
+        )
     }
 
     fn push_error(&mut self, message: impl Into<String>) {
@@ -55,8 +63,10 @@ impl<'a> Parser<'a> {
                     self.next_token();
                     let path = self.parse_path();
                     module_name = Some(path.join("."));
-                    if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
-                },
+                    if self.current_token.kind == TokenKind::Semicolon {
+                        self.next_token();
+                    }
+                }
                 TokenKind::Use => imports.push(self.parse_import()),
                 TokenKind::DoubleColon => {
                     if self.peek_at(0).kind == TokenKind::Intent {
@@ -69,7 +79,7 @@ impl<'a> Parser<'a> {
                         self.push_error("Syntax Error: Unexpected :: at top level");
                         self.next_token();
                     }
-                },
+                }
                 _ => {
                     if let Some(decl) = self.parse_declaration() {
                         declarations.push(decl);
@@ -77,11 +87,15 @@ impl<'a> Parser<'a> {
                         self.push_error("Syntax Error: Unexpected token in declaration");
                         self.next_token();
                     }
-                },
+                }
             }
         }
         if self.errors.is_empty() {
-            Ok(Program { module_name, imports, declarations })
+            Ok(Program {
+                module_name,
+                imports,
+                declarations,
+            })
         } else {
             Err(std::mem::take(&mut self.errors))
         }
@@ -94,9 +108,9 @@ impl<'a> Parser<'a> {
             self.next_token();
             while self.current_token.kind == TokenKind::Dot {
                 self.next_token();
-                if let TokenKind::Identifier(sub) = &self.current_token.kind { 
-                    path.push(sub.clone()); 
-                    self.next_token(); 
+                if let TokenKind::Identifier(sub) = &self.current_token.kind {
+                    path.push(sub.clone());
+                    self.next_token();
                 } else {
                     break;
                 }
@@ -108,7 +122,9 @@ impl<'a> Parser<'a> {
     fn parse_import(&mut self) -> Import {
         self.next_token();
         let path = self.parse_path();
-        if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
+        if self.current_token.kind == TokenKind::Semicolon {
+            self.next_token();
+        }
         Import { path, alias: None }
     }
 
@@ -130,11 +146,13 @@ impl<'a> Parser<'a> {
                 let mut attr_val = String::new();
                 if self.current_token.kind == TokenKind::LParen {
                     self.next_token();
-                    if let TokenKind::StringLiteral(s) = &self.current_token.kind { 
-                        attr_val = s.clone(); 
-                        self.next_token(); 
+                    if let TokenKind::StringLiteral(s) = &self.current_token.kind {
+                        attr_val = s.clone();
+                        self.next_token();
                     }
-                    if self.current_token.kind == TokenKind::RParen { self.next_token(); }
+                    if self.current_token.kind == TokenKind::RParen {
+                        self.next_token();
+                    }
                 }
                 attributes.push((attr_name, attr_val));
             } else {
@@ -142,15 +160,24 @@ impl<'a> Parser<'a> {
             }
         }
         let mut modifiers = Vec::new();
-        while matches!(self.current_token.kind, TokenKind::Pub | TokenKind::Async | TokenKind::Unsafe | TokenKind::Extern) {
+        while matches!(
+            self.current_token.kind,
+            TokenKind::Pub | TokenKind::Async | TokenKind::Unsafe | TokenKind::Extern
+        ) {
             modifiers.push(self.current_token.clone());
             self.next_token();
         }
         match self.current_token.kind {
-            TokenKind::Fn => self.parse_function(modifiers, attributes, doc_comment).map(Declaration::Function),
-            TokenKind::Struct => self.parse_struct(attributes, doc_comment).map(Declaration::Struct),
+            TokenKind::Fn => self
+                .parse_function(modifiers, attributes, doc_comment)
+                .map(Declaration::Function),
+            TokenKind::Struct => self
+                .parse_struct(attributes, doc_comment)
+                .map(Declaration::Struct),
             TokenKind::Enum => self.parse_enum(doc_comment).map(Declaration::Enum),
-            TokenKind::Interface => self.parse_interface(doc_comment).map(Declaration::Interface),
+            TokenKind::Interface => self
+                .parse_interface(doc_comment)
+                .map(Declaration::Interface),
             TokenKind::Impl => self.parse_impl().map(Declaration::Impl),
             _ => None,
         }
@@ -158,24 +185,37 @@ impl<'a> Parser<'a> {
 
     fn parse_impl(&mut self) -> Option<ImplBlock> {
         self.next_token();
-        let name1 = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
+        let name1 = match &self.current_token.kind {
+            TokenKind::Identifier(n) => n.clone(),
+            _ => return None,
+        };
         self.next_token();
         let generic_params = self.parse_generic_params();
-        
-        let (interface_name, target_name) = if self.current_token.kind == TokenKind::For {
-                self.next_token();
-                let target = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
-                self.next_token();
-                (Some(name1), target)
-        } else { (None, name1) };
 
-        if self.current_token.kind != TokenKind::LBrace { 
-            eprintln!("{}", self.error("Syntax Error: Expected '{' after impl target"));
-            return None; 
+        let (interface_name, target_name) = if self.current_token.kind == TokenKind::For {
+            self.next_token();
+            let target = match &self.current_token.kind {
+                TokenKind::Identifier(n) => n.clone(),
+                _ => return None,
+            };
+            self.next_token();
+            (Some(name1), target)
+        } else {
+            (None, name1)
+        };
+
+        if self.current_token.kind != TokenKind::LBrace {
+            eprintln!(
+                "{}",
+                self.error("Syntax Error: Expected '{' after impl target")
+            );
+            return None;
         }
         self.next_token();
         let mut functions = Vec::new();
-        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+        while self.current_token.kind != TokenKind::RBrace
+            && self.current_token.kind != TokenKind::EOF
+        {
             let mut method_doc = None;
             while let TokenKind::DocComment(_) = &self.current_token.kind {
                 if let TokenKind::DocComment(text) = &self.current_token.kind {
@@ -184,71 +224,125 @@ impl<'a> Parser<'a> {
                 self.next_token();
             }
             let mut modifiers = Vec::new();
-            while matches!(self.current_token.kind, TokenKind::Pub | TokenKind::Async | TokenKind::Unsafe) {
+            while matches!(
+                self.current_token.kind,
+                TokenKind::Pub | TokenKind::Async | TokenKind::Unsafe
+            ) {
                 modifiers.push(self.current_token.clone());
                 self.next_token();
             }
             if self.current_token.kind == TokenKind::Fn {
-                if let Some(f) = self.parse_function(modifiers, vec![], method_doc) { functions.push(f); }
+                if let Some(f) = self.parse_function(modifiers, vec![], method_doc) {
+                    functions.push(f);
+                }
             } else {
                 self.next_token();
             }
         }
-        if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
-        Some(ImplBlock { target_name, generic_params, interface_name, functions })
+        if self.current_token.kind == TokenKind::RBrace {
+            self.next_token();
+        }
+        Some(ImplBlock {
+            target_name,
+            generic_params,
+            interface_name,
+            functions,
+        })
     }
 
     fn parse_generic_params(&mut self) -> Vec<String> {
         let mut params = Vec::new();
         if self.current_token.kind == TokenKind::Lt {
             self.next_token();
-            while self.current_token.kind != TokenKind::Gt && self.current_token.kind != TokenKind::EOF {
-                if let TokenKind::Identifier(id) = &self.current_token.kind { params.push(id.clone()); self.next_token(); }
-                if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+            while self.current_token.kind != TokenKind::Gt
+                && self.current_token.kind != TokenKind::EOF
+            {
+                if let TokenKind::Identifier(id) = &self.current_token.kind {
+                    params.push(id.clone());
+                    self.next_token();
+                }
+                if self.current_token.kind == TokenKind::Comma {
+                    self.next_token();
+                }
             }
-            if self.current_token.kind == TokenKind::Gt { self.next_token(); }
+            if self.current_token.kind == TokenKind::Gt {
+                self.next_token();
+            }
         }
         params
     }
 
     fn parse_enum(&mut self, doc_comment: Option<String>) -> Option<Enum> {
         self.next_token();
-        let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
+        let name = match &self.current_token.kind {
+            TokenKind::Identifier(n) => n.clone(),
+            _ => return None,
+        };
         self.next_token();
         let generic_params = self.parse_generic_params();
-        if self.current_token.kind != TokenKind::LBrace { return None; }
+        if self.current_token.kind != TokenKind::LBrace {
+            return None;
+        }
         self.next_token();
         let mut variants = Vec::new();
-        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+        while self.current_token.kind != TokenKind::RBrace
+            && self.current_token.kind != TokenKind::EOF
+        {
             if let TokenKind::Identifier(v_name) = &self.current_token.kind {
-                let v_name = v_name.clone(); self.next_token();
+                let v_name = v_name.clone();
+                self.next_token();
                 let mut data_types = Vec::new();
                 if self.current_token.kind == TokenKind::LParen {
                     self.next_token();
-                    while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                    while self.current_token.kind != TokenKind::RParen
+                        && self.current_token.kind != TokenKind::EOF
+                    {
                         data_types.push(self.parse_type_name());
-                        if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                        if self.current_token.kind == TokenKind::Comma {
+                            self.next_token();
+                        }
                     }
-                    if self.current_token.kind == TokenKind::RParen { self.next_token(); }
+                    if self.current_token.kind == TokenKind::RParen {
+                        self.next_token();
+                    }
                 }
-                variants.push(EnumVariant { name: v_name, data_types });
+                variants.push(EnumVariant {
+                    name: v_name,
+                    data_types,
+                });
             } else if self.current_token.kind != TokenKind::Comma {
                 self.next_token();
             }
-            if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+            if self.current_token.kind == TokenKind::Comma {
+                self.next_token();
+            }
         }
-        if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
-        Some(Enum { name, generic_params, variants, doc_comment })
+        if self.current_token.kind == TokenKind::RBrace {
+            self.next_token();
+        }
+        Some(Enum {
+            name,
+            generic_params,
+            variants,
+            doc_comment,
+        })
     }
 
     fn parse_interface(&mut self, doc_comment: Option<String>) -> Option<Interface> {
         self.next_token();
-        let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
+        let name = match &self.current_token.kind {
+            TokenKind::Identifier(n) => n.clone(),
+            _ => return None,
+        };
         self.next_token();
-        if self.current_token.kind != TokenKind::LBrace { return None; }
+        if self.current_token.kind != TokenKind::LBrace {
+            return None;
+        }
         self.next_token();
         let mut methods = Vec::new();
-        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+        while self.current_token.kind != TokenKind::RBrace
+            && self.current_token.kind != TokenKind::EOF
+        {
             let mut method_doc = None;
             while let TokenKind::DocComment(_) = &self.current_token.kind {
                 if let TokenKind::DocComment(text) = &self.current_token.kind {
@@ -256,34 +350,66 @@ impl<'a> Parser<'a> {
                 }
                 self.next_token();
             }
-            if let Some(f) = self.parse_function(vec![], vec![], method_doc) { methods.push(f); }
-            if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
+            if let Some(f) = self.parse_function(vec![], vec![], method_doc) {
+                methods.push(f);
+            }
+            if self.current_token.kind == TokenKind::Semicolon {
+                self.next_token();
+            }
         }
-        if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
-        Some(Interface { name, methods, doc_comment })
+        if self.current_token.kind == TokenKind::RBrace {
+            self.next_token();
+        }
+        Some(Interface {
+            name,
+            methods,
+            doc_comment,
+        })
     }
 
-    fn parse_struct(&mut self, attributes: Vec<(String, String)>, doc_comment: Option<String>) -> Option<Struct> {
+    fn parse_struct(
+        &mut self,
+        attributes: Vec<(String, String)>,
+        doc_comment: Option<String>,
+    ) -> Option<Struct> {
         self.next_token();
-        let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
+        let name = match &self.current_token.kind {
+            TokenKind::Identifier(n) => n.clone(),
+            _ => return None,
+        };
         self.next_token();
         let generic_params = self.parse_generic_params();
-        if self.current_token.kind != TokenKind::LBrace { return None; }
+        if self.current_token.kind != TokenKind::LBrace {
+            return None;
+        }
         self.next_token();
         let mut fields = Vec::new();
-        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+        while self.current_token.kind != TokenKind::RBrace
+            && self.current_token.kind != TokenKind::EOF
+        {
             if let TokenKind::Identifier(f_name) = &self.current_token.kind {
-                let f_name = f_name.clone(); self.next_token();
+                let f_name = f_name.clone();
+                self.next_token();
                 if self.current_token.kind == TokenKind::Colon {
                     self.next_token();
                     fields.push((f_name, self.parse_type_name()));
                 }
             }
-            if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+            if self.current_token.kind == TokenKind::Comma {
+                self.next_token();
+            }
         }
-        if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
-        let attrs = attributes.into_iter().map(|(k,_)| k).collect();
-        Some(Struct { name, generic_params, fields, attributes: attrs, doc_comment })
+        if self.current_token.kind == TokenKind::RBrace {
+            self.next_token();
+        }
+        let attrs = attributes.into_iter().map(|(k, _)| k).collect();
+        Some(Struct {
+            name,
+            generic_params,
+            fields,
+            attributes: attrs,
+            doc_comment,
+        })
     }
 
     fn parse_type_name(&mut self) -> String {
@@ -301,13 +427,16 @@ impl<'a> Parser<'a> {
             self.next_token();
             return format!("invalid_type_{:?}", tok);
         }
-        
-        while self.current_token.kind == TokenKind::Dot || self.current_token.kind == TokenKind::DoubleColon {
+
+        while self.current_token.kind == TokenKind::Dot
+            || self.current_token.kind == TokenKind::DoubleColon
+        {
             if let TokenKind::Identifier(_) = self.peek_at(0).kind {
                 self.next_token();
-                if let TokenKind::Identifier(sub) = &self.current_token.kind { 
-                    full_type.push('.'); full_type.push_str(sub); 
-                    self.next_token(); 
+                if let TokenKind::Identifier(sub) = &self.current_token.kind {
+                    full_type.push('.');
+                    full_type.push_str(sub);
+                    self.next_token();
                 }
             } else {
                 break;
@@ -317,10 +446,12 @@ impl<'a> Parser<'a> {
         if self.current_token.kind == TokenKind::Lt {
             full_type.push('<');
             self.next_token();
-            while self.current_token.kind != TokenKind::Gt && self.current_token.kind != TokenKind::EOF {
+            while self.current_token.kind != TokenKind::Gt
+                && self.current_token.kind != TokenKind::EOF
+            {
                 let sub_type = self.parse_type_name();
                 full_type.push_str(&sub_type);
-                
+
                 if self.current_token.kind == TokenKind::Comma {
                     full_type.push_str(", ");
                     self.next_token();
@@ -339,16 +470,26 @@ impl<'a> Parser<'a> {
         full_type
     }
 
-    fn parse_function(&mut self, modifiers: Vec<Token>, attributes: Vec<(String, String)>, doc_comment: Option<String>) -> Option<Function> {
+    fn parse_function(
+        &mut self,
+        modifiers: Vec<Token>,
+        attributes: Vec<(String, String)>,
+        doc_comment: Option<String>,
+    ) -> Option<Function> {
         self.next_token();
-        let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
+        let name = match &self.current_token.kind {
+            TokenKind::Identifier(n) => n.clone(),
+            _ => return None,
+        };
         self.next_token();
         let generic_params = self.parse_generic_params();
-        
+
         let mut params = Vec::new();
         if self.current_token.kind == TokenKind::LParen {
             self.next_token();
-            while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+            while self.current_token.kind != TokenKind::RParen
+                && self.current_token.kind != TokenKind::EOF
+            {
                 if self.current_token.kind == TokenKind::SelfToken {
                     params.push(("self".to_string(), "Self".to_string(), None));
                     self.next_token();
@@ -383,12 +524,16 @@ impl<'a> Parser<'a> {
                 } else {
                     self.next_token();
                 }
-                
-                if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+
+                if self.current_token.kind == TokenKind::Comma {
+                    self.next_token();
+                }
             }
-            if self.current_token.kind == TokenKind::RParen { self.next_token(); }
+            if self.current_token.kind == TokenKind::RParen {
+                self.next_token();
+            }
         } else {
-            return None; 
+            return None;
         }
 
         let mut return_type = "void".to_string();
@@ -397,33 +542,51 @@ impl<'a> Parser<'a> {
             return_type = self.parse_type_name();
         }
         let mut body = None;
-        if self.current_token.kind == TokenKind::LBrace { 
-            body = Some(self.parse_block()); 
+        if self.current_token.kind == TokenKind::LBrace {
+            body = Some(self.parse_block());
         } else {
             let is_extern = modifiers.iter().any(|m| m.kind == TokenKind::Extern);
             let is_intrinsic = attributes.iter().any(|(k, _)| k == "intrinsic");
-            if (is_extern || is_intrinsic)
-                && self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
+            if (is_extern || is_intrinsic) && self.current_token.kind == TokenKind::Semicolon {
+                self.next_token();
+            }
         }
-        Some(Function { name, generic_params, params, return_type, body, modifiers, attributes, doc_comment })
+        Some(Function {
+            name,
+            generic_params,
+            params,
+            return_type,
+            body,
+            modifiers,
+            attributes,
+            doc_comment,
+        })
     }
 
     fn parse_block(&mut self) -> Vec<Statement> {
         let mut stmts = Vec::new();
-        if self.current_token.kind == TokenKind::LBrace { self.next_token(); }
-        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+        if self.current_token.kind == TokenKind::LBrace {
+            self.next_token();
+        }
+        while self.current_token.kind != TokenKind::RBrace
+            && self.current_token.kind != TokenKind::EOF
+        {
             if self.current_token.kind == TokenKind::Semicolon {
                 self.next_token();
                 continue;
             }
-            if let Some(s) = self.parse_statement() { 
-                stmts.push(s); 
+            if let Some(s) = self.parse_statement() {
+                stmts.push(s);
             } else {
                 self.next_token();
             }
-            if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
+            if self.current_token.kind == TokenKind::Semicolon {
+                self.next_token();
+            }
         }
-        if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
+        if self.current_token.kind == TokenKind::RBrace {
+            self.next_token();
+        }
         stmts
     }
 
@@ -441,36 +604,65 @@ impl<'a> Parser<'a> {
                     let span = Span::from_token(&self.current_token);
                     Some(Statement::ExpressionStmt(self.parse_expression(), span))
                 }
-            },
+            }
             TokenKind::Let => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
-                let is_mut = if self.current_token.kind == TokenKind::Mut { self.next_token(); true } else { false };
-                let name = match &self.current_token.kind { TokenKind::Identifier(n) => n.clone(), _ => return None };
+                let is_mut = if self.current_token.kind == TokenKind::Mut {
+                    self.next_token();
+                    true
+                } else {
+                    false
+                };
+                let name = match &self.current_token.kind {
+                    TokenKind::Identifier(n) => n.clone(),
+                    _ => return None,
+                };
                 self.next_token();
                 let explicit_type = if self.current_token.kind == TokenKind::Colon {
                     self.next_token();
                     Some(self.parse_type_name())
-                } else { None };
+                } else {
+                    None
+                };
                 if self.current_token.kind == TokenKind::Eq {
                     self.next_token();
                     let value = self.parse_expression();
-                    if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
-                    Some(Statement::Let { name, value, explicit_type, intent: None, is_mut, span })
-                } else { None }
-            },
-            TokenKind::Return => { 
+                    if self.current_token.kind == TokenKind::Semicolon {
+                        self.next_token();
+                    }
+                    Some(Statement::Let {
+                        name,
+                        value,
+                        explicit_type,
+                        intent: None,
+                        is_mut,
+                        span,
+                    })
+                } else {
+                    None
+                }
+            }
+            TokenKind::Return => {
                 let span = Span::from_token(&self.current_token);
-                self.next_token(); 
-                let value = if self.current_token.kind == TokenKind::Semicolon || self.current_token.kind == TokenKind::RBrace {
+                self.next_token();
+                let value = if self.current_token.kind == TokenKind::Semicolon
+                    || self.current_token.kind == TokenKind::RBrace
+                {
                     Expression::Integer(0, Span::zero())
                 } else {
                     self.parse_expression()
                 };
-                if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
-                let stmt = Statement::Return { value, intent: None, span };
+                if self.current_token.kind == TokenKind::Semicolon {
+                    self.next_token();
+                }
+                let stmt = Statement::Return {
+                    value,
+                    intent: None,
+                    span,
+                };
                 Some(stmt)
-            },
+            }
             TokenKind::If => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
@@ -487,57 +679,80 @@ impl<'a> Parser<'a> {
                         else_branch = Some(self.parse_block());
                     }
                 }
-                Some(Statement::If { condition, then_branch, else_branch, span })
-            },
+                Some(Statement::If {
+                    condition,
+                    then_branch,
+                    else_branch,
+                    span,
+                })
+            }
             TokenKind::While => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 let condition = self.parse_expression();
                 let body = self.parse_block();
-                Some(Statement::While { condition, body, span })
-            },
+                Some(Statement::While {
+                    condition,
+                    body,
+                    span,
+                })
+            }
             TokenKind::Break => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Some(Statement::Break(span))
-            },
+            }
             TokenKind::Continue => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Some(Statement::Continue(span))
-            },
+            }
             TokenKind::Loop => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 let body = self.parse_block();
                 let condition = Expression::Boolean(true, span.clone());
-                Some(Statement::While { condition, body, span })
-            },
+                Some(Statement::While {
+                    condition,
+                    body,
+                    span,
+                })
+            }
             TokenKind::Match => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 let condition = self.parse_expression();
-                if self.current_token.kind != TokenKind::LBrace { return None; }
+                if self.current_token.kind != TokenKind::LBrace {
+                    return None;
+                }
                 self.next_token();
                 let mut arms = Vec::new();
-                while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+                while self.current_token.kind != TokenKind::RBrace
+                    && self.current_token.kind != TokenKind::EOF
+                {
                     let mut pattern = String::new();
                     let mut is_valid_pattern = false;
-                    
+
                     match &self.current_token.kind {
                         TokenKind::Identifier(p) => {
-                            pattern = p.clone(); 
+                            pattern = p.clone();
                             self.next_token();
                             let mut struct_fields: Vec<(String, String)> = Vec::new();
                             if self.current_token.kind == TokenKind::LBrace {
                                 self.next_token();
-                                while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
-                                    if let TokenKind::Identifier(field_name) = &self.current_token.kind {
+                                while self.current_token.kind != TokenKind::RBrace
+                                    && self.current_token.kind != TokenKind::EOF
+                                {
+                                    if let TokenKind::Identifier(field_name) =
+                                        &self.current_token.kind
+                                    {
                                         let fn_str = field_name.clone();
                                         self.next_token();
                                         if self.current_token.kind == TokenKind::Colon {
                                             self.next_token();
-                                            if let TokenKind::Identifier(var_name) = &self.current_token.kind {
+                                            if let TokenKind::Identifier(var_name) =
+                                                &self.current_token.kind
+                                            {
                                                 struct_fields.push((fn_str, var_name.clone()));
                                                 self.next_token();
                                             }
@@ -552,24 +767,33 @@ impl<'a> Parser<'a> {
                                 }
                             }
                             if !struct_fields.is_empty() {
-                                let fields_str = struct_fields.iter()
+                                let fields_str = struct_fields
+                                    .iter()
                                     .map(|(f, v)| format!("{}:{}", f, v))
                                     .collect::<Vec<_>>()
                                     .join(",");
                                 pattern = format!("{}_{{{}}}", pattern, fields_str);
                             }
-                            
-                            while self.current_token.kind == TokenKind::DoubleColon || self.current_token.kind == TokenKind::Dot {
-                                let op = if self.current_token.kind == TokenKind::DoubleColon { "::" } else { "." };
+
+                            while self.current_token.kind == TokenKind::DoubleColon
+                                || self.current_token.kind == TokenKind::Dot
+                            {
+                                let op = if self.current_token.kind == TokenKind::DoubleColon {
+                                    "::"
+                                } else {
+                                    "."
+                                };
                                 self.next_token();
                                 if let TokenKind::Identifier(sub) = &self.current_token.kind {
                                     pattern.push_str(op);
                                     pattern.push_str(sub);
                                     self.next_token();
-                                } else { break; }
+                                } else {
+                                    break;
+                                }
                             }
                             is_valid_pattern = true;
-                        },
+                        }
                         TokenKind::IntLiteral(n) => {
                             pattern = n.to_string();
                             self.next_token();
@@ -581,15 +805,15 @@ impl<'a> Parser<'a> {
                                 }
                             }
                             is_valid_pattern = true;
-                        },
+                        }
                         TokenKind::StringLiteral(s) => {
                             pattern = format!("\"{}\"", s);
                             self.next_token();
                             is_valid_pattern = true;
-                        },
+                        }
                         TokenKind::Range => {
                             self.next_token();
-                        },
+                        }
                         _ => {
                             self.next_token();
                         }
@@ -600,40 +824,65 @@ impl<'a> Parser<'a> {
                         while self.current_token.kind == TokenKind::Pipe {
                             self.next_token();
                             match &self.current_token.kind {
-                                TokenKind::Identifier(p) => { patterns.push(p.clone()); self.next_token(); },
-                                TokenKind::IntLiteral(n) => { patterns.push(n.to_string()); self.next_token(); },
-                                TokenKind::StringLiteral(s) => { patterns.push(format!("\"{}\"", s)); self.next_token(); },
-                                _ => { break; }
+                                TokenKind::Identifier(p) => {
+                                    patterns.push(p.clone());
+                                    self.next_token();
+                                }
+                                TokenKind::IntLiteral(n) => {
+                                    patterns.push(n.to_string());
+                                    self.next_token();
+                                }
+                                TokenKind::StringLiteral(s) => {
+                                    patterns.push(format!("\"{}\"", s));
+                                    self.next_token();
+                                }
+                                _ => {
+                                    break;
+                                }
                             }
                         }
-                        
+
                         let mut params = Vec::new();
-                        
+
                         if patterns.len() == 1 {
                             let pat = &patterns[0];
-                            let is_lower = !pat.is_empty() && pat.chars().next().unwrap().is_lowercase();
-                            let is_identifier = pat.chars().all(|c| c.is_alphanumeric() || c == '_');
+                            let is_lower =
+                                !pat.is_empty() && pat.chars().next().unwrap().is_lowercase();
+                            let is_identifier =
+                                pat.chars().all(|c| c.is_alphanumeric() || c == '_');
                             let is_not_underscore = pat != "_";
-                            let followed_by_guard_or_arrow = self.current_token.kind == TokenKind::If || self.current_token.kind == TokenKind::Arrow;
-                            
-                            if is_lower && is_identifier && is_not_underscore && followed_by_guard_or_arrow {
+                            let followed_by_guard_or_arrow = self.current_token.kind
+                                == TokenKind::If
+                                || self.current_token.kind == TokenKind::Arrow;
+
+                            if is_lower
+                                && is_identifier
+                                && is_not_underscore
+                                && followed_by_guard_or_arrow
+                            {
                                 params.push(pat.clone());
                                 patterns.clear();
                             }
                         }
-                        
+
                         if self.current_token.kind == TokenKind::LParen {
                             self.next_token();
-                            while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                            while self.current_token.kind != TokenKind::RParen
+                                && self.current_token.kind != TokenKind::EOF
+                            {
                                 if let TokenKind::Identifier(param) = &self.current_token.kind {
                                     params.push(param.clone());
                                     self.next_token();
                                 } else {
                                     self.next_token();
                                 }
-                                if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                                if self.current_token.kind == TokenKind::Comma {
+                                    self.next_token();
+                                }
                             }
-                            if self.current_token.kind == TokenKind::RParen { self.next_token(); }
+                            if self.current_token.kind == TokenKind::RParen {
+                                self.next_token();
+                            }
                         }
 
                         let guard = if self.current_token.kind == TokenKind::If {
@@ -645,20 +894,36 @@ impl<'a> Parser<'a> {
 
                         if self.current_token.kind == TokenKind::Arrow {
                             self.next_token();
-                            let body = if self.current_token.kind == TokenKind::LBrace { self.parse_block() } else {
+                            let body = if self.current_token.kind == TokenKind::LBrace {
+                                self.parse_block()
+                            } else {
                                 match self.parse_statement() {
                                     Some(s) => vec![s],
                                     None => vec![],
                                 }
                             };
-                            arms.push(MatchArm { pattern, patterns, guard, params, body });
+                            arms.push(MatchArm {
+                                pattern,
+                                patterns,
+                                guard,
+                                params,
+                                body,
+                            });
                         }
                     }
-                    if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                    if self.current_token.kind == TokenKind::Comma {
+                        self.next_token();
+                    }
                 }
-                if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
-                Some(Statement::Match { condition, arms, span })
-            },
+                if self.current_token.kind == TokenKind::RBrace {
+                    self.next_token();
+                }
+                Some(Statement::Match {
+                    condition,
+                    arms,
+                    span,
+                })
+            }
             TokenKind::Unsafe => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
@@ -667,7 +932,7 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 }
-            },
+            }
             TokenKind::Spawn => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
@@ -676,20 +941,28 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 }
-            },
+            }
             _ => {
                 let span = Span::from_token(&self.current_token);
                 let expr = self.parse_expression();
                 if self.current_token.kind == TokenKind::Eq {
                     self.next_token();
                     let value = self.parse_expression();
-                    if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
-                    Some(Statement::Assignment { target: expr, value, span })
+                    if self.current_token.kind == TokenKind::Semicolon {
+                        self.next_token();
+                    }
+                    Some(Statement::Assignment {
+                        target: expr,
+                        value,
+                        span,
+                    })
                 } else {
-                    if self.current_token.kind == TokenKind::Semicolon { self.next_token(); }
+                    if self.current_token.kind == TokenKind::Semicolon {
+                        self.next_token();
+                    }
                     Some(Statement::ExpressionStmt(expr, span))
                 }
-            },
+            }
         }
     }
 
@@ -704,32 +977,59 @@ impl<'a> Parser<'a> {
             let op = self.current_token.clone();
             let op_prec = self.get_precedence();
             self.next_token();
-                
+
             if op.kind == TokenKind::As {
                 let target = self.parse_type_name();
-                left = Expression::Cast { expr: Box::new(left), target, span: Span::from_token(&op) };
+                left = Expression::Cast {
+                    expr: Box::new(left),
+                    target,
+                    span: Span::from_token(&op),
+                };
                 continue;
             }
 
             if op.kind == TokenKind::Pipeline {
                 let right = self.parse_infix(1);
                 left = match right {
-                    Expression::Call { function, mut arguments, generic_args, .. } => {
+                    Expression::Call {
+                        function,
+                        mut arguments,
+                        generic_args,
+                        ..
+                    } => {
                         arguments.insert(0, left);
-                        Expression::Call { function, generic_args, arguments, span: Span::from_token(&op) }
-                    },
-                    Expression::Identifier(function, _) => {
-                        Expression::Call { function, generic_args: vec![], arguments: vec![left], span: Span::from_token(&op) }
+                        Expression::Call {
+                            function,
+                            generic_args,
+                            arguments,
+                            span: Span::from_token(&op),
+                        }
+                    }
+                    Expression::Identifier(function, _) => Expression::Call {
+                        function,
+                        generic_args: vec![],
+                        arguments: vec![left],
+                        span: Span::from_token(&op),
                     },
                     _ => {
                         let op_span = Span::from_token(&op);
-                        Expression::Infix { left: Box::new(left), operator: op, right: Box::new(right), span: op_span }
+                        Expression::Infix {
+                            left: Box::new(left),
+                            operator: op,
+                            right: Box::new(right),
+                            span: op_span,
+                        }
                     }
                 };
             } else {
                 let right = self.parse_infix(op_prec);
                 let op_span = Span::from_token(&op);
-                left = Expression::Infix { left: Box::new(left), operator: op, right: Box::new(right), span: op_span };
+                left = Expression::Infix {
+                    left: Box::new(left),
+                    operator: op,
+                    right: Box::new(right),
+                    span: op_span,
+                };
             }
         }
         left
@@ -742,7 +1042,13 @@ impl<'a> Parser<'a> {
             TokenKind::Plus | TokenKind::Minus => 6,
             TokenKind::Range => 5,
             TokenKind::Caret => 5,
-            TokenKind::Gt | TokenKind::Lt | TokenKind::GtEq | TokenKind::LtEq | TokenKind::EqEq | TokenKind::NotEq | TokenKind::Inside => 4,
+            TokenKind::Gt
+            | TokenKind::Lt
+            | TokenKind::GtEq
+            | TokenKind::LtEq
+            | TokenKind::EqEq
+            | TokenKind::NotEq
+            | TokenKind::Inside => 4,
             TokenKind::And => 3,
             TokenKind::Or => 2,
             TokenKind::Pipeline => 1,
@@ -750,48 +1056,63 @@ impl<'a> Parser<'a> {
         }
     }
 
-        fn is_generic_args_ahead(&mut self) -> bool {
-            if self.current_token.kind != TokenKind::Lt { return false; }
-            let mut i = 0;
-            let mut angle_count = 1;
-            
-            while angle_count > 0 {
-                let tok = self.peek_at(i);
-                match tok.kind {
-                    // Tokens that cannot appear inside a generic-argument list but do
-                    // appear in a less-than comparison context. Comma is intentionally
-                    // NOT here: Aion has no comma operator at the expression level, and
-                    // `foo<A, B>(...)` needs the comma to keep scanning. Less-than inside
-                    // call/struct/aggregate args is still rejected because RParen/LBrace
-                    // abort the scan before the angles can balance.
-                    TokenKind::EOF | TokenKind::LBrace | TokenKind::Semicolon | TokenKind::Eq | 
-                    TokenKind::Or | TokenKind::And | TokenKind::Plus | TokenKind::Minus | 
-                    TokenKind::RParen => return false,
-                    TokenKind::Lt => angle_count += 1,
-                    TokenKind::Gt => angle_count -= 1,
-                    _ => {}
-                }
-                i += 1;
-                if i > 50 { return false; } 
-            }
-            true
+    fn is_generic_args_ahead(&mut self) -> bool {
+        if self.current_token.kind != TokenKind::Lt {
+            return false;
         }
-    
+        let mut i = 0;
+        let mut angle_count = 1;
+
+        while angle_count > 0 {
+            let tok = self.peek_at(i);
+            match tok.kind {
+                // Tokens that cannot appear inside a generic-argument list but do
+                // appear in a less-than comparison context. Comma is intentionally
+                // NOT here: Aion has no comma operator at the expression level, and
+                // `foo<A, B>(...)` needs the comma to keep scanning. Less-than inside
+                // call/struct/aggregate args is still rejected because RParen/LBrace
+                // abort the scan before the angles can balance.
+                TokenKind::EOF
+                | TokenKind::LBrace
+                | TokenKind::Semicolon
+                | TokenKind::Eq
+                | TokenKind::Or
+                | TokenKind::And
+                | TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::RParen => return false,
+                TokenKind::Lt => angle_count += 1,
+                TokenKind::Gt => angle_count -= 1,
+                _ => {}
+            }
+            i += 1;
+            if i > 50 {
+                return false;
+            }
+        }
+        true
+    }
 
     fn parse_generic_args(&mut self) -> Vec<String> {
         let mut args = Vec::new();
         if self.is_generic_args_ahead() {
             self.next_token();
-            while self.current_token.kind != TokenKind::Gt && self.current_token.kind != TokenKind::EOF {
-                if let TokenKind::Identifier(id) = &self.current_token.kind { 
-                    args.push(id.clone()); 
-                    self.next_token(); 
+            while self.current_token.kind != TokenKind::Gt
+                && self.current_token.kind != TokenKind::EOF
+            {
+                if let TokenKind::Identifier(id) = &self.current_token.kind {
+                    args.push(id.clone());
+                    self.next_token();
                 } else {
                     self.next_token();
                 }
-                if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                if self.current_token.kind == TokenKind::Comma {
+                    self.next_token();
+                }
             }
-            if self.current_token.kind == TokenKind::Gt { self.next_token(); }
+            if self.current_token.kind == TokenKind::Gt {
+                self.next_token();
+            }
         }
         args
     }
@@ -814,35 +1135,52 @@ impl<'a> Parser<'a> {
                         else_branch = Some(self.parse_block());
                     }
                 }
-                Expression::If { condition: Box::new(condition), then_branch, else_branch, span }
-            },
+                Expression::If {
+                    condition: Box::new(condition),
+                    then_branch,
+                    else_branch,
+                    span,
+                }
+            }
             TokenKind::Match => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 let condition = self.parse_expression();
-                if self.current_token.kind != TokenKind::LBrace { 
-                    Expression::Match { condition: Box::new(condition), arms: vec![], span }
+                if self.current_token.kind != TokenKind::LBrace {
+                    Expression::Match {
+                        condition: Box::new(condition),
+                        arms: vec![],
+                        span,
+                    }
                 } else {
                     self.next_token();
                     let mut arms = Vec::new();
-                    while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+                    while self.current_token.kind != TokenKind::RBrace
+                        && self.current_token.kind != TokenKind::EOF
+                    {
                         let mut pattern = String::new();
                         let mut is_valid_pattern = false;
-                        
+
                         match &self.current_token.kind {
                             TokenKind::Identifier(p) => {
-                                pattern = p.clone(); 
+                                pattern = p.clone();
                                 self.next_token();
                                 let mut struct_fields: Vec<(String, String)> = Vec::new();
                                 if self.current_token.kind == TokenKind::LBrace {
                                     self.next_token();
-                                    while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
-                                        if let TokenKind::Identifier(field_name) = &self.current_token.kind {
+                                    while self.current_token.kind != TokenKind::RBrace
+                                        && self.current_token.kind != TokenKind::EOF
+                                    {
+                                        if let TokenKind::Identifier(field_name) =
+                                            &self.current_token.kind
+                                        {
                                             let fn_str = field_name.clone();
                                             self.next_token();
                                             if self.current_token.kind == TokenKind::Colon {
                                                 self.next_token();
-                                                if let TokenKind::Identifier(var_name) = &self.current_token.kind {
+                                                if let TokenKind::Identifier(var_name) =
+                                                    &self.current_token.kind
+                                                {
                                                     struct_fields.push((fn_str, var_name.clone()));
                                                     self.next_token();
                                                 }
@@ -857,24 +1195,33 @@ impl<'a> Parser<'a> {
                                     }
                                 }
                                 if !struct_fields.is_empty() {
-                                    let fields_str = struct_fields.iter()
+                                    let fields_str = struct_fields
+                                        .iter()
                                         .map(|(f, v)| format!("{}:{}", f, v))
                                         .collect::<Vec<_>>()
                                         .join(",");
                                     pattern = format!("{}_{{{}}}", pattern, fields_str);
                                 }
-                                
-                                while self.current_token.kind == TokenKind::DoubleColon || self.current_token.kind == TokenKind::Dot {
-                                    let op = if self.current_token.kind == TokenKind::DoubleColon { "::" } else { "." };
+
+                                while self.current_token.kind == TokenKind::DoubleColon
+                                    || self.current_token.kind == TokenKind::Dot
+                                {
+                                    let op = if self.current_token.kind == TokenKind::DoubleColon {
+                                        "::"
+                                    } else {
+                                        "."
+                                    };
                                     self.next_token();
                                     if let TokenKind::Identifier(sub) = &self.current_token.kind {
                                         pattern.push_str(op);
                                         pattern.push_str(sub);
                                         self.next_token();
-                                    } else { break; }
+                                    } else {
+                                        break;
+                                    }
                                 }
                                 is_valid_pattern = true;
-                            },
+                            }
                             TokenKind::IntLiteral(n) => {
                                 pattern = n.to_string();
                                 self.next_token();
@@ -886,15 +1233,15 @@ impl<'a> Parser<'a> {
                                     }
                                 }
                                 is_valid_pattern = true;
-                            },
+                            }
                             TokenKind::StringLiteral(s) => {
                                 pattern = format!("\"{}\"", s);
                                 self.next_token();
                                 is_valid_pattern = true;
-                            },
+                            }
                             TokenKind::Range => {
                                 self.next_token();
-                            },
+                            }
                             _ => {
                                 self.next_token();
                             }
@@ -905,40 +1252,65 @@ impl<'a> Parser<'a> {
                             while self.current_token.kind == TokenKind::Pipe {
                                 self.next_token();
                                 match &self.current_token.kind {
-                                    TokenKind::Identifier(p) => { patterns.push(p.clone()); self.next_token(); },
-                                    TokenKind::IntLiteral(n) => { patterns.push(n.to_string()); self.next_token(); },
-                                    TokenKind::StringLiteral(s) => { patterns.push(format!("\"{}\"", s)); self.next_token(); },
-                                    _ => { break; }
+                                    TokenKind::Identifier(p) => {
+                                        patterns.push(p.clone());
+                                        self.next_token();
+                                    }
+                                    TokenKind::IntLiteral(n) => {
+                                        patterns.push(n.to_string());
+                                        self.next_token();
+                                    }
+                                    TokenKind::StringLiteral(s) => {
+                                        patterns.push(format!("\"{}\"", s));
+                                        self.next_token();
+                                    }
+                                    _ => {
+                                        break;
+                                    }
                                 }
                             }
-                            
+
                             let mut params = Vec::new();
-                            
+
                             if patterns.len() == 1 {
                                 let pat = &patterns[0];
-                                let is_lower = !pat.is_empty() && pat.chars().next().unwrap().is_lowercase();
-                                let is_identifier = pat.chars().all(|c| c.is_alphanumeric() || c == '_');
+                                let is_lower =
+                                    !pat.is_empty() && pat.chars().next().unwrap().is_lowercase();
+                                let is_identifier =
+                                    pat.chars().all(|c| c.is_alphanumeric() || c == '_');
                                 let is_not_underscore = pat != "_";
-                                let followed_by_guard_or_arrow = self.current_token.kind == TokenKind::If || self.current_token.kind == TokenKind::Arrow;
-                                
-                                if is_lower && is_identifier && is_not_underscore && followed_by_guard_or_arrow {
+                                let followed_by_guard_or_arrow = self.current_token.kind
+                                    == TokenKind::If
+                                    || self.current_token.kind == TokenKind::Arrow;
+
+                                if is_lower
+                                    && is_identifier
+                                    && is_not_underscore
+                                    && followed_by_guard_or_arrow
+                                {
                                     params.push(pat.clone());
                                     patterns.clear();
                                 }
                             }
-                            
+
                             if self.current_token.kind == TokenKind::LParen {
                                 self.next_token();
-                                while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                                while self.current_token.kind != TokenKind::RParen
+                                    && self.current_token.kind != TokenKind::EOF
+                                {
                                     if let TokenKind::Identifier(param) = &self.current_token.kind {
                                         params.push(param.clone());
                                         self.next_token();
                                     } else {
                                         self.next_token();
                                     }
-                                    if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                                    if self.current_token.kind == TokenKind::Comma {
+                                        self.next_token();
+                                    }
                                 }
-                                if self.current_token.kind == TokenKind::RParen { self.next_token(); }
+                                if self.current_token.kind == TokenKind::RParen {
+                                    self.next_token();
+                                }
                             }
 
                             let guard = if self.current_token.kind == TokenKind::If {
@@ -950,62 +1322,91 @@ impl<'a> Parser<'a> {
 
                             if self.current_token.kind == TokenKind::Arrow {
                                 self.next_token();
-                                let body = if self.current_token.kind == TokenKind::LBrace { self.parse_block() } else {
+                                let body = if self.current_token.kind == TokenKind::LBrace {
+                                    self.parse_block()
+                                } else {
                                     match self.parse_statement() {
                                         Some(s) => vec![s],
                                         None => vec![],
                                     }
                                 };
-                                arms.push(MatchArm { pattern, patterns, guard, params, body });
+                                arms.push(MatchArm {
+                                    pattern,
+                                    patterns,
+                                    guard,
+                                    params,
+                                    body,
+                                });
                             }
                         }
-                        if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                        if self.current_token.kind == TokenKind::Comma {
+                            self.next_token();
+                        }
                     }
-                    if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
-                    Expression::Match { condition: Box::new(condition), arms, span }
+                    if self.current_token.kind == TokenKind::RBrace {
+                        self.next_token();
+                    }
+                    Expression::Match {
+                        condition: Box::new(condition),
+                        arms,
+                        span,
+                    }
                 }
-            },
+            }
             TokenKind::LBrace => {
                 let span = Span::from_token(&self.current_token);
-                Expression::Block { statements: self.parse_block(), is_unsafe: false, span }
-            },
+                Expression::Block {
+                    statements: self.parse_block(),
+                    is_unsafe: false,
+                    span,
+                }
+            }
             TokenKind::SelfToken => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Expression::Identifier("self".to_string(), span)
-            },
+            }
             TokenKind::Star => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
-                Expression::Deref { expr: Box::new(self.parse_primary()), span }
-            },
+                Expression::Deref {
+                    expr: Box::new(self.parse_primary()),
+                    span,
+                }
+            }
             TokenKind::Bang => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 let inner = self.parse_primary();
-                Expression::Infix { 
+                Expression::Infix {
                     left: Box::new(inner),
-                    operator: Token::new(TokenKind::EqEq, self.current_token.line, self.current_token.col),
+                    operator: Token::new(
+                        TokenKind::EqEq,
+                        self.current_token.line,
+                        self.current_token.col,
+                    ),
                     right: Box::new(Expression::Boolean(false, Span::zero())),
                     span,
                 }
-            },
+            }
             TokenKind::LParen => {
                 self.next_token();
                 let e = self.parse_expression();
-                if self.current_token.kind == TokenKind::RParen { self.next_token(); }
+                if self.current_token.kind == TokenKind::RParen {
+                    self.next_token();
+                }
                 e
-            },
+            }
             TokenKind::True => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Expression::Boolean(true, span)
-            },
+            }
             TokenKind::False => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Expression::Boolean(false, span)
-            },
+            }
             TokenKind::Minus => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
@@ -1018,47 +1419,51 @@ impl<'a> Parser<'a> {
                 } else {
                     Expression::Infix {
                         left: Box::new(Expression::Integer(0, Span::zero())),
-                        operator: Token::new(TokenKind::Minus, self.current_token.line, self.current_token.col),
+                        operator: Token::new(
+                            TokenKind::Minus,
+                            self.current_token.line,
+                            self.current_token.col,
+                        ),
                         right: Box::new(self.parse_primary()),
                         span,
                     }
                 }
-            },
+            }
             TokenKind::IntLiteral(n) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Expression::Integer(n, span)
-            },
+            }
             TokenKind::FloatLiteral(f) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Expression::Float(f, span)
-            },
+            }
             TokenKind::StringLiteral(s) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Expression::String(s, span)
-            },
+            }
             TokenKind::CharLiteral(c) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Expression::Char(c, span)
-            },
+            }
             TokenKind::FString(s) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 self.parse_fstring(s, span)
-            },
+            }
             TokenKind::DurationLiteral(s, n) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Expression::Duration(s, n, span)
-            },
+            }
             TokenKind::DateLiteral(ts) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 Expression::Date(ts, span)
-            },
+            }
             TokenKind::At => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
@@ -1067,53 +1472,73 @@ impl<'a> Parser<'a> {
                     if self.current_token.kind == TokenKind::LParen {
                         self.next_token();
                         let mut args = Vec::new();
-                        while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                        while self.current_token.kind != TokenKind::RParen
+                            && self.current_token.kind != TokenKind::EOF
+                        {
                             args.push(self.parse_expression());
-                            if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                            if self.current_token.kind == TokenKind::Comma {
+                                self.next_token();
+                            }
                         }
-                        if self.current_token.kind == TokenKind::RParen { self.next_token(); }
-                        Expression::Intrinsic { name, arguments: args, span }
+                        if self.current_token.kind == TokenKind::RParen {
+                            self.next_token();
+                        }
+                        Expression::Intrinsic {
+                            name,
+                            arguments: args,
+                            span,
+                        }
                     } else {
                         Expression::Identifier(format!("invalid_attribute_{}", name), span)
                     }
                 } else {
                     Expression::Identifier("invalid_at_usage".to_string(), span)
                 }
-            },
+            }
             TokenKind::Unsafe => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 if self.current_token.kind == TokenKind::LBrace {
-                    Expression::Block { statements: self.parse_block(), is_unsafe: true, span }
+                    Expression::Block {
+                        statements: self.parse_block(),
+                        is_unsafe: true,
+                        span,
+                    }
                 } else {
                     Expression::Identifier("invalid_unsafe_usage".to_string(), span)
                 }
-            },
+            }
             TokenKind::Identifier(n) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
                 let mut full_name = n;
                 while self.current_token.kind == TokenKind::Dot {
                     if let TokenKind::Identifier(sub) = self.peek_at(0).kind {
-                        self.next_token(); 
+                        self.next_token();
                         full_name.push('.');
                         full_name.push_str(&sub);
-                        self.next_token(); 
-                    } else { break; }
+                        self.next_token();
+                    } else {
+                        break;
+                    }
                 }
                 let generic_args = self.parse_generic_args();
                 if generic_args.is_empty() {
                     Expression::Identifier(full_name, span)
                 } else {
-                    Expression::TypeRef { name: full_name, generic_args, span }
+                    Expression::TypeRef {
+                        name: full_name,
+                        generic_args,
+                        span,
+                    }
                 }
-            },
-            _ => { 
+            }
+            _ => {
                 let span = Span::from_token(&self.current_token);
                 let tok = self.current_token.clone();
-                self.next_token(); 
+                self.next_token();
                 Expression::Identifier(format!("invalid_token_{:?}", tok), span)
-            },
+            }
         };
 
         loop {
@@ -1128,38 +1553,58 @@ impl<'a> Parser<'a> {
                         if self.current_token.kind == TokenKind::LParen {
                             self.next_token();
                             let mut args = Vec::new();
-                            while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                            while self.current_token.kind != TokenKind::RParen
+                                && self.current_token.kind != TokenKind::EOF
+                            {
                                 args.push(self.parse_expression());
-                                if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                                if self.current_token.kind == TokenKind::Comma {
+                                    self.next_token();
+                                }
                             }
-                            if self.current_token.kind == TokenKind::RParen { self.next_token(); }
-                            
-                            expr = Expression::MethodCall { 
-                                receiver: Box::new(expr.clone()), 
-                                method: member_name, 
-                                generic_args: m_generic_args, 
+                            if self.current_token.kind == TokenKind::RParen {
+                                self.next_token();
+                            }
+
+                            expr = Expression::MethodCall {
+                                receiver: Box::new(expr.clone()),
+                                method: member_name,
+                                generic_args: m_generic_args,
                                 arguments: args,
                                 span: dot_span,
                             };
                         } else {
                             if let Expression::Identifier(ref name, _) = expr {
-                                expr = Expression::Identifier(format!("{}.{}", name, member_name), dot_span);
+                                expr = Expression::Identifier(
+                                    format!("{}.{}", name, member_name),
+                                    dot_span,
+                                );
                             } else if let Expression::TypeRef { ref name, .. } = expr {
-                                expr = Expression::Identifier(format!("{}.{}", name, member_name), dot_span);
+                                expr = Expression::Identifier(
+                                    format!("{}.{}", name, member_name),
+                                    dot_span,
+                                );
                             } else {
-                                expr = Expression::MemberAccess { receiver: Box::new(expr.clone()), member: member_name, span: dot_span };
+                                expr = Expression::MemberAccess {
+                                    receiver: Box::new(expr.clone()),
+                                    member: member_name,
+                                    span: dot_span,
+                                };
                             }
                         }
-                    } else { break; }
-                },
+                    } else {
+                        break;
+                    }
+                }
                 TokenKind::DoubleColon => {
-                    if self.peek_at(0).kind == TokenKind::Intent { break; }
+                    if self.peek_at(0).kind == TokenKind::Intent {
+                        break;
+                    }
                     let dc_span = Span::from_token(&self.current_token);
                     self.next_token();
                     if let TokenKind::Identifier(variant) = self.current_token.clone().kind {
                         let variant_name = variant;
                         self.next_token();
-                        
+
                         let mut m_generic_args = Vec::new();
                         if self.current_token.kind == TokenKind::Lt {
                             m_generic_args = self.parse_generic_args();
@@ -1168,56 +1613,110 @@ impl<'a> Parser<'a> {
                         let mut args = Vec::new();
                         if self.current_token.kind == TokenKind::LParen {
                             self.next_token();
-                            while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                            while self.current_token.kind != TokenKind::RParen
+                                && self.current_token.kind != TokenKind::EOF
+                            {
                                 args.push(self.parse_expression());
-                                if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                                if self.current_token.kind == TokenKind::Comma {
+                                    self.next_token();
+                                }
                             }
-                            if self.current_token.kind == TokenKind::RParen { self.next_token(); }
+                            if self.current_token.kind == TokenKind::RParen {
+                                self.next_token();
+                            }
                         }
                         let (name, mut combined_generic_args) = match expr {
                             Expression::Identifier(ref n, _) => (n.clone(), vec![]),
-                            Expression::TypeRef { ref name, ref generic_args, .. } => (name.clone(), generic_args.clone()),
-                            Expression::EnumInst { ref name, ref variant, ref generic_args, .. } => {
-                                (format!("{}.{}", name, variant), generic_args.clone())
-                            }
+                            Expression::TypeRef {
+                                ref name,
+                                ref generic_args,
+                                ..
+                            } => (name.clone(), generic_args.clone()),
+                            Expression::EnumInst {
+                                ref name,
+                                ref variant,
+                                ref generic_args,
+                                ..
+                            } => (format!("{}.{}", name, variant), generic_args.clone()),
                             _ => ("unknown_enum".to_string(), vec![]),
                         };
                         combined_generic_args.extend(m_generic_args);
-                        expr = Expression::EnumInst { name, variant: variant_name, generic_args: combined_generic_args, arguments: args, span: dc_span };
-                    } else { break; }
-                },
+                        expr = Expression::EnumInst {
+                            name,
+                            variant: variant_name,
+                            generic_args: combined_generic_args,
+                            arguments: args,
+                            span: dc_span,
+                        };
+                    } else {
+                        break;
+                    }
+                }
                 TokenKind::LParen => {
                     let call_span = Span::from_token(&self.current_token);
                     self.next_token();
                     let mut args = Vec::new();
-                    while self.current_token.kind != TokenKind::RParen && self.current_token.kind != TokenKind::EOF {
+                    while self.current_token.kind != TokenKind::RParen
+                        && self.current_token.kind != TokenKind::EOF
+                    {
                         args.push(self.parse_expression());
-                        if self.current_token.kind == TokenKind::Comma { self.next_token(); }
+                        if self.current_token.kind == TokenKind::Comma {
+                            self.next_token();
+                        }
                     }
-                    if self.current_token.kind == TokenKind::RParen { self.next_token(); }
-                    
+                    if self.current_token.kind == TokenKind::RParen {
+                        self.next_token();
+                    }
+
                     if let Expression::Identifier(ref name, _) = expr {
-                        expr = Expression::Call { function: name.clone(), generic_args: vec![], arguments: args, span: call_span };
-                    } else if let Expression::TypeRef { ref name, ref generic_args, .. } = expr {
-                        expr = Expression::Call { function: name.clone(), generic_args: generic_args.clone(), arguments: args, span: call_span };
-                    } else { break; }
-                },
+                        expr = Expression::Call {
+                            function: name.clone(),
+                            generic_args: vec![],
+                            arguments: args,
+                            span: call_span,
+                        };
+                    } else if let Expression::TypeRef {
+                        ref name,
+                        ref generic_args,
+                        ..
+                    } = expr
+                    {
+                        expr = Expression::Call {
+                            function: name.clone(),
+                            generic_args: generic_args.clone(),
+                            arguments: args,
+                            span: call_span,
+                        };
+                    } else {
+                        break;
+                    }
+                }
                 TokenKind::LBrace => {
-                    let is_type_like = matches!(expr, Expression::Identifier(..) | Expression::TypeRef { .. });
-                    if !is_type_like { break; }
+                    let is_type_like = matches!(
+                        expr,
+                        Expression::Identifier(..) | Expression::TypeRef { .. }
+                    );
+                    if !is_type_like {
+                        break;
+                    }
 
                     let next_tok = self.peek_at(0);
-                    let is_struct = if next_tok.kind == TokenKind::RBrace { true } 
-                        else if let TokenKind::Identifier(_) = next_tok.kind {
-                            let next_next = self.peek_at(1);
-                            next_next.kind == TokenKind::Colon
-                        } else { false };
-                    
+                    let is_struct = if next_tok.kind == TokenKind::RBrace {
+                        true
+                    } else if let TokenKind::Identifier(_) = next_tok.kind {
+                        let next_next = self.peek_at(1);
+                        next_next.kind == TokenKind::Colon
+                    } else {
+                        false
+                    };
+
                     if is_struct {
                         let struct_span = Span::from_token(&self.current_token);
                         self.next_token();
                         let mut fields = Vec::new();
-                        while self.current_token.kind != TokenKind::RBrace && self.current_token.kind != TokenKind::EOF {
+                        while self.current_token.kind != TokenKind::RBrace
+                            && self.current_token.kind != TokenKind::EOF
+                        {
                             if let TokenKind::Identifier(f_name) = self.current_token.clone().kind {
                                 self.next_token();
                                 if self.current_token.kind == TokenKind::Colon {
@@ -1229,31 +1728,52 @@ impl<'a> Parser<'a> {
                             } else {
                                 break;
                             }
-                            if self.current_token.kind == TokenKind::Comma { 
-                                self.next_token(); 
+                            if self.current_token.kind == TokenKind::Comma {
+                                self.next_token();
                             } else if self.current_token.kind != TokenKind::RBrace {
                                 break;
                             }
                         }
-                        if self.current_token.kind == TokenKind::RBrace { self.next_token(); }
+                        if self.current_token.kind == TokenKind::RBrace {
+                            self.next_token();
+                        }
                         let (name, generic_args) = match expr {
                             Expression::Identifier(ref n, _) => (n.clone(), vec![]),
-                            Expression::TypeRef { ref name, ref generic_args, .. } => (name.clone(), generic_args.clone()),
+                            Expression::TypeRef {
+                                ref name,
+                                ref generic_args,
+                                ..
+                            } => (name.clone(), generic_args.clone()),
                             _ => ("unknown_struct".to_string(), vec![]),
                         };
-                        expr = Expression::StructInst { name, generic_args, fields, span: struct_span };
-                    } else { break; }
-                },
+                        expr = Expression::StructInst {
+                            name,
+                            generic_args,
+                            fields,
+                            span: struct_span,
+                        };
+                    } else {
+                        break;
+                    }
+                }
                 TokenKind::Lt => {
                     if let Expression::Identifier(ref name, _) = expr {
                         let n = name.clone();
                         let ident_span = expr.span();
                         let generic_args = self.parse_generic_args();
                         if !generic_args.is_empty() {
-                            expr = Expression::TypeRef { name: n, generic_args, span: ident_span };
-                        } else { break; }
-                    } else { break; }
-                },
+                            expr = Expression::TypeRef {
+                                name: n,
+                                generic_args,
+                                span: ident_span,
+                            };
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
                 _ => break,
             }
         }
@@ -1261,21 +1781,31 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fstring(&mut self, s: String, span: Span) -> Expression {
-        enum Seg { Lit(String), Expr(String) }
+        enum Seg {
+            Lit(String),
+            Expr(String),
+        }
         let mut segments: Vec<Seg> = Vec::new();
         let mut cur = String::new();
         let mut chars = s.chars().peekable();
         while let Some(c) = chars.next() {
             if c == '{' {
-                if !cur.is_empty() { segments.push(Seg::Lit(std::mem::take(&mut cur))); }
+                if !cur.is_empty() {
+                    segments.push(Seg::Lit(std::mem::take(&mut cur)));
+                }
                 let mut depth = 1;
                 let mut expr_src = String::new();
                 while let Some(&nc) = chars.peek() {
-                    if nc == '{' { depth += 1; expr_src.push(nc); chars.next(); }
-                    else if nc == '}' {
+                    if nc == '{' {
+                        depth += 1;
+                        expr_src.push(nc);
+                        chars.next();
+                    } else if nc == '}' {
                         chars.next();
                         depth -= 1;
-                        if depth == 0 { break; }
+                        if depth == 0 {
+                            break;
+                        }
                         expr_src.push('}');
                     } else {
                         expr_src.push(nc);
@@ -1289,7 +1819,9 @@ impl<'a> Parser<'a> {
                 cur.push(c);
             }
         }
-        if !cur.is_empty() { segments.push(Seg::Lit(cur)); }
+        if !cur.is_empty() {
+            segments.push(Seg::Lit(cur));
+        }
 
         let plus_tok = Token::new(TokenKind::Plus, span.line, span.col);
         let mut result: Option<Expression> = None;
@@ -1330,10 +1862,19 @@ mod tests {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let expr = parser.parse_expression();
-        
-        if let Expression::Infix { left: _, operator, right, .. } = expr {
+
+        if let Expression::Infix {
+            left: _,
+            operator,
+            right,
+            ..
+        } = expr
+        {
             assert_eq!(operator.kind, TokenKind::Plus);
-            assert!(matches!(*right, Expression::Infix { .. }), "Expected right to be an infix expression");
+            assert!(
+                matches!(*right, Expression::Infix { .. }),
+                "Expected right to be an infix expression"
+            );
             if let Expression::Infix { operator: op2, .. } = *right {
                 assert_eq!(op2.kind, TokenKind::Star);
             }
@@ -1348,7 +1889,7 @@ mod tests {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let expr = parser.parse_expression();
-        
+
         let is_method_call = matches!(expr, Expression::MethodCall { .. });
         assert!(is_method_call, "Expected method call, got {:?}", expr);
     }
@@ -1359,7 +1900,7 @@ mod tests {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program().expect("parse should succeed");
-        
+
         assert_eq!(program.declarations.len(), 1);
         let is_fn = matches!(program.declarations[0], Declaration::Function(_));
         assert!(is_fn, "Expected function declaration");
