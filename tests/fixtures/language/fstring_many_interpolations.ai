@@ -1,0 +1,30 @@
+// Regression guard for #80: every `{expr}` segment in every f-string used to
+// leak its source string via Box::leak. This fixture exercises many f-strings
+// each with multiple interpolations (incl. nested expressions) to keep the
+// no-leak parse path covered. Non-String values are explicitly converted via
+// std.string helpers (f-strings are syntax sugar for concatenation). Snapshot
+// asserts the compiled program output.
+
+fn add(a: i64, b: i64) -> i64 {
+    return a + b
+}
+
+fn main() {
+    let x = 10
+    let y = 20
+    let name = "Aion"
+
+    let a = f"{string.from_int(x)} + {string.from_int(y)} = {string.from_int(add(x, y))}"
+    io.println(a)
+
+    let b = f"hello {name}, sum={string.from_int(add(x, y))}, diff={string.from_int(add(y, -x))}"
+    io.println(b)
+
+    let c = f"{string.from_int(1)} {string.from_int(2)} {string.from_int(3)} {string.from_int(4)} {string.from_int(5)} {string.from_int(x)} {string.from_int(y)}"
+    io.println(c)
+
+    let d = f"name={name} len={string.from_int(string.len(name))}"
+    io.println(d)
+
+    return 0
+}
