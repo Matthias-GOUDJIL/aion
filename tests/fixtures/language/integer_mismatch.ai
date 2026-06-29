@@ -1,0 +1,8 @@
+// Mismatched integer sizes must produce a type error. #52.
+
+fn main() {
+    let a: i32 = 1
+    let b: i64 = 2
+    let c = a + b
+    return c
+}

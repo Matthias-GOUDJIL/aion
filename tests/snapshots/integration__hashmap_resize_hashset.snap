@@ -8,7 +8,7 @@ Len after: 2
 Success: b removed
 Testing HashMap resize...
 Len after many inserts: 22
-Error: key_5 not found
+key_5 value: 5
 Testing HashSet...
 Set contains apple
 Success: apple removed from set

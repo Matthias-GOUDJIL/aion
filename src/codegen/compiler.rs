@@ -147,10 +147,46 @@ impl<'ctx> Compiler<'ctx> {
         self.type_to_llvm(&crate::analysis::types::Type::parse(tn))
     }
 
+    /// Coerce an integer value to the target LLVM int type, choosing
+    /// sign-extension / zero-extension / truncation based on the Aion type
+    /// name (`et_clean` like "i32"/"u8"). Used by `let x: i32 = <i64 literal>`
+    /// and similar widening/narrowing sites. #52.
+    fn coerce_int_width(
+        &self,
+        v: inkwell::values::IntValue<'ctx>,
+        target: inkwell::types::IntType<'ctx>,
+        et_clean: &str,
+    ) -> Result<inkwell::values::IntValue<'ctx>, CompileError> {
+        let from_bits = v.get_type().get_bit_width();
+        let to_bits = target.get_bit_width();
+        if from_bits == to_bits {
+            return Ok(v);
+        }
+        // Signedness from the Aion type name (i* signed, u* unsigned).
+        let signed = et_clean.starts_with('i');
+        if to_bits > from_bits {
+            if signed {
+                Ok(self.builder.build_int_s_extend(v, target, "let_sext")?)
+            } else {
+                Ok(self.builder.build_int_z_extend(v, target, "let_zext")?)
+            }
+        } else {
+            Ok(self.builder.build_int_truncate(v, target, "let_trunc")?)
+        }
+    }
+
     fn type_to_llvm(&self, ty: &crate::analysis::types::Type) -> BasicTypeEnum<'ctx> {
         use crate::analysis::types::Type;
         match ty {
-            Type::Integer | Type::Boolean | Type::Date | Type::Duration | Type::Unit => {
+            // Emit the correctly-sized LLVM integer type so that `@sizeof`
+            // and FFI layouts respect i8/i32/i64. #52.
+            Type::Integer { bits, .. } => match bits {
+                8 => self.context.i8_type().into(),
+                16 => self.context.i16_type().into(),
+                32 => self.context.i32_type().into(),
+                _ => self.context.i64_type().into(),
+            },
+            Type::Boolean | Type::Date | Type::Duration | Type::Unit => {
                 self.context.i64_type().into()
             }
             Type::Float => self.context.f64_type().into(),
@@ -801,6 +837,17 @@ impl<'ctx> Compiler<'ctx> {
                                         "let_coerce",
                                     )?
                                     .into()
+                            } else if llvm_t.is_int_type() && v.is_int_value() {
+                                // Integer width coercion: widen (zext/sext) or
+                                // narrow (trunc) the literal/value to the
+                                // annotated integer type. Lets `let x: i32 = 42`
+                                // store an i64 literal into an i32 slot. #52.
+                                self.coerce_int_width(
+                                    v.into_int_value(),
+                                    llvm_t.into_int_type(),
+                                    &et_clean,
+                                )?
+                                .into()
                             } else {
                                 v
                             }

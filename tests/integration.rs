@@ -220,6 +220,14 @@ fn test_option_result_methods() {
 fn test_sizeof_variables() {
     assert_snapshot!(run_aion_test("language/sizeof_variables"));
 }
+#[test]
+fn test_integer_sizes() {
+    assert_snapshot!(run_aion_test("language/integer_sizes"));
+}
+#[test]
+fn test_integer_mismatch() {
+    assert_snapshot!(run_aion_test("language/integer_mismatch"));
+}
 
 // --- Stdlib Tests ---
 

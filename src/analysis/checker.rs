@@ -125,7 +125,7 @@ impl TypeChecker {
             Type::Function {
                 is_unsafe: true,
                 params: vec![Type::String, Type::String],
-                return_type: Box::new(Type::Integer),
+                return_type: Box::new(Type::i64()),
             },
         );
         self.env.set(
@@ -133,14 +133,14 @@ impl TypeChecker {
             Type::Function {
                 is_unsafe: true,
                 params: vec![],
-                return_type: Box::new(Type::Integer),
+                return_type: Box::new(Type::i64()),
             },
         );
         self.env.set(
             "aion_get_argv_index".to_string(),
             Type::Function {
                 is_unsafe: true,
-                params: vec![Type::Integer],
+                params: vec![Type::i64()],
                 return_type: Box::new(Type::String),
             },
         );
@@ -149,14 +149,14 @@ impl TypeChecker {
             Type::Function {
                 is_unsafe: true,
                 params: vec![Type::String],
-                return_type: Box::new(Type::Pointer(Box::new(Type::Integer))),
+                return_type: Box::new(Type::Pointer(Box::new(Type::i64()))),
             },
         );
         self.env.set(
             "exit".to_string(),
             Type::Function {
                 is_unsafe: true,
-                params: vec![Type::Integer],
+                params: vec![Type::i64()],
                 return_type: Box::new(Type::Unit),
             },
         );
@@ -164,7 +164,7 @@ impl TypeChecker {
             "aion_exit".to_string(),
             Type::Function {
                 is_unsafe: true,
-                params: vec![Type::Integer],
+                params: vec![Type::i64()],
                 return_type: Box::new(Type::Unit),
             },
         );
@@ -209,7 +209,7 @@ impl TypeChecker {
             Type::Function {
                 is_unsafe: false,
                 params: vec![Type::String],
-                return_type: Box::new(Type::Integer),
+                return_type: Box::new(Type::i64()),
             },
         );
         self.env.set(
@@ -217,7 +217,7 @@ impl TypeChecker {
             Type::Function {
                 is_unsafe: false,
                 params: vec![Type::String],
-                return_type: Box::new(Type::Integer),
+                return_type: Box::new(Type::i64()),
             },
         );
         self.env.set(
@@ -232,7 +232,7 @@ impl TypeChecker {
             "string.from_int".to_string(),
             Type::Function {
                 is_unsafe: false,
-                params: vec![Type::Integer],
+                params: vec![Type::i64()],
                 return_type: Box::new(Type::String),
             },
         );
@@ -258,28 +258,28 @@ impl TypeChecker {
             "i64.abs".to_string(),
             Type::Function {
                 is_unsafe: false,
-                params: vec![Type::Integer],
-                return_type: Box::new(Type::Integer),
+                params: vec![Type::i64()],
+                return_type: Box::new(Type::i64()),
             },
         );
         self.env.set(
             "i64.max".to_string(),
             Type::Function {
                 is_unsafe: false,
-                params: vec![Type::Integer, Type::Integer],
-                return_type: Box::new(Type::Integer),
+                params: vec![Type::i64(), Type::i64()],
+                return_type: Box::new(Type::i64()),
             },
         );
         self.env.set(
             "i64.min".to_string(),
             Type::Function {
                 is_unsafe: false,
-                params: vec![Type::Integer, Type::Integer],
-                return_type: Box::new(Type::Integer),
+                params: vec![Type::i64(), Type::i64()],
+                return_type: Box::new(Type::i64()),
             },
         );
 
-        self.env.set("argc".to_string(), Type::Integer);
+        self.env.set("argc".to_string(), Type::i64());
         self.env.set("argv".to_string(), Type::String);
     }
 
@@ -424,9 +424,37 @@ impl TypeChecker {
 
     fn check_statement(&mut self, stmt: &Statement) -> Result<Type, CompileError> {
         match stmt {
-            Statement::Let { name, value, .. } => {
+            Statement::Let {
+                name,
+                value,
+                explicit_type,
+                ..
+            } => {
                 let val_type = self.check_expression(value)?;
-                self.env.set(name.clone(), val_type);
+                // Honor an explicit type annotation (`let x: T = expr`, #78):
+                // the variable's stored type is `T`. Integer literals (i64 by
+                // default) coerce to any annotated integer type so that
+                // `let x: i32 = 0` types `x` as i32 (#52). A genuine type
+                // mismatch (e.g. annotating an i64 expression as String) is a
+                // type error.
+                let final_type = if let Some(et) = explicit_type {
+                    let annotated = Type::parse(et);
+                    if val_type == annotated || (annotated.is_integer() && val_type.is_integer()) {
+                        annotated
+                    } else {
+                        return Err(self.err(
+                            format!(
+                                "let annotation '{}' does not match value type '{}'",
+                                annotated.name(),
+                                val_type.name()
+                            ),
+                            value,
+                        ));
+                    }
+                } else {
+                    val_type
+                };
+                self.env.set(name.clone(), final_type);
                 Ok(Type::Unit)
             }
             Statement::Assignment { target, value, .. } => {
@@ -483,7 +511,7 @@ impl TypeChecker {
                 let cond_name = match &cond_type {
                     Type::Enum { name } => name.clone(),
                     Type::GenericInstance(name, _) => name.clone(),
-                    Type::Integer => "i64".to_string(),
+                    Type::Integer { .. } => "i64".to_string(),
                     Type::String => "String".to_string(),
                     Type::Struct { name } => name.clone(),
                     _ => "unknown".to_string(),
@@ -506,7 +534,7 @@ impl TypeChecker {
 
                     if !arm.params.is_empty() {
                         self.env = Environment::new_enclosed(old_env.clone());
-                        let mut payload = Type::Integer;
+                        let mut payload = Type::i64();
 
                         // Check patterns for enum type
                         if let Some(Declaration::Enum(e)) = self.decls.get(&cond_name) {
@@ -524,7 +552,7 @@ impl TypeChecker {
                                 }
                             }
                         } else if cond_name == "i64" {
-                            payload = Type::Integer;
+                            payload = Type::i64();
                         } else if cond_name == "String" {
                             payload = Type::String;
                         } else if let Some(Declaration::Struct(s)) = self.decls.get(&cond_name) {
@@ -560,8 +588,8 @@ impl TypeChecker {
 
     fn check_expression(&mut self, expr: &Expression) -> Result<Type, CompileError> {
         match expr {
-            Expression::Integer(..) => Ok(Type::Integer),
-            Expression::Char(..) => Ok(Type::Integer),
+            Expression::Integer(..) => Ok(Type::i64()),
+            Expression::Char(..) => Ok(Type::i64()),
             Expression::Float(..) => Ok(Type::Float),
             Expression::Boolean(..) => Ok(Type::Boolean),
             Expression::String(..) => Ok(Type::String),
@@ -638,7 +666,7 @@ impl TypeChecker {
                                 Type::GenericInstance(ref n, _)
                                 | Type::Struct { name: ref n }
                                 | Type::Enum { name: ref n } => n.clone(),
-                                Type::Integer => "i64".to_string(),
+                                Type::Integer { .. } => "i64".to_string(),
                                 Type::String => "String".to_string(),
                                 _ => "".to_string(),
                             };
@@ -724,7 +752,7 @@ impl TypeChecker {
                     | Type::Placeholder(ref n) => n.clone(),
                     _ => {
                         return Err(CompileError::new(
-                            format!("member access on {:?}", rt),
+                            format!("member access on {}", rt.name()),
                             span.line,
                             span.col,
                         )
@@ -763,7 +791,7 @@ impl TypeChecker {
                     // Check argument is integer
                     if !arguments.is_empty() {
                         let arg_type = self.check_expression(&arguments[0])?;
-                        if arg_type != Type::Integer {
+                        if !arg_type.is_integer() {
                             return Err(
                                 self.err("offset argument must be an integer", &method_expr)
                             );
@@ -776,9 +804,11 @@ impl TypeChecker {
                     Type::GenericInstance(ref n, _)
                     | Type::Struct { name: ref n }
                     | Type::Enum { name: ref n } => n.clone(),
-                    Type::Integer => "i64".to_string(),
+                    Type::Integer { .. } => "i64".to_string(),
                     Type::String => "String".to_string(),
-                    _ => return Err(self.err(format!("method call on {:?}", rt), &method_expr)),
+                    _ => {
+                        return Err(self.err(format!("method call on {}", rt.name()), &method_expr));
+                    }
                 };
 
                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
@@ -861,7 +891,7 @@ impl TypeChecker {
                 if let Type::Pointer(t) = rt {
                     Ok(*t)
                 } else {
-                    Ok(Type::Integer)
+                    Ok(Type::i64())
                 }
             }
             Expression::Intrinsic {
@@ -884,7 +914,7 @@ impl TypeChecker {
                     || actual_name == "fs_write"
                     || actual_name == "fs_append"
                 {
-                    Ok(Type::Integer)
+                    Ok(Type::i64())
                 } else if actual_name == "str_concat"
                     || actual_name == "fs_read_to_string"
                     || actual_name == "int_to_str"
@@ -894,7 +924,7 @@ impl TypeChecker {
                 {
                     Ok(Type::String)
                 } else if actual_name == "str_ptr" {
-                    Ok(Type::Pointer(Box::new(Type::Integer)))
+                    Ok(Type::Pointer(Box::new(Type::i64())))
                 } else if actual_name == "mem_is_null" {
                     Ok(Type::Boolean)
                 } else if actual_name == "mem_zero" && !args.is_empty() {
@@ -905,20 +935,20 @@ impl TypeChecker {
                         Expression::Identifier(s, _) | Expression::TypeRef { name: s, .. } => {
                             s.clone()
                         }
-                        _ => return Ok(Type::Integer),
+                        _ => return Ok(Type::i64()),
                     };
                     let full = self.resolve_fuzzy_name(&self.decls, &tnm).unwrap_or(tnm);
                     match self.decls.get(&full) {
                         Some(Declaration::Struct(_)) => Ok(Type::Struct { name: full }),
                         Some(Declaration::Enum(_)) => Ok(Type::Enum { name: full }),
-                        _ => Ok(Type::Integer),
+                        _ => Ok(Type::i64()),
                     }
                 } else if actual_name.starts_with("ai_tensor_") {
                     Ok(Type::Struct {
                         name: "std.ai.tensor.Tensor".to_string(),
                     })
                 } else {
-                    Ok(Type::Integer)
+                    Ok(Type::i64())
                 }
             }
             Expression::If {
@@ -964,7 +994,7 @@ impl TypeChecker {
                 let cond_name = match &cond_type {
                     Type::Enum { name } => name.clone(),
                     Type::GenericInstance(name, _) => name.clone(),
-                    Type::Integer => "i64".to_string(),
+                    Type::Integer { .. } => "i64".to_string(),
                     Type::String => "String".to_string(),
                     Type::Struct { name } => name.clone(),
                     _ => "unknown".to_string(),
@@ -981,7 +1011,7 @@ impl TypeChecker {
 
                     if !arm.params.is_empty() {
                         self.env = Environment::new_enclosed(old_env.clone());
-                        let mut payload = Type::Integer;
+                        let mut payload = Type::i64();
 
                         if let Some(Declaration::Enum(e)) = self.decls.get(&cond_name) {
                             for pat in &all_patterns {
@@ -998,7 +1028,7 @@ impl TypeChecker {
                                 }
                             }
                         } else if cond_name == "i64" {
-                            payload = Type::Integer;
+                            payload = Type::i64();
                         } else if cond_name == "String" {
                             payload = Type::String;
                         } else if let Some(Declaration::Struct(s)) = self.decls.get(&cond_name) {
@@ -1035,33 +1065,51 @@ impl TypeChecker {
 
     fn check_compatibility(&self, t1: Type, t2: Type, op: &Token) -> Result<Type, CompileError> {
         match t1 {
-            Type::Integer => {
-                if t2 == Type::Integer {
-                    if matches!(
-                        op.kind,
-                        TokenKind::Plus
-                            | TokenKind::Minus
-                            | TokenKind::Star
-                            | TokenKind::Slash
-                            | TokenKind::Percent
-                            | TokenKind::And
-                            | TokenKind::Or
-                            | TokenKind::Caret
-                    ) {
-                        return Ok(Type::Integer);
+            Type::Integer { bits: b1, .. } => {
+                // Integer arithmetic requires both operands to share the same
+                // bit width; mixing i*/u* of the same width is allowed (the
+                // stdlib hash mixes i64 and u64). Different widths (e.g.
+                // i32 + i64) are a type error. #52.
+                if let Type::Integer { bits: b2, .. } = &t2 {
+                    if b1 == *b2 {
+                        if matches!(
+                            op.kind,
+                            TokenKind::Plus
+                                | TokenKind::Minus
+                                | TokenKind::Star
+                                | TokenKind::Slash
+                                | TokenKind::Percent
+                                | TokenKind::And
+                                | TokenKind::Or
+                                | TokenKind::Caret
+                        ) {
+                            return Ok(t1.clone());
+                        }
+                        if matches!(
+                            op.kind,
+                            TokenKind::EqEq
+                                | TokenKind::NotEq
+                                | TokenKind::Lt
+                                | TokenKind::Gt
+                                | TokenKind::LtEq
+                                | TokenKind::GtEq
+                        ) {
+                            return Ok(Type::Boolean);
+                        }
+                        return Ok(t1.clone());
                     }
-                    if matches!(
-                        op.kind,
-                        TokenKind::EqEq
-                            | TokenKind::NotEq
-                            | TokenKind::Lt
-                            | TokenKind::Gt
-                            | TokenKind::LtEq
-                            | TokenKind::GtEq
-                    ) {
-                        return Ok(Type::Boolean);
-                    }
-                    return Ok(Type::Integer);
+                    // Different bit widths: type error.
+                    return Err(CompileError::Type {
+                        message: format!(
+                            "cannot apply '{:?}' to mismatched integer types {} and {}",
+                            op.kind,
+                            t1.name(),
+                            t2.name()
+                        ),
+                        line: op.line,
+                        col: op.col,
+                        snippet: None,
+                    });
                 }
             }
             Type::Float => {
@@ -1098,7 +1146,7 @@ impl TypeChecker {
                 }
             }
             Type::String => {
-                if (t2 == Type::String || t2 == Type::Integer) && op.kind == TokenKind::Plus {
+                if (t2 == Type::String || t2.is_integer()) && op.kind == TokenKind::Plus {
                     return Ok(Type::String);
                 }
                 if t2 == Type::String && matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq) {
