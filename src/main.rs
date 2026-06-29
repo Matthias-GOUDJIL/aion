@@ -98,7 +98,14 @@ fn main() {
                 Ok(()) => {}
                 Err(LinkError::GccFallback) => {
                     let gcc_status = Command::new("gcc")
-                        .args([&obj_file, "src/runtime.c", "-o", &bin_file, "-lpthread", "-lgc"])
+                        .args([
+                            &obj_file,
+                            "src/runtime.c",
+                            "-o",
+                            &bin_file,
+                            "-lpthread",
+                            "-lgc",
+                        ])
                         .status();
                     if let Err(e) = gcc_status {
                         eprintln!("error: gcc failed: {}", e);
@@ -198,7 +205,15 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
             // scoped to this run so concurrent runs don't clobber each other.
             let tmp = format!("aion_runtime_{}.bc", std::process::id());
             let status = Command::new(&clang)
-                .args(["-c", "-emit-llvm", "-O2", "-I/usr/include", "src/runtime.c", "-o", &tmp])
+                .args([
+                    "-c",
+                    "-emit-llvm",
+                    "-O2",
+                    "-I/usr/include",
+                    "src/runtime.c",
+                    "-o",
+                    &tmp,
+                ])
                 .status()
                 .map_err(|e| LinkError::Failed(format!("clang bitcode compile: {}", e)))?;
             if !status.success() {
