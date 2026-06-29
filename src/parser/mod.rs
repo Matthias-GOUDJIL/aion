@@ -1842,8 +1842,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fstring_expr(&mut self, src: &str, _span: Span) -> Expression {
-        let leaked: &'static str = Box::leak(src.to_string().into_boxed_str());
-        let lexer = Lexer::new(leaked);
+        // The sub-lexer borrows a locally owned String. Expression is fully
+        // owned (no lifetime parameter), so the returned value outlives the
+        // borrow with no Box::leak needed. #80.
+        let owned = src.to_string();
+        let lexer = Lexer::new(&owned);
         let mut sub = Parser::new(lexer);
         sub.parse_expression()
     }

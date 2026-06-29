@@ -1,0 +1,8 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/fstring_many_interpolations\")"
+---
+10 + 20 = 30
+hello Aion, sum=30, diff=10
+1 2 3 4 5 10 20
+name=Aion len=4

@@ -89,6 +89,10 @@ fn test_fstring_nested_braces() {
     assert_snapshot!(run_aion_test("language/fstring_nested_braces"));
 }
 #[test]
+fn test_fstring_many_interpolations() {
+    assert_snapshot!(run_aion_test("language/fstring_many_interpolations"));
+}
+#[test]
 fn test_operators() {
     assert_snapshot!(run_aion_test("language/operators"));
 }
