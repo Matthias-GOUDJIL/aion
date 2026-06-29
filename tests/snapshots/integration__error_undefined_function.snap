@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_undefined_function\")"
+---
+Not Found: function 'greet_word' is not defined (did you mean 'greet_world'?)

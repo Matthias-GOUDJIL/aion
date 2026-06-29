@@ -1,0 +1,10 @@
+// Reference a struct that is never declared. The type checker does not reject
+// unknown struct literals (it resolves the name fuzzily and falls back to the
+// typed name), so codegen hits the StructInst-not-found Internal path. The
+// Internal variant must surface as `internal compiler error: ...` (#40).
+
+fn main() {
+    let s = NoSuchStruct { x: 1, y: 2 }
+    io.println(s.x)
+    return 0
+}

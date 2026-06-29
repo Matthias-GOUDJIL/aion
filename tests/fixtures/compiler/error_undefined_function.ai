@@ -1,0 +1,13 @@
+// Close typo in a function call: `greet_word()` within 1 edit of the
+// declared `greet_world()` should trigger `Not Found: function 'greet_word'
+// is not defined (did you mean 'greet_world'?)` (#40).
+
+fn greet_world() -> i64 {
+    io.println("hello, world")
+    return 0
+}
+
+fn main() {
+    greet_word()
+    return 0
+}

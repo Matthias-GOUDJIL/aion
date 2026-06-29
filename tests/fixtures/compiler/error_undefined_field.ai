@@ -1,0 +1,19 @@
+use core.heap
+
+// Field typo via pointer-deref member access `(*p).nme`. This form parses as
+// `MemberAccess` (not the dotted-`Identifier` shortcut), so the type checker's
+// field-undefined path fires and emits `Not Found: field 'nme' is not defined
+// (did you mean 'name'?)` (#40).
+
+struct Person {
+    name: i64,
+    age: i64,
+}
+
+fn main() {
+    let p: *Person = unsafe { core.heap.alloc(16) as *Person }
+    unsafe { *p = Person { name: 1, age: 2 } }
+    let v = unsafe { (*p).nme }
+    io.println(v)
+    return 0
+}

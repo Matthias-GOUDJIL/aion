@@ -10,7 +10,13 @@ fn run_aion_test(path: &str) -> String {
     let root = project_root();
 
     let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "run", &format!("tests/fixtures/{}.ai", path)])
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "run",
+            &format!("tests/fixtures/{}.ai", path),
+        ])
         .current_dir(&root)
         .timeout(std::time::Duration::from_secs(60))
         .output()
@@ -47,178 +53,358 @@ fn run_aion_test(path: &str) -> String {
 // --- Language Tests ---
 
 #[test]
-fn test_hello() { assert_snapshot!(run_aion_test("language/hello")); }
+fn test_hello() {
+    assert_snapshot!(run_aion_test("language/hello"));
+}
 #[test]
-fn test_duration_literal() { assert_snapshot!(run_aion_test("language/duration_literal")); }
+fn test_duration_literal() {
+    assert_snapshot!(run_aion_test("language/duration_literal"));
+}
 #[test]
-fn test_pipeline_operator() { assert_snapshot!(run_aion_test("language/pipeline_operator")); }
+fn test_pipeline_operator() {
+    assert_snapshot!(run_aion_test("language/pipeline_operator"));
+}
 #[test]
-fn test_date_arithmetic() { assert_snapshot!(run_aion_test("language/date_arithmetic")); }
+fn test_date_arithmetic() {
+    assert_snapshot!(run_aion_test("language/date_arithmetic"));
+}
 #[test]
-fn test_unsafe_check_fail() { assert_snapshot!(run_aion_test("language/unsafe_check_fail")); }
+fn test_unsafe_check_fail() {
+    assert_snapshot!(run_aion_test("language/unsafe_check_fail"));
+}
 #[test]
-fn test_fstring_interpolation() { assert_snapshot!(run_aion_test("language/fstring_interpolation")); }
+fn test_fstring_interpolation() {
+    assert_snapshot!(run_aion_test("language/fstring_interpolation"));
+}
 #[test]
-fn test_fstring_edge() { assert_snapshot!(run_aion_test("language/fstring_edge")); }
+fn test_fstring_edge() {
+    assert_snapshot!(run_aion_test("language/fstring_edge"));
+}
 #[test]
-fn test_fstring_exprs() { assert_snapshot!(run_aion_test("language/fstring_exprs")); }
+fn test_fstring_exprs() {
+    assert_snapshot!(run_aion_test("language/fstring_exprs"));
+}
 #[test]
-fn test_fstring_nested_braces() { assert_snapshot!(run_aion_test("language/fstring_nested_braces")); }
+fn test_fstring_nested_braces() {
+    assert_snapshot!(run_aion_test("language/fstring_nested_braces"));
+}
 #[test]
-fn test_operators() { assert_snapshot!(run_aion_test("language/operators")); }
+fn test_operators() {
+    assert_snapshot!(run_aion_test("language/operators"));
+}
 #[test]
-fn test_unsafe_block() { assert_snapshot!(run_aion_test("language/unsafe_block")); }
+fn test_unsafe_block() {
+    assert_snapshot!(run_aion_test("language/unsafe_block"));
+}
 #[test]
-fn test_complex_pipeline() { assert_snapshot!(run_aion_test("language/complex_pipeline")); }
+fn test_complex_pipeline() {
+    assert_snapshot!(run_aion_test("language/complex_pipeline"));
+}
 #[test]
-fn test_string_operations() { assert_snapshot!(run_aion_test("language/string_operations")); }
+fn test_string_operations() {
+    assert_snapshot!(run_aion_test("language/string_operations"));
+}
 #[test]
-fn test_enum_match() { assert_snapshot!(run_aion_test("language/enum_match")); }
+fn test_enum_match() {
+    assert_snapshot!(run_aion_test("language/enum_match"));
+}
 #[test]
-fn test_generics_basic() { assert_snapshot!(run_aion_test("language/generics_basic")); }
+fn test_generics_basic() {
+    assert_snapshot!(run_aion_test("language/generics_basic"));
+}
 #[test]
-fn test_generics_result() { assert_snapshot!(run_aion_test("language/generics_result")); }
+fn test_generics_result() {
+    assert_snapshot!(run_aion_test("language/generics_result"));
+}
 #[test]
-fn test_struct_name_resolution() { assert_snapshot!(run_aion_test("language/struct_name_resolution")); }
+fn test_struct_name_resolution() {
+    assert_snapshot!(run_aion_test("language/struct_name_resolution"));
+}
 #[test]
-fn test_simple_expression() { assert_snapshot!(run_aion_test("language/simple_expression")); }
+fn test_simple_expression() {
+    assert_snapshot!(run_aion_test("language/simple_expression"));
+}
 #[test]
-fn test_generics_local() { assert_snapshot!(run_aion_test("language/generics_local")); }
+fn test_generics_local() {
+    assert_snapshot!(run_aion_test("language/generics_local"));
+}
 #[test]
-fn test_generics_substring() { assert_snapshot!(run_aion_test("language/generics_substring")); }
+fn test_generics_substring() {
+    assert_snapshot!(run_aion_test("language/generics_substring"));
+}
 #[test]
-fn test_generics_multi_arg() { assert_snapshot!(run_aion_test("language/generics_multi_arg")); }
+fn test_generics_multi_arg() {
+    assert_snapshot!(run_aion_test("language/generics_multi_arg"));
+}
 #[test]
-fn test_generics_multi_arg_err() { assert_snapshot!(run_aion_test("language/generics_multi_arg_err")); }
+fn test_generics_multi_arg_err() {
+    assert_snapshot!(run_aion_test("language/generics_multi_arg_err"));
+}
 #[test]
-fn test_let_type_annotation() { assert_snapshot!(run_aion_test("language/let_type_annotation")); }
+fn test_let_type_annotation() {
+    assert_snapshot!(run_aion_test("language/let_type_annotation"));
+}
 #[test]
-fn test_method_chaining() { assert_snapshot!(run_aion_test("language/method_chaining")); }
+fn test_method_chaining() {
+    assert_snapshot!(run_aion_test("language/method_chaining"));
+}
 #[test]
-fn test_short_circuit() { assert_snapshot!(run_aion_test("language/short_circuit")); }
+fn test_short_circuit() {
+    assert_snapshot!(run_aion_test("language/short_circuit"));
+}
 #[test]
-fn test_result_basic() { assert_snapshot!(run_aion_test("language/result_basic")); }
+fn test_result_basic() {
+    assert_snapshot!(run_aion_test("language/result_basic"));
+}
 #[test]
-fn test_result_methods() { assert_snapshot!(run_aion_test("language/result_methods")); }
+fn test_result_methods() {
+    assert_snapshot!(run_aion_test("language/result_methods"));
+}
 #[test]
-fn test_primitive_methods() { assert_snapshot!(run_aion_test("language/primitive_methods")); }
+fn test_primitive_methods() {
+    assert_snapshot!(run_aion_test("language/primitive_methods"));
+}
 #[test]
-fn test_struct_return() { assert_snapshot!(run_aion_test("language/struct_return")); }
+fn test_struct_return() {
+    assert_snapshot!(run_aion_test("language/struct_return"));
+}
 #[test]
-fn test_parse_result() { assert_snapshot!(run_aion_test("language/parse_result")); }
+fn test_parse_result() {
+    assert_snapshot!(run_aion_test("language/parse_result"));
+}
 #[test]
-fn test_char_literal() { assert_snapshot!(run_aion_test("language/char_literal")); }
+fn test_char_literal() {
+    assert_snapshot!(run_aion_test("language/char_literal"));
+}
 #[test]
-fn test_string_match() { assert_snapshot!(run_aion_test("language/string_match")); }
+fn test_string_match() {
+    assert_snapshot!(run_aion_test("language/string_match"));
+}
 #[test]
-fn test_recursion_deep() { assert_snapshot!(run_aion_test("language/recursion_deep")); }
+fn test_recursion_deep() {
+    assert_snapshot!(run_aion_test("language/recursion_deep"));
+}
 #[test]
-fn test_string_escapes() { assert_snapshot!(run_aion_test("language/string_escapes")); }
+fn test_string_escapes() {
+    assert_snapshot!(run_aion_test("language/string_escapes"));
+}
 #[test]
-fn test_break_continue() { assert_snapshot!(run_aion_test("language/break_continue")); }
+fn test_break_continue() {
+    assert_snapshot!(run_aion_test("language/break_continue"));
+}
 #[test]
-fn test_string_methods() { assert_snapshot!(run_aion_test("stdlib/string_methods")); }
+fn test_string_methods() {
+    assert_snapshot!(run_aion_test("stdlib/string_methods"));
+}
 #[test]
-fn test_loop_basic() { assert_snapshot!(run_aion_test("language/loop_basic")); }
+fn test_loop_basic() {
+    assert_snapshot!(run_aion_test("language/loop_basic"));
+}
 #[test]
-fn test_function_types() { assert_snapshot!(run_aion_test("language/function_types")); }
+fn test_function_types() {
+    assert_snapshot!(run_aion_test("language/function_types"));
+}
 #[test]
-fn test_match_expression() { assert_snapshot!(run_aion_test("language/match_expression")); }
+fn test_match_expression() {
+    assert_snapshot!(run_aion_test("language/match_expression"));
+}
 #[test]
-fn test_option_result_methods() { assert_snapshot!(run_aion_test("language/option_result_methods")); }
+fn test_option_result_methods() {
+    assert_snapshot!(run_aion_test("language/option_result_methods"));
+}
 #[test]
-fn test_sizeof_variables() { assert_snapshot!(run_aion_test("language/sizeof_variables")); }
+fn test_sizeof_variables() {
+    assert_snapshot!(run_aion_test("language/sizeof_variables"));
+}
 
 // --- Stdlib Tests ---
 
 #[test]
-fn test_sql_transpile() { assert_snapshot!(run_aion_test("stdlib/sql_transpile")); }
+fn test_sql_transpile() {
+    assert_snapshot!(run_aion_test("stdlib/sql_transpile"));
+}
 #[test]
-fn test_fs_write_read() { assert_snapshot!(run_aion_test("stdlib/fs_write_read")); }
+fn test_fs_write_read() {
+    assert_snapshot!(run_aion_test("stdlib/fs_write_read"));
+}
 #[test]
-fn test_env_args() { assert_snapshot!(run_aion_test("stdlib/env_args")); }
+fn test_env_args() {
+    assert_snapshot!(run_aion_test("stdlib/env_args"));
+}
 #[test]
-fn test_fs_result_error() { assert_snapshot!(run_aion_test("stdlib/fs_result_error")); }
+fn test_fs_result_error() {
+    assert_snapshot!(run_aion_test("stdlib/fs_result_error"));
+}
 #[test]
-fn test_std_fs_read_write() { assert_snapshot!(run_aion_test("stdlib/std_fs_read_write")); }
+fn test_std_fs_read_write() {
+    assert_snapshot!(run_aion_test("stdlib/std_fs_read_write"));
+}
 #[test]
-fn test_env_var() { assert_snapshot!(run_aion_test("stdlib/env_var")); }
+fn test_env_var() {
+    assert_snapshot!(run_aion_test("stdlib/env_var"));
+}
 #[test]
-fn test_env_args_cli() { assert_snapshot!(run_aion_test("stdlib/env_args_cli")); }
+fn test_env_args_cli() {
+    assert_snapshot!(run_aion_test("stdlib/env_args_cli"));
+}
 #[test]
-fn test_vector_basic() { assert_snapshot!(run_aion_test("stdlib/vector_basic")); }
+fn test_vector_basic() {
+    assert_snapshot!(run_aion_test("stdlib/vector_basic"));
+}
 #[test]
-fn test_env_vector_args() { assert_snapshot!(run_aion_test("stdlib/env_vector_args")); }
+fn test_env_vector_args() {
+    assert_snapshot!(run_aion_test("stdlib/env_vector_args"));
+}
 #[test]
-fn test_vector_generic() { assert_snapshot!(run_aion_test("stdlib/vector_generic")); }
+fn test_vector_generic() {
+    assert_snapshot!(run_aion_test("stdlib/vector_generic"));
+}
 #[test]
-fn test_vector_push_pop() { assert_snapshot!(run_aion_test("stdlib/vector_push_pop")); }
+fn test_vector_push_pop() {
+    assert_snapshot!(run_aion_test("stdlib/vector_push_pop"));
+}
 #[test]
-fn test_vector_utils() { assert_snapshot!(run_aion_test("stdlib/vector_utils")); }
+fn test_vector_utils() {
+    assert_snapshot!(run_aion_test("stdlib/vector_utils"));
+}
 #[test]
-fn test_vector_contains() { assert_snapshot!(run_aion_test("stdlib/vector_contains")); }
+fn test_vector_contains() {
+    assert_snapshot!(run_aion_test("stdlib/vector_contains"));
+}
 #[test]
-fn test_vector_edge() { assert_snapshot!(run_aion_test("stdlib/vector_edge")); }
+fn test_vector_edge() {
+    assert_snapshot!(run_aion_test("stdlib/vector_edge"));
+}
 #[test]
-fn test_hashmap_basic() { assert_snapshot!(run_aion_test("stdlib/hashmap_basic")); }
+fn test_hashmap_basic() {
+    assert_snapshot!(run_aion_test("stdlib/hashmap_basic"));
+}
 #[test]
-fn test_hashmap_resize_hashset() { assert_snapshot!(run_aion_test("stdlib/hashmap_resize_hashset")); }
+fn test_hashmap_resize_hashset() {
+    assert_snapshot!(run_aion_test("stdlib/hashmap_resize_hashset"));
+}
 #[test]
-fn test_hashmap_utils() { assert_snapshot!(run_aion_test("stdlib/hashmap_utils")); }
+fn test_hashmap_utils() {
+    assert_snapshot!(run_aion_test("stdlib/hashmap_utils"));
+}
 #[test]
-fn test_tensor_basic() { assert_snapshot!(run_aion_test("stdlib/tensor_basic")); }
+fn test_tensor_basic() {
+    assert_snapshot!(run_aion_test("stdlib/tensor_basic"));
+}
 #[test]
-fn test_fmt_format() { assert_snapshot!(run_aion_test("stdlib/fmt_format")); }
+fn test_fmt_format() {
+    assert_snapshot!(run_aion_test("stdlib/fmt_format"));
+}
 #[test]
-fn test_path_operations() { assert_snapshot!(run_aion_test("stdlib/path_operations")); }
+fn test_path_operations() {
+    assert_snapshot!(run_aion_test("stdlib/path_operations"));
+}
 #[test]
-fn test_dataframe_basic() { assert_snapshot!(run_aion_test("stdlib/dataframe_basic")); }
+fn test_dataframe_basic() {
+    assert_snapshot!(run_aion_test("stdlib/dataframe_basic"));
+}
 #[test]
-fn test_sql_advanced() { assert_snapshot!(run_aion_test("stdlib/sql_advanced")); }
+fn test_sql_advanced() {
+    assert_snapshot!(run_aion_test("stdlib/sql_advanced"));
+}
 #[test]
-fn test_json_parse_basic() { assert_snapshot!(run_aion_test("stdlib/json_parse_basic")); }
+fn test_json_parse_basic() {
+    assert_snapshot!(run_aion_test("stdlib/json_parse_basic"));
+}
 #[test]
-fn test_memzero_struct() { assert_snapshot!(run_aion_test("stdlib/memzero_struct")); }
+fn test_memzero_struct() {
+    assert_snapshot!(run_aion_test("stdlib/memzero_struct"));
+}
 #[test]
-fn test_memzero_typed() { assert_snapshot!(run_aion_test("stdlib/memzero_typed")); }
+fn test_memzero_typed() {
+    assert_snapshot!(run_aion_test("stdlib/memzero_typed"));
+}
 #[test]
-fn test_ptr_deref_member() { assert_snapshot!(run_aion_test("stdlib/ptr_deref_member")); }
+fn test_ptr_deref_member() {
+    assert_snapshot!(run_aion_test("stdlib/ptr_deref_member"));
+}
 #[test]
-fn test_ptr_deref_member_err() { assert_snapshot!(run_aion_test("stdlib/ptr_deref_member_err")); }
+fn test_ptr_deref_member_err() {
+    assert_snapshot!(run_aion_test("stdlib/ptr_deref_member_err"));
+}
 #[test]
-fn test_ptr_memzero_field() { assert_snapshot!(run_aion_test("stdlib/ptr_memzero_field")); }
+fn test_ptr_memzero_field() {
+    assert_snapshot!(run_aion_test("stdlib/ptr_memzero_field"));
+}
 
 // --- Compiler Tests ---
 
 #[test]
-fn test_debug_output() { assert_snapshot!(run_aion_test("compiler/debug_output")); }
+fn test_debug_output() {
+    assert_snapshot!(run_aion_test("compiler/debug_output"));
+}
 #[test]
-fn test_malloc_test() { assert_snapshot!(run_aion_test("compiler/malloc_test")); }
+fn test_malloc_test() {
+    assert_snapshot!(run_aion_test("compiler/malloc_test"));
+}
 #[test]
-fn test_gc_leak_test() { assert_snapshot!(run_aion_test("compiler/gc_leak_test")); }
+fn test_gc_leak_test() {
+    assert_snapshot!(run_aion_test("compiler/gc_leak_test"));
+}
 #[test]
-fn test_extern_ffi() { assert_snapshot!(run_aion_test("compiler/extern_ffi")); }
+fn test_extern_ffi() {
+    assert_snapshot!(run_aion_test("compiler/extern_ffi"));
+}
 #[test]
-fn test_self_lexer() { assert_snapshot!(run_aion_test("compiler/self_lexer")); }
+fn test_self_lexer() {
+    assert_snapshot!(run_aion_test("compiler/self_lexer"));
+}
 #[test]
-fn test_optimization_check() { assert_snapshot!(run_aion_test("compiler/optimization_check")); }
+fn test_optimization_check() {
+    assert_snapshot!(run_aion_test("compiler/optimization_check"));
+}
 #[test]
-fn test_self_lexer_loop() { assert_snapshot!(run_aion_test("compiler/self_lexer_loop")); }
+fn test_self_lexer_loop() {
+    assert_snapshot!(run_aion_test("compiler/self_lexer_loop"));
+}
 #[test]
-fn test_self_parser() { assert_snapshot!(run_aion_test("compiler/self_parser")); }
+fn test_self_parser() {
+    assert_snapshot!(run_aion_test("compiler/self_parser"));
+}
+#[test]
+fn test_error_undefined_function() {
+    assert_snapshot!(run_aion_test("compiler/error_undefined_function"));
+}
+#[test]
+fn test_error_undefined_field() {
+    assert_snapshot!(run_aion_test("compiler/error_undefined_field"));
+}
+#[test]
+fn test_error_undefined_method() {
+    assert_snapshot!(run_aion_test("compiler/error_undefined_method"));
+}
+#[test]
+fn test_error_internal() {
+    assert_snapshot!(run_aion_test("compiler/error_internal"));
+}
 
 // --- Example Tests ---
 
 #[test]
-fn test_example_hello() { assert_snapshot!(run_aion_test("examples/hello")); }
+fn test_example_hello() {
+    assert_snapshot!(run_aion_test("examples/hello"));
+}
 #[test]
-fn test_example_types() { assert_snapshot!(run_aion_test("examples/types")); }
+fn test_example_types() {
+    assert_snapshot!(run_aion_test("examples/types"));
+}
 #[test]
-fn test_example_logic() { assert_snapshot!(run_aion_test("examples/logic")); }
+fn test_example_logic() {
+    assert_snapshot!(run_aion_test("examples/logic"));
+}
 #[test]
-fn test_example_generics() { assert_snapshot!(run_aion_test("examples/generics")); }
+fn test_example_generics() {
+    assert_snapshot!(run_aion_test("examples/generics"));
+}
 #[test]
-fn test_example_interface_impl() { assert_snapshot!(run_aion_test("examples/interface_impl")); }
+fn test_example_interface_impl() {
+    assert_snapshot!(run_aion_test("examples/interface_impl"));
+}
 
 // --- Doc Generation Tests ---
 
@@ -246,4 +432,6 @@ fn run_aion_doc(path: &str) -> String {
 }
 
 #[test]
-fn test_doc_gen() { assert_snapshot!(run_aion_doc("compiler/doc_gen")); }
+fn test_doc_gen() {
+    assert_snapshot!(run_aion_doc("compiler/doc_gen"));
+}

@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_internal\")"
+---
+internal compiler error: Struct type 'NoSuchStruct' not found in StructInst

@@ -108,7 +108,23 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 - **Error handling**: zero `unwrap()` in production paths. All compiler
   stages return `Result<T, CompileError>` with typed variants: `Type`,
   `Unsafe`, `NotFound`, `NotFunction`, `InvalidOperator`, `Inkwell`,
-  `Io`, `Import`, `Internal`.
+  `Io`, `Import`, `Internal`, `Warning`. Every variant carries `line`,
+  `col`, and `snippet` (snippets are populated when the location is
+  known; `Inkwell`/`Io`/`Import` location-default to `0`/`None` when the
+  error has no source position — e.g. a file-read failure). #40.
+- **`internal compiler error:` prefix**: the `Internal` variant renders
+  its message with a leading `internal compiler error: ` so user-facing
+  type errors are visually distinct from compiler bugs. #40.
+- **"Did you mean X?" suggestions**: undefined-function, -field, and
+  -method errors (via the `NotFound` variant) carry a Levenshtein-closest
+  suggestion from the candidate symbols in scope ("Not Found: function
+  'greet_word' is not defined (did you mean 'greet_world'?)"). Suggestion
+  is only surfaced when the closest candidate is within 3 edits AND within
+  `max(1, len/3)` of the typed name, so short typos do not match unrelated
+  short names. #40.
+- **`Warning` variant**: a non-fatal variant (renders `warning: ...`) for
+  future passes (unused-var, dead-code, ...). `CompileError::is_warning()`
+  lets the driver print to stderr without halting compilation. #40.
 - **Block termination**: every LLVM basic block is guaranteed to be
   terminated. The compiler injects `ret` or `unreachable` when
   `get_terminator().is_none()`.
@@ -116,7 +132,7 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
   are explicit and validated.
 - **Debug hygiene**: no `println!`/`eprintln!` in production builds.
 - **Span tracking**: all AST nodes carry `Span` (line, col) for precise
-  error reporting. Quality of error messages is tracked by issue #40.
+  error reporting.
 - **Recursion**: full self- and mutual-recursion. Two-pass compilation
   (register prototypes, then compile bodies) enables forward references.
   Tested up to 1B+ recursion depth (limited only by the OS 8MB stack).

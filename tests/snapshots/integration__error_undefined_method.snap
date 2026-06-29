@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_undefined_method\")"
+---
+Not Found: method 'greeb' is not defined (did you mean 'greet'?)
