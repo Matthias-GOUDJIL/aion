@@ -13,7 +13,9 @@ impl Default for SqlTranspiler {
 
 impl SqlTranspiler {
     pub fn new() -> Self {
-        Self { buffer: String::new() }
+        Self {
+            buffer: String::new(),
+        }
     }
 
     pub fn transpile(&mut self, program: &Program) -> String {
@@ -27,7 +29,8 @@ impl SqlTranspiler {
 
     fn transpile_function(&mut self, f: &Function) {
         let ret_type = self.map_type(&f.return_type);
-        self.buffer.push_str(&format!("CREATE OR REPLACE FUNCTION {}(", f.name));
+        self.buffer
+            .push_str(&format!("CREATE OR REPLACE FUNCTION {}(", f.name));
 
         let params: Vec<String> = f
             .params
@@ -36,14 +39,16 @@ impl SqlTranspiler {
             .collect();
 
         self.buffer.push_str(&params.join(", "));
-        self.buffer.push_str(&format!(") RETURNS {} AS $$\n", ret_type));
+        self.buffer
+            .push_str(&format!(") RETURNS {} AS $$\n", ret_type));
 
         // Collect variable declarations from Let statements
         let vars = self.collect_vars(&f.body);
         if !vars.is_empty() {
             self.buffer.push_str("DECLARE\n");
             for (name, vtype) in &vars {
-                self.buffer.push_str(&format!("    {} {};\n", name, self.map_type(vtype)));
+                self.buffer
+                    .push_str(&format!("    {} {};\n", name, self.map_type(vtype)));
             }
         }
 
@@ -69,13 +74,10 @@ impl SqlTranspiler {
     fn collect_vars_from_stmts(&self, stmts: &[Statement], vars: &mut Vec<(String, String)>) {
         for stmt in stmts {
             match stmt {
-                Statement::Let {
-                    name, value, ..
+                Statement::Let { name, value, .. } if !vars.iter().any(|(n, _)| n == name) => {
+                    let vtype = self.infer_type(value);
+                    vars.push((name.clone(), vtype));
                 }
-                    if !vars.iter().any(|(n, _)| n == name) => {
-                        let vtype = self.infer_type(value);
-                        vars.push((name.clone(), vtype));
-                    }
                 Statement::If {
                     then_branch,
                     else_branch,
@@ -190,7 +192,9 @@ impl SqlTranspiler {
                 }
                 self.buffer.push_str("    END IF;\n");
             }
-            Statement::While { condition, body, .. } => {
+            Statement::While {
+                condition, body, ..
+            } => {
                 self.buffer.push_str("    WHILE ");
                 self.transpile_expression(condition);
                 self.buffer.push_str(" LOOP\n");
@@ -204,7 +208,9 @@ impl SqlTranspiler {
                 self.transpile_expression(expr);
                 self.buffer.push_str(";\n");
             }
-            Statement::Match { condition, arms, .. } => {
+            Statement::Match {
+                condition, arms, ..
+            } => {
                 self.buffer.push_str("    CASE ");
                 self.transpile_expression(condition);
                 self.buffer.push('\n');
@@ -276,9 +282,7 @@ impl SqlTranspiler {
                 self.buffer.push(')');
             }
             Expression::MemberAccess {
-                receiver,
-                member,
-                ..
+                receiver, member, ..
             } => {
                 self.transpile_expression(receiver);
                 self.buffer.push('.');

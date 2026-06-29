@@ -10,7 +10,7 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
-        Self { 
+        Self {
             input: input.chars().peekable(),
             line: 1,
             col: 1,
@@ -66,53 +66,95 @@ impl<'a> Lexer<'a> {
                     } else {
                         TokenKind::Slash
                     }
-                },
+                }
                 '?' => TokenKind::Question,
                 '.' => {
-                    if self.peek_char() == '.' { self.read_char(); TokenKind::Range } 
-                    else { TokenKind::Dot }
+                    if self.peek_char() == '.' {
+                        self.read_char();
+                        TokenKind::Range
+                    } else {
+                        TokenKind::Dot
+                    }
                 }
                 '-' => {
-                    if self.peek_char() == '>' { self.read_char(); TokenKind::Arrow } 
-                    else { TokenKind::Minus }
+                    if self.peek_char() == '>' {
+                        self.read_char();
+                        TokenKind::Arrow
+                    } else {
+                        TokenKind::Minus
+                    }
                 }
                 '=' => {
-                    if self.peek_char() == '=' { self.read_char(); TokenKind::EqEq } 
-                    else if self.peek_char() == '>' { self.read_char(); TokenKind::Arrow }
-                    else { TokenKind::Eq }
+                    if self.peek_char() == '=' {
+                        self.read_char();
+                        TokenKind::EqEq
+                    } else if self.peek_char() == '>' {
+                        self.read_char();
+                        TokenKind::Arrow
+                    } else {
+                        TokenKind::Eq
+                    }
                 }
                 '!' => {
-                    if self.peek_char() == '=' { self.read_char(); TokenKind::NotEq } 
-                    else { TokenKind::Bang }
+                    if self.peek_char() == '=' {
+                        self.read_char();
+                        TokenKind::NotEq
+                    } else {
+                        TokenKind::Bang
+                    }
                 }
                 '&' => {
-                    if self.peek_char() == '&' { self.read_char(); TokenKind::And }
-                    else { TokenKind::Illegal('&') }
-                },
-'|' => {
-                    if self.peek_char() == '|' { self.read_char(); TokenKind::Or }
-                    else if self.peek_char() == '>' { self.read_char(); TokenKind::Pipeline }
-                    else { TokenKind::Pipe }
-                },
+                    if self.peek_char() == '&' {
+                        self.read_char();
+                        TokenKind::And
+                    } else {
+                        TokenKind::Illegal('&')
+                    }
+                }
+                '|' => {
+                    if self.peek_char() == '|' {
+                        self.read_char();
+                        TokenKind::Or
+                    } else if self.peek_char() == '>' {
+                        self.read_char();
+                        TokenKind::Pipeline
+                    } else {
+                        TokenKind::Pipe
+                    }
+                }
                 '>' => {
-                    if self.peek_char() == '=' { self.read_char(); TokenKind::GtEq } 
-                    else { TokenKind::Gt }
+                    if self.peek_char() == '=' {
+                        self.read_char();
+                        TokenKind::GtEq
+                    } else {
+                        TokenKind::Gt
+                    }
                 }
                 '<' => {
-                    if self.peek_char() == '=' { self.read_char(); TokenKind::LtEq } 
-                    else if self.peek_char() == '-' { self.read_char(); TokenKind::LArrow }
-                    else { TokenKind::Lt }
+                    if self.peek_char() == '=' {
+                        self.read_char();
+                        TokenKind::LtEq
+                    } else if self.peek_char() == '-' {
+                        self.read_char();
+                        TokenKind::LArrow
+                    } else {
+                        TokenKind::Lt
+                    }
                 }
                 ':' => {
-                    if self.peek_char() == ':' { self.read_char(); TokenKind::DoubleColon } 
-                    else { TokenKind::Colon }
+                    if self.peek_char() == ':' {
+                        self.read_char();
+                        TokenKind::DoubleColon
+                    } else {
+                        TokenKind::Colon
+                    }
                 }
                 '@' => TokenKind::At,
                 '\'' => self.read_char_literal(),
                 '"' => self.read_string(),
                 c if c.is_alphabetic() || c == '_' => {
                     if c == 'f' && self.peek_char() == '"' {
-                        self.read_char(); 
+                        self.read_char();
                         self.read_fstring()
                     } else if c == 'D' && self.peek_char().is_numeric() {
                         self.read_date()
@@ -167,7 +209,9 @@ impl<'a> Lexer<'a> {
 
     fn read_line_comment(&mut self) {
         while let Some(&ch) = self.input.peek() {
-            if ch == '\n' { break; }
+            if ch == '\n' {
+                break;
+            }
             self.read_char();
         }
     }
@@ -175,8 +219,12 @@ impl<'a> Lexer<'a> {
     fn read_doc_comment(&mut self, line: usize, col: usize) -> Token {
         let mut text = String::new();
         while let Some(&ch) = self.input.peek() {
-            if ch == '\n' { break; }
-            if let Some(c) = self.read_char() { text.push(c); }
+            if ch == '\n' {
+                break;
+            }
+            if let Some(c) = self.read_char() {
+                text.push(c);
+            }
         }
         Token::new(TokenKind::DocComment(text.trim().to_string()), line, col)
     }
@@ -185,16 +233,19 @@ impl<'a> Lexer<'a> {
         while let Some(ch) = self.read_char() {
             if ch == '*'
                 && let Some(&next) = self.input.peek()
-                    && next == '/' {
-                        self.read_char();
-                        break;
-                    }
+                && next == '/'
+            {
+                self.read_char();
+                break;
+            }
         }
     }
 
     fn skip_whitespace(&mut self) {
         while let Some(&ch) = self.input.peek() {
-            if !ch.is_whitespace() { break; }
+            if !ch.is_whitespace() {
+                break;
+            }
             self.read_char();
         }
     }
@@ -206,8 +257,12 @@ impl<'a> Lexer<'a> {
     fn read_identifier(&mut self, first: char) -> String {
         let mut ident = String::from(first);
         while let Some(&ch) = self.input.peek() {
-            if !ch.is_alphanumeric() && ch != '_' { break; }
-            if let Some(c) = self.read_char() { ident.push(c); }
+            if !ch.is_alphanumeric() && ch != '_' {
+                break;
+            }
+            if let Some(c) = self.read_char() {
+                ident.push(c);
+            }
         }
         ident
     }
@@ -215,7 +270,10 @@ impl<'a> Lexer<'a> {
     fn read_string(&mut self) -> TokenKind {
         let mut s = String::new();
         while let Some(&ch) = self.input.peek() {
-            if ch == '"' { self.read_char(); break; }
+            if ch == '"' {
+                self.read_char();
+                break;
+            }
             if ch == '\\' {
                 self.read_char();
                 match self.read_char() {
@@ -263,11 +321,17 @@ impl<'a> Lexer<'a> {
         let mut s = String::new();
         let mut depth: i32 = 0;
         while let Some(&ch) = self.input.peek() {
-            if ch == '"' && depth == 0 { self.read_char(); break; }
+            if ch == '"' && depth == 0 {
+                self.read_char();
+                break;
+            }
             let c = self.read_char().unwrap();
-            if c == '{' { depth += 1; }
-            else if c == '}' {
-                if depth > 0 { depth -= 1; }
+            if c == '{' {
+                depth += 1;
+            } else if c == '}' {
+                if depth > 0 {
+                    depth -= 1;
+                }
             }
             s.push(c);
         }
@@ -283,13 +347,13 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
-        
+
         let parts: Vec<&str> = s.split('-').collect();
         if parts.len() == 3 {
             let y: i64 = parts[0].parse().unwrap_or(0);
             let m: i64 = parts[1].parse().unwrap_or(1);
             let d: i64 = parts[2].parse().unwrap_or(1);
-            
+
             let mut total_days = 0;
             for year in 1970..y {
                 if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
@@ -298,7 +362,7 @@ impl<'a> Lexer<'a> {
                     total_days += 365;
                 }
             }
-            
+
             let days_in_month = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
             for month in 1..m {
                 total_days += days_in_month[month as usize];
@@ -306,9 +370,9 @@ impl<'a> Lexer<'a> {
                     total_days += 1;
                 }
             }
-            
+
             total_days += d - 1;
-            
+
             let ts = total_days * 86400;
             TokenKind::DateLiteral(ts)
         } else {
@@ -319,18 +383,25 @@ impl<'a> Lexer<'a> {
     fn read_number(&mut self, first: char) -> TokenKind {
         let mut num_str = String::from(first);
         let mut is_float = false;
-        
+
         while let Some(&ch) = self.input.peek() {
             if ch == '.' {
                 let mut lookahead = self.input.clone();
                 lookahead.next();
                 if let Some(&next) = lookahead.peek()
-                    && next == '.' { break; }
-                
+                    && next == '.'
+                {
+                    break;
+                }
+
                 is_float = true;
-                if let Some(c) = self.read_char() { num_str.push(c); }
+                if let Some(c) = self.read_char() {
+                    num_str.push(c);
+                }
             } else if ch.is_numeric() {
-                if let Some(c) = self.read_char() { num_str.push(c); }
+                if let Some(c) = self.read_char() {
+                    num_str.push(c);
+                }
             } else {
                 break;
             }
@@ -339,7 +410,9 @@ impl<'a> Lexer<'a> {
         let mut suffix = String::new();
         while let Some(&ch) = self.input.peek() {
             if ch.is_alphabetic() {
-                if let Some(c) = self.read_char() { suffix.push(c); }
+                if let Some(c) = self.read_char() {
+                    suffix.push(c);
+                }
             } else {
                 break;
             }
@@ -350,8 +423,14 @@ impl<'a> Lexer<'a> {
             let (secs, nanos) = match suffix.as_str() {
                 "s" => (val as u64, (val.fract() * 1_000_000_000.0) as u32),
                 "ms" => ((val / 1000.0) as u64, ((val % 1000.0) * 1_000_000.0) as u32),
-                "us" => ((val / 1_000_000.0) as u64, ((val % 1_000_000.0) * 1000.0) as u32),
-                "ns" => ((val / 1_000_000_000.0) as u64, (val % 1_000_000_000.0) as u32),
+                "us" => (
+                    (val / 1_000_000.0) as u64,
+                    ((val % 1_000_000.0) * 1000.0) as u32,
+                ),
+                "ns" => (
+                    (val / 1_000_000_000.0) as u64,
+                    (val % 1_000_000_000.0) as u32,
+                ),
                 "m" => ((val * 60.0) as u64, 0),
                 "h" => ((val * 3600.0) as u64, 0),
                 "d" => ((val * 86400.0) as u64, 0),
@@ -360,24 +439,24 @@ impl<'a> Lexer<'a> {
             return TokenKind::DurationLiteral(secs, nanos);
         }
 
-        if is_float { 
-            TokenKind::FloatLiteral(num_str.parse().unwrap_or(0.0)) 
-        } else { 
-            TokenKind::IntLiteral(num_str.parse().unwrap_or(0)) 
+        if is_float {
+            TokenKind::FloatLiteral(num_str.parse().unwrap_or(0.0))
+        } else {
+            TokenKind::IntLiteral(num_str.parse().unwrap_or(0))
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::token::TokenKind;
     use super::Lexer;
+    use crate::lexer::token::TokenKind;
 
     #[test]
     fn test_basic_tokens() {
         let input = "fn main() { let x = 10; }";
         let mut lexer = Lexer::new(input);
-        
+
         let expected = vec![
             (TokenKind::Fn, 1, 1),
             (TokenKind::Identifier("main".into()), 1, 4),
@@ -404,13 +483,13 @@ mod tests {
     fn test_durations() {
         let input = "10s 500ms 1.5ms";
         let mut lexer = Lexer::new(input);
-        
+
         let tok1 = lexer.next_token();
         assert_eq!(tok1.kind, TokenKind::DurationLiteral(10, 0));
-        
+
         let tok2 = lexer.next_token();
         assert_eq!(tok2.kind, TokenKind::DurationLiteral(0, 500_000_000));
-        
+
         let tok3 = lexer.next_token();
         assert_eq!(tok3.kind, TokenKind::DurationLiteral(0, 1_500_000));
     }
@@ -419,12 +498,12 @@ mod tests {
     fn test_multiline_position() {
         let input = "let a = 1\nlet b = 2";
         let mut lexer = Lexer::new(input);
-        
+
         lexer.next_token(); // let
         lexer.next_token(); // a
         lexer.next_token(); // =
         lexer.next_token(); // 1
-        
+
         let tok = lexer.next_token(); // second 'let'
         assert_eq!(tok.kind, TokenKind::Let);
         assert_eq!(tok.line, 2);
@@ -435,15 +514,15 @@ mod tests {
     fn test_comments() {
         let input = "// line comment\nlet x = 1 /* block\ncomment */ let y = 2";
         let mut lexer = Lexer::new(input);
-        
+
         let tok1 = lexer.next_token();
         assert_eq!(tok1.kind, TokenKind::Let);
         assert_eq!(tok1.line, 2);
-        
+
         lexer.next_token(); // x
         lexer.next_token(); // =
         lexer.next_token(); // 1
-        
+
         let tok2 = lexer.next_token(); // y 'let'
         assert_eq!(tok2.kind, TokenKind::Let);
         assert_eq!(tok2.line, 3);

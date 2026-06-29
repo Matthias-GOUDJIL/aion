@@ -1,10 +1,10 @@
+pub mod decl;
 pub mod expr;
 pub mod stmt;
-pub mod decl;
 
+pub use decl::*;
 pub use expr::*;
 pub use stmt::*;
-pub use decl::*;
 
 use crate::lexer::token::Token;
 
@@ -20,6 +20,9 @@ impl Span {
     }
 
     pub fn from_token(tok: &Token) -> Self {
-        Self { line: tok.line, col: tok.col }
+        Self {
+            line: tok.line,
+            col: tok.col,
+        }
     }
 }

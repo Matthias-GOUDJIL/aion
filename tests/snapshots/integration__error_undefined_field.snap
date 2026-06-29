@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_undefined_field\")"
+---
+Not Found: field 'nme' is not defined (did you mean 'name'?)

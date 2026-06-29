@@ -1,0 +1,22 @@
+// Undefined method via a parenthesized receiver: `(p).grety()` parses as a
+// MethodCall (the dotted-identifier shortcut only fires on bare identifiers),
+// triggering the type checker's method-undefined path with a "did you mean
+// 'greet'?" suggestion. #40.
+
+struct Person {
+    name: i64,
+}
+
+impl Person {
+    pub fn greet(self) -> i64 {
+        io.println("hi")
+        return 0
+    }
+}
+
+fn main() {
+    let p = Person { name: 1 }
+    let v = (p).greeb()
+    io.println(v)
+    return 0
+}

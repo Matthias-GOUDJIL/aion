@@ -1,5 +1,5 @@
-use clap::{Parser, Subcommand};
 use aionc::{compile_file, generate_docs, transpile_sql};
+use clap::{Parser, Subcommand};
 use std::fs;
 use std::process::Command;
 
@@ -33,7 +33,7 @@ enum Commands {
         output: String,
         #[arg(short, long, default_value = "sql")]
         target: String,
-    }
+    },
 }
 
 fn main() {
@@ -46,23 +46,21 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Commands::Doc { input, output } => {
-            match generate_docs(&input) {
-                Ok(doc) => {
-                    if let Err(e) = fs::write(&output, doc) {
-                        eprintln!("error: {}", e);
-                        std::process::exit(1);
-                    }
-                },
-                Err(e) => {
+        Commands::Doc { input, output } => match generate_docs(&input) {
+            Ok(doc) => {
+                if let Err(e) = fs::write(&output, doc) {
                     eprintln!("error: {}", e);
                     std::process::exit(1);
                 }
             }
-        }
+            Err(e) => {
+                eprintln!("error: {}", e);
+                std::process::exit(1);
+            }
+        },
         Commands::Run { input, args } => {
-            
-            let run_id = std::env::var("AION_RUN_ID").unwrap_or_else(|_| std::process::id().to_string());
+            let run_id =
+                std::env::var("AION_RUN_ID").unwrap_or_else(|_| std::process::id().to_string());
             let ir_file = format!("temp_{}.ll", run_id);
             let obj_file = format!("temp_{}.o", run_id);
             let bin_file = format!("./aion_app_{}", run_id);
@@ -74,7 +72,13 @@ fn main() {
 
             // Fix: Add PIC relocation model for modern Linux compatibility
             let llc_status = Command::new("llc-15")
-                .args(["-filetype=obj", "-relocation-model=pic", &ir_file, "-o", &obj_file])
+                .args([
+                    "-filetype=obj",
+                    "-relocation-model=pic",
+                    &ir_file,
+                    "-o",
+                    &obj_file,
+                ])
                 .status();
 
             if let Err(e) = llc_status {
@@ -86,7 +90,14 @@ fn main() {
             }
 
             let gcc_status = Command::new("gcc")
-                .args([&obj_file, "src/runtime.c", "-o", &bin_file, "-lpthread", "-lgc"])
+                .args([
+                    &obj_file,
+                    "src/runtime.c",
+                    "-o",
+                    &bin_file,
+                    "-lpthread",
+                    "-lgc",
+                ])
                 .status();
 
             if let Err(e) = gcc_status {
@@ -98,18 +109,19 @@ fn main() {
             }
 
             println!("-------------------------------");
-            let output = Command::new(&bin_file)
-                .args(&args)
-                .output();
-            
+            let output = Command::new(&bin_file).args(&args).output();
+
             match output {
                 Ok(out) => {
                     print!("{}", String::from_utf8_lossy(&out.stdout));
                     eprint!("{}", String::from_utf8_lossy(&out.stderr));
                     if !out.status.success() {
-                        eprintln!("error: process exited with code: {}", out.status.code().unwrap_or(-1));
+                        eprintln!(
+                            "error: process exited with code: {}",
+                            out.status.code().unwrap_or(-1)
+                        );
                     }
-                },
+                }
                 Err(e) => eprintln!("error: execution failed: {}", e),
             }
             println!("-------------------------------");
@@ -118,19 +130,23 @@ fn main() {
             let _ = fs::remove_file(obj_file);
             let _ = fs::remove_file(bin_file);
         }
-        Commands::Transpile { input, output, target } => {
+        Commands::Transpile {
+            input,
+            output,
+            target,
+        } => {
             if target != "sql" {
                 eprintln!("error: only SQL target is supported for now");
                 return;
             }
-            
+
             match transpile_sql(&input) {
                 Ok(sql) => {
                     if let Err(e) = fs::write(&output, sql) {
                         eprintln!("error: {}", e);
                         std::process::exit(1);
                     }
-                },
+                }
                 Err(e) => eprintln!("error: {}", e),
             }
         }
