@@ -72,3 +72,11 @@ jobs:
             -w /workspace \
             aion-compiler \
             cargo fmt --check
+
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard against documentation drift
+        run: bash scripts/docs-check.sh

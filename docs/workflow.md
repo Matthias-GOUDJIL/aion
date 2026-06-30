@@ -7,8 +7,19 @@
 | Run test suite | `docker run --rm -v "$(pwd)":/workspace -w /workspace aion-compiler cargo test -- --test-threads=1` |
 | Generate documentation | `./aion doc <file.ai>` |
 | Transpile to SQL | `./aion transpile <file.ai>` |
+| Lint docs for drift | `bash scripts/docs-check.sh` |
 
 **CRITICAL**: The `./aion` wrapper and `cargo test` run inside a Docker container (`aion-compiler` image based on Ubuntu 22.04 with LLVM 15). The wrapper caches `target/` and `cargo/registry` in Docker volumes to avoid full rebuilds.
+
+### Doc Freshness (enforced in CI)
+
+Any PR that changes compiler/stdlib behavior must update `docs/SPEC.md` (or the relevant `docs/SPEC_*.md` / `stdlib/.../SPEC.md`) in the same PR. The `docs-check` CI job runs `scripts/docs-check.sh` and fails the PR when:
+
+- `docs/SPEC.md` header version differs from `ROADMAP.md` "Current State" version.
+- `README.md` revives the inaccurate "without GC" or "linear type system" wording.
+- `docs/STDLIB.md` is missing the implementation-status legend.
+
+Run `bash scripts/docs-check.sh` locally before pushing to catch drift early. #75.
 
 ## Git Workflow
 
