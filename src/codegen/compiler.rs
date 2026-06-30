@@ -147,6 +147,34 @@ impl<'ctx> Compiler<'ctx> {
         self.type_to_llvm(&crate::analysis::types::Type::parse(tn))
     }
 
+    /// Parse an array type-name string `[T; N]` into the element LLVM type
+    /// and the count. Returns None if `tn` is not an array type-name. #54.
+    fn parse_array_type_name(&self, tn: &str) -> Option<(BasicTypeEnum<'ctx>, u64)> {
+        let clean = tn.replace(" ", "");
+        let inner = clean
+            .strip_prefix('[')
+            .and_then(|s| s.strip_suffix(']'))?;
+        // Top-level ';' split.
+        let mut depth = 0i32;
+        let mut split_at = None;
+        for (i, c) in inner.chars().enumerate() {
+            match c {
+                '[' | '(' | '<' => depth += 1,
+                ']' | ')' | '>' => depth -= 1,
+                ';' if depth == 0 => {
+                    split_at = Some(i);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let i = split_at?;
+        let elem_str = inner[..i].trim();
+        let size_str = inner[i + 1..].trim();
+        let n = size_str.parse::<u64>().ok()?;
+        Some((self.aion_type_to_llvm(elem_str), n))
+    }
+
     /// Ensure a tuple struct type is registered for `tn` (e.g. "(i64,String)").
     /// If already in `struct_types`, return it; otherwise build the anonymous
     /// struct from the element type names, register it + its field map, and
@@ -249,7 +277,8 @@ impl<'ctx> Compiler<'ctx> {
             | Type::Enum { .. }
             | Type::Struct { .. }
             | Type::GenericInstance(..)
-            | Type::Tuple(..) => self.context.ptr_type(AddressSpace::default()).into(),
+            | Type::Tuple(..)
+            | Type::Array(..) => self.context.ptr_type(AddressSpace::default()).into(),
             _ => self.context.ptr_type(AddressSpace::default()).into(),
         }
     }
@@ -747,6 +776,13 @@ impl<'ctx> Compiler<'ctx> {
         self.module.add_function(
             "aion_ai_tensor_move",
             pt.fn_type(&[pt.into(), pt.into()], false),
+            None,
+        );
+        self.module.add_function(
+            "aion_array_oob",
+            self.context
+                .void_type()
+                .fn_type(&[i64_t.into(), i64_t.into()], false),
             None,
         );
 
@@ -1680,6 +1716,51 @@ impl<'ctx> Compiler<'ctx> {
                 };
                 Ok((p, et))
             }
+            Expression::Index {
+                target, index, ..
+            } => {
+                // `arr[i] = v` lvalue with the same runtime bounds check as
+                // the read path. Returns the element slot pointer. #54.
+                let i64_t = self.context.i64_type();
+                let arr_val = self.compile_expr(target, variables, function)?;
+                let idx_val = self.compile_expr(index, variables, function)?;
+                let idx = idx_val.into_int_value();
+                let tn = self.get_expr_type_name(target, variables);
+                let (elem_llvm, n) = self
+                    .parse_array_type_name(&tn)
+                    .ok_or_else(|| CompileError::internal(format!("array type '{}' not parseable", tn)))?;
+                let arr_ty = elem_llvm.array_type(n as u32);
+                let arr_ptr = arr_val.into_pointer_value();
+                let in_bounds = self.builder.build_and(
+                    self.builder.build_int_compare(IntPredicate::SGE, idx, i64_t.const_zero(), "arr_lo")?,
+                    self.builder.build_int_compare(IntPredicate::SLT, idx, i64_t.const_int(n, false), "arr_hi")?,
+                    "arr_inb",
+                )?;
+                let oob_bb = self.context.append_basic_block(function, "arr_oob");
+                let ok_bb = self.context.append_basic_block(function, "arr_ok");
+                self.builder.build_conditional_branch(in_bounds, ok_bb, oob_bb)?;
+                self.builder.position_at_end(oob_bb);
+                let oob_fn = self
+                    .module
+                    .get_function("aion_array_oob")
+                    .ok_or_else(|| CompileError::internal("aion_array_oob not found".to_string()))?;
+                self.builder.build_call(
+                    oob_fn,
+                    &[idx.into(), i64_t.const_int(n, false).into()],
+                    "oob_call",
+                )?;
+                self.builder.build_unreachable()?;
+                self.builder.position_at_end(ok_bb);
+                let gep = unsafe {
+                    self.builder.build_in_bounds_gep(
+                        arr_ty,
+                        arr_ptr,
+                        &[i64_t.const_zero(), idx],
+                        "arr_setp",
+                    )?
+                };
+                Ok((gep, elem_llvm))
+            }
             _ => Err(CompileError::internal(format!("Not an lvalue: {:?}", e))),
         }
     }
@@ -2598,6 +2679,16 @@ impl<'ctx> Compiler<'ctx> {
                             .ok_or_else(|| CompileError::internal("Enum size unknown".to_string()))?
                             .into());
                     }
+                    // Array type `[T; N]`: size = N * sizeof(T). The
+                    // generic lowering maps arrays to pointers, so compute
+                    // the real array size here. #54.
+                    if let Some((elem_llvm, n)) = self.parse_array_type_name(&clean) {
+                        let arr_ty = elem_llvm.array_type(n as u32);
+                        return Ok(arr_ty
+                            .size_of()
+                            .ok_or_else(|| CompileError::internal("Array size unknown".to_string()))?
+                            .into());
+                    }
                     let lt = self.aion_type_to_llvm(&tnm);
                     let res = if lt.is_pointer_type() {
                         i64_t.const_int(8, false).into()
@@ -3193,6 +3284,81 @@ impl<'ctx> Compiler<'ctx> {
                 })?;
                 Ok(self.builder.build_load(elem_ty, gep, "tupld")?)
             }
+            Expression::ArrayLiteral { elements, .. } => {
+                // Stack-allocated LLVM array `[N x elem]`. The variable
+                // slot holds a pointer to the alloca (uniform with the
+                // Tuple/Struct convention). #54.
+                let elem_llvm = if elements.is_empty() {
+                    self.context.i64_type().into()
+                } else {
+                    let v0 = self.compile_expr(&elements[0], variables, function)?;
+                    v0.get_type()
+                };
+                let arr_ty = elem_llvm.array_type(elements.len() as u32);
+                let arr_ptr = self.builder.build_alloca(arr_ty, "arr_alloc")?;
+                for (i, e) in elements.iter().enumerate() {
+                    let v = self.compile_expr(e, variables, function)?;
+                    let gep = unsafe {
+                        self.builder.build_in_bounds_gep(
+                            arr_ty,
+                            arr_ptr,
+                            &[
+                                i64_t.const_int(0, false),
+                                i64_t.const_int(i as u64, false),
+                            ],
+                            &format!("arr_set{}", i),
+                        )?
+                    };
+                    self.builder.build_store(gep, v)?;
+                }
+                Ok(arr_ptr.into())
+            }
+            Expression::Index { target, index, .. } => {
+                // `arr[i]` with runtime bounds check. The array pointer is
+                // loaded from the variable slot; the array type is parsed
+                // from the variable's stored type-name `[T; N]`. #54.
+                let arr_val = self.compile_expr(target, variables, function)?;
+                let idx_val = self.compile_expr(index, variables, function)?;
+                let idx = idx_val.into_int_value();
+                let tn = self.get_expr_type_name(target, variables);
+                let (elem_llvm, n) = self
+                    .parse_array_type_name(&tn)
+                    .ok_or_else(|| CompileError::internal(format!("array type '{}' not parseable", tn)))?;
+                let arr_ty = elem_llvm.array_type(n as u32);
+                let arr_ptr = arr_val.into_pointer_value();
+                // Bounds check: idx >= 0 && idx < n, else exit.
+                let in_bounds = self.builder.build_and(
+                    self.builder.build_int_compare(IntPredicate::SGE, idx, i64_t.const_zero(), "arr_lo")?,
+                    self.builder.build_int_compare(IntPredicate::SLT, idx, i64_t.const_int(n, false), "arr_hi")?,
+                    "arr_inb",
+                )?;
+                let oob_bb = self.context.append_basic_block(function, "arr_oob");
+                let ok_bb = self.context.append_basic_block(function, "arr_ok");
+                self.builder.build_conditional_branch(in_bounds, ok_bb, oob_bb)?;
+                // OOB: call the runtime trap aion_array_oob(idx, len).
+                self.builder.position_at_end(oob_bb);
+                let oob_fn = self
+                    .module
+                    .get_function("aion_array_oob")
+                    .ok_or_else(|| CompileError::internal("aion_array_oob not found".to_string()))?;
+                self.builder.build_call(
+                    oob_fn,
+                    &[idx.into(), i64_t.const_int(n, false).into()],
+                    "oob_call",
+                )?;
+                self.builder.build_unreachable()?;
+                // OK: gep + load.
+                self.builder.position_at_end(ok_bb);
+                let gep = unsafe {
+                    self.builder.build_in_bounds_gep(
+                        arr_ty,
+                        arr_ptr,
+                        &[i64_t.const_zero(), idx],
+                        "arr_get",
+                    )?
+                };
+                Ok(self.builder.build_load(elem_llvm, gep, "arr_ld")?)
+            }
             _ => Ok(i64_t.const_zero().into()),
         }
     }
@@ -3592,6 +3758,16 @@ impl<'ctx> Compiler<'ctx> {
                 // The element type name of field `index`. #53.
                 let tn = self.get_expr_type_name(tuple, variables);
                 self.get_field_type(&tn, &index.to_string())
+            }
+            Expression::ArrayLiteral { elements, .. } => {
+                // Render `[T; N]` from the first element's type so that
+                // downstream `arr[i]` codegen can parse the array type. #54.
+                let elem_tn = if elements.is_empty() {
+                    "i64".to_string()
+                } else {
+                    self.get_expr_type_name(&elements[0], variables)
+                };
+                format!("[{}; {}]", elem_tn, elements.len())
             }
             _ => "unknown".to_string(),
         };

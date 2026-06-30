@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/array_as_param\")"
+---
+10

@@ -431,6 +431,26 @@ impl<'a> Parser<'a> {
             }
             return format!("({})", parts.join(", "));
         }
+        // Array type: `[T; N]`. #54.
+        if self.current_token.kind == TokenKind::LBracket {
+            self.next_token();
+            let elem = self.parse_type_name();
+            let size = if self.current_token.kind == TokenKind::Semicolon {
+                self.next_token();
+                if let TokenKind::IntLiteral(n) = self.current_token.kind {
+                    self.next_token();
+                    n.to_string()
+                } else {
+                    "0".to_string()
+                }
+            } else {
+                "0".to_string()
+            };
+            if self.current_token.kind == TokenKind::RBracket {
+                self.next_token();
+            }
+            return format!("[{}; {}]", elem, size);
+        }
         if self.current_token.kind == TokenKind::Star {
             self.next_token();
             return format!("*{}", self.parse_type_name());
@@ -1473,6 +1493,24 @@ impl<'a> Parser<'a> {
                 self.next_token();
                 Expression::Boolean(false, span)
             }
+            TokenKind::LBracket => {
+                // Array literal: `[e1, e2, ...]`. #54.
+                let span = Span::from_token(&self.current_token);
+                self.next_token();
+                let mut elements = Vec::new();
+                while self.current_token.kind != TokenKind::RBracket
+                    && self.current_token.kind != TokenKind::EOF
+                {
+                    elements.push(self.parse_expression());
+                    if self.current_token.kind == TokenKind::Comma {
+                        self.next_token();
+                    }
+                }
+                if self.current_token.kind == TokenKind::RBracket {
+                    self.next_token();
+                }
+                Expression::ArrayLiteral { elements, span }
+            }
             TokenKind::Minus => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
@@ -1541,7 +1579,20 @@ impl<'a> Parser<'a> {
                         while self.current_token.kind != TokenKind::RParen
                             && self.current_token.kind != TokenKind::EOF
                         {
-                            args.push(self.parse_expression());
+                            // `@sizeof`/`@mem_zero` take type arguments, so a
+                            // `[T; N]` array type-name is parsed as a TypeRef
+                            // rather than an array literal. #54.
+                            if self.current_token.kind == TokenKind::LBracket {
+                                let tspan = Span::from_token(&self.current_token);
+                                let tn = self.parse_type_name();
+                                args.push(Expression::TypeRef {
+                                    name: tn,
+                                    generic_args: vec![],
+                                    span: tspan,
+                                });
+                            } else {
+                                args.push(self.parse_expression());
+                            }
                             if self.current_token.kind == TokenKind::Comma {
                                 self.next_token();
                             }
@@ -1609,6 +1660,20 @@ impl<'a> Parser<'a> {
 
         loop {
             match self.current_token.kind {
+                TokenKind::LBracket => {
+                    // Array index: `arr[i]`. #54.
+                    let span = Span::from_token(&self.current_token);
+                    self.next_token();
+                    let index = self.parse_expression();
+                    if self.current_token.kind == TokenKind::RBracket {
+                        self.next_token();
+                    }
+                    expr = Expression::Index {
+                        target: Box::new(expr.clone()),
+                        index: Box::new(index),
+                        span,
+                    };
+                }
                 TokenKind::Dot => {
                     let dot_span = Span::from_token(&self.current_token);
                     self.next_token();

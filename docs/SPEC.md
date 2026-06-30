@@ -76,6 +76,14 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   passed by pointer (same convention as `StructInst`). Nested tuples
   `(i64, (String, bool))` are supported; the element type is recovered
   via depth-aware type-name parsing.
+- **Arrays**: `[T; N]` — homogeneous fixed-size sequences (#54). Array
+  literals `[1, 2, 3]`, index reads `arr[i]`, index writes `arr[i] = v`,
+  and passing arrays to functions are supported. All elements must share
+  the same type. Arrays are stack-allocated as LLVM `[N x T]` types and
+  passed by pointer. Indexing is bounds-checked at runtime; an
+  out-of-bounds access calls the `aion_array_oob(idx, len)` trap
+  (stderr message + `exit(1)`) instead of producing undefined behavior.
+  `@sizeof([T; N])` returns `N * sizeof(T)`.
 - **Fuzzy resolution**: if a simple name is not found, the compiler
   searches for qualified names ending with that suffix (e.g. `args` →
   `std.env.args`). Avoids complex AST rewriting for imports.

@@ -136,6 +136,8 @@ impl SqlTranspiler {
             Expression::Match { .. } => "i64",
             // Tuples are not yet transpiled to SQL. #53.
             Expression::TupleLiteral { .. } | Expression::TupleAccess { .. } => "JSONB",
+            // Arrays are not yet transpiled to SQL. #54.
+            Expression::ArrayLiteral { .. } | Expression::Index { .. } => "JSONB",
         }
         .to_string()
     }

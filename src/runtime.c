@@ -16,6 +16,12 @@ void aion_spawn(void* func_ptr) {
     pthread_create(&thread, NULL, spark_entry_point, func_ptr);
 }
 
+/* Runtime bounds-check trap for array indexing. #54. */
+void aion_array_oob(long long idx, long long len) {
+    fprintf(stderr, "error: array index %lld out of bounds (len %lld)\n", idx, len);
+    exit(1);
+}
+
 void* aion_malloc(size_t size) {
     return GC_malloc(size);
 }

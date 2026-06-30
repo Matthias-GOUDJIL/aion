@@ -1,0 +1,21 @@
+use std.io
+use std.string
+
+// Array passed to a function: the array pointer is forwarded, the callee
+// indexes it with the same bounds-checked lowering. #54.
+
+fn sum(arr: [i64; 4]) -> i64 {
+    let mut total = 0
+    let mut i = 0
+    while i < 4 {
+        total = total + arr[i]
+        i = i + 1
+    }
+    return total
+}
+
+fn main() {
+    let b: [i64; 4] = [1, 2, 3, 4]
+    io.println(string.from_int(sum(b)))
+    return 0
+}

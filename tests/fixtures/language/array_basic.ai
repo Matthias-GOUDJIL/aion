@@ -1,0 +1,28 @@
+use std.io
+use std.string
+
+// Array basic: literal, index read/write, iterate, type annotation. #54.
+
+fn main() {
+    let a = [10, 20, 30]
+    io.println(string.from_int(a[0]))
+    io.println(string.from_int(a[1]))
+    io.println(string.from_int(a[2]))
+
+    a[1] = 99
+    io.println(string.from_int(a[1]))
+
+    let b: [i64; 4] = [1, 2, 3, 4]
+    let mut sum = 0
+    let mut i = 0
+    while i < 4 {
+        sum = sum + b[i]
+        i = i + 1
+    }
+    io.println(string.from_int(sum))
+
+    // @sizeof on an array type returns N * sizeof(elem) = 10 * 8 = 80. #54.
+    io.println(string.from_int(@sizeof([i64; 10])))
+
+    return 0
+}
