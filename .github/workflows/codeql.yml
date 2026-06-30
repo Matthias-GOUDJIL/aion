@@ -12,7 +12,7 @@ on:
 jobs:
   analyze:
     name: Analyze (rust)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     permissions:
       security-events: write # required to upload CodeQL results
       actions: read
