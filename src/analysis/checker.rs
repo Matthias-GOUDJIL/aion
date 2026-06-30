@@ -1128,6 +1128,58 @@ impl TypeChecker {
                     )),
                 }
             }
+            Expression::ArrayLiteral { elements, .. } => {
+                // `[e1, e2, ...]` → `Array(elem_type, len)`. All elements
+                // must share the same type. #54.
+                let mut elem_ty = Type::Unknown;
+                for e in elements {
+                    let t = self.check_expression(e)?;
+                    if elem_ty == Type::Unknown {
+                        elem_ty = t;
+                    } else if elem_ty != t {
+                        return Err(self.err(
+                            format!(
+                                "array literal has mixed element types {} and {}",
+                                elem_ty.name(),
+                                t.name()
+                            ),
+                            e,
+                        ));
+                    }
+                }
+                Ok(Type::Array(Box::new(elem_ty), elements.len() as u64))
+            }
+            Expression::Index {
+                target,
+                index,
+                span,
+            } => {
+                let t = self.check_expression(target)?;
+                let idx_t = self.check_expression(index)?;
+                if !idx_t.is_integer() {
+                    return Err(self.err(
+                        format!("array index must be an integer, got {}", idx_t.name()),
+                        &Expression::Index {
+                            target: target.clone(),
+                            index: index.clone(),
+                            span: *span,
+                        },
+                    ));
+                }
+                match t {
+                    Type::Array(elem, _) => Ok(*elem),
+                    // Pointer indexing stays an unsafe op (existing behavior).
+                    Type::Pointer(inner) => Ok(*inner),
+                    _ => Err(self.err(
+                        format!("cannot index into {}", t.name()),
+                        &Expression::Index {
+                            target: target.clone(),
+                            index: index.clone(),
+                            span: *span,
+                        },
+                    )),
+                }
+            }
             _ => Err(CompileError::internal(format!(
                 "Unsupported expression {:?}",
                 expr

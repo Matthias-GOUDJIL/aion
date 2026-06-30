@@ -47,7 +47,16 @@ fn run_aion_test(path: &str) -> String {
         }
     }
 
-    between.join("\n").trim().to_string()
+    let extracted = between.join("\n").trim().to_string();
+
+    // Runtime crashes (e.g. array OOB trap) print to stderr and produce no
+    // stdout between the dashes — fall back to stderr so the error is
+    // captured. #54.
+    if extracted.is_empty() && !stderr.trim().is_empty() {
+        return stderr.trim().to_string();
+    }
+
+    extracted
 }
 
 // --- Language Tests ---
@@ -239,6 +248,18 @@ fn test_tuple_return() {
 #[test]
 fn test_tuple_nested() {
     assert_snapshot!(run_aion_test("language/tuple_nested"));
+}
+#[test]
+fn test_array_basic() {
+    assert_snapshot!(run_aion_test("language/array_basic"));
+}
+#[test]
+fn test_array_bounds() {
+    assert_snapshot!(run_aion_test("language/array_bounds"));
+}
+#[test]
+fn test_array_as_param() {
+    assert_snapshot!(run_aion_test("language/array_as_param"));
 }
 
 // --- Stdlib Tests ---

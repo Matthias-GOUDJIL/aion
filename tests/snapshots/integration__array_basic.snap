@@ -1,0 +1,10 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/array_basic\")"
+---
+10
+20
+30
+99
+10
+80

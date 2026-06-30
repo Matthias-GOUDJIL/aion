@@ -101,6 +101,17 @@ pub enum Expression {
         index: usize,
         span: Span,
     },
+    /// Array literal: `[1, 2, 3]`. #54.
+    ArrayLiteral {
+        elements: Vec<Expression>,
+        span: Span,
+    },
+    /// Array index: `arr[i]`. #54.
+    Index {
+        target: Box<Expression>,
+        index: Box<Expression>,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -129,7 +140,9 @@ impl Expression {
             | Expression::TypeRef { span: s, .. }
             | Expression::Match { span: s, .. }
             | Expression::TupleLiteral { span: s, .. }
-            | Expression::TupleAccess { span: s, .. } => *s,
+            | Expression::TupleAccess { span: s, .. }
+            | Expression::ArrayLiteral { span: s, .. }
+            | Expression::Index { span: s, .. } => *s,
         }
     }
 }

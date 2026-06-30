@@ -34,6 +34,10 @@ pub enum Type {
     /// Heterogeneous fixed-size sequence: `(i64, String, bool)`. Codegen
     /// lowers to an anonymous LLVM struct type. #53.
     Tuple(Vec<Type>),
+    /// Fixed-size homogeneous array: `[i64; 10]`. Codegen lowers to an LLVM
+    /// array type `[N x elem]`, stack-allocated. Indexing is bounds-checked
+    /// at runtime. #54.
+    Array(Box<Type>, u64),
     Unknown,
 }
 
@@ -105,6 +109,32 @@ impl Type {
                 return elems.remove(0);
             }
             return Type::Unit;
+        }
+        // Array type: `[T; N]`. #54.
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            let inner = &trimmed[1..trimmed.len() - 1];
+            // Split on the top-level ';' separating element type and size.
+            let mut depth = 0i32;
+            let mut split_at = None;
+            for (i, c) in inner.chars().enumerate() {
+                match c {
+                    '[' | '(' | '<' => depth += 1,
+                    ']' | ')' | '>' => depth -= 1,
+                    ';' if depth == 0 => {
+                        split_at = Some(i);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(i) = split_at {
+                let elem_str = inner[..i].trim();
+                let size_str = inner[i + 1..].trim();
+                if let Ok(n) = size_str.parse::<u64>() {
+                    return Type::Array(Box::new(Type::parse(elem_str)), n);
+                }
+            }
+            return Type::Unknown;
         }
         match trimmed {
             "i64" => Type::i64(),
@@ -191,6 +221,7 @@ impl Type {
                         .join(", ")
                 )
             }
+            Type::Array(elem, n) => format!("[{}; {}]", elem.name(), n),
             Type::Struct { name } => name.clone(),
             Type::Enum { name } => name.clone(),
             Type::GenericInstance(base, args) => {

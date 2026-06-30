@@ -1,0 +1,10 @@
+use std.io
+use std.string
+
+// Array out-of-bounds access must produce a runtime error (not UB). #54.
+
+fn main() {
+    let a = [10, 20, 30]
+    io.println(string.from_int(a[5]))
+    return 0
+}

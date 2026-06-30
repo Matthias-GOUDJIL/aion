@@ -1,0 +1,6 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/array_bounds\")"
+---
+error: array index 5 out of bounds (len 3)
+error: process exited with code: 1
