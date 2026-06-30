@@ -1,0 +1,50 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scan (Sunday 00:00 UTC) to catch new queries on existing code.
+    - cron: "0 0 * * 0"
+
+jobs:
+  analyze:
+    name: Analyze (rust)
+    runs-on: ubuntu-22.04
+    permissions:
+      security-events: write # required to upload CodeQL results
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Mirror the Dockerfile toolchain: inkwell/llvm-sys 150 needs LLVM 15
+      # dev headers + libgc-dev to compile `cargo build`. #75.
+      - name: Install LLVM 15 and build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            zlib1g-dev \
+            libgc-dev
+          wget -q https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 15
+          sudo apt-get install -o Dpkg::Options::="--force-overwrite" -y llvm-15-dev libpolly-15-dev
+          rm llvm.sh
+          echo "LLVM_SYS_150_PREFIX=/usr/lib/llvm-15" >> "$GITHUB_ENV"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: rust
+
+      - name: Build (traced by CodeQL)
+        run: cargo build --quiet
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
