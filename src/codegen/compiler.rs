@@ -151,9 +151,7 @@ impl<'ctx> Compiler<'ctx> {
     /// and the count. Returns None if `tn` is not an array type-name. #54.
     fn parse_array_type_name(&self, tn: &str) -> Option<(BasicTypeEnum<'ctx>, u64)> {
         let clean = tn.replace(" ", "");
-        let inner = clean
-            .strip_prefix('[')
-            .and_then(|s| s.strip_suffix(']'))?;
+        let inner = clean.strip_prefix('[').and_then(|s| s.strip_suffix(']'))?;
         // Top-level ';' split.
         let mut depth = 0i32;
         let mut split_at = None;
@@ -1716,9 +1714,7 @@ impl<'ctx> Compiler<'ctx> {
                 };
                 Ok((p, et))
             }
-            Expression::Index {
-                target, index, ..
-            } => {
+            Expression::Index { target, index, .. } => {
                 // `arr[i] = v` lvalue with the same runtime bounds check as
                 // the read path. Returns the element slot pointer. #54.
                 let i64_t = self.context.i64_type();
@@ -1726,24 +1722,34 @@ impl<'ctx> Compiler<'ctx> {
                 let idx_val = self.compile_expr(index, variables, function)?;
                 let idx = idx_val.into_int_value();
                 let tn = self.get_expr_type_name(target, variables);
-                let (elem_llvm, n) = self
-                    .parse_array_type_name(&tn)
-                    .ok_or_else(|| CompileError::internal(format!("array type '{}' not parseable", tn)))?;
+                let (elem_llvm, n) = self.parse_array_type_name(&tn).ok_or_else(|| {
+                    CompileError::internal(format!("array type '{}' not parseable", tn))
+                })?;
                 let arr_ty = elem_llvm.array_type(n as u32);
                 let arr_ptr = arr_val.into_pointer_value();
                 let in_bounds = self.builder.build_and(
-                    self.builder.build_int_compare(IntPredicate::SGE, idx, i64_t.const_zero(), "arr_lo")?,
-                    self.builder.build_int_compare(IntPredicate::SLT, idx, i64_t.const_int(n, false), "arr_hi")?,
+                    self.builder.build_int_compare(
+                        IntPredicate::SGE,
+                        idx,
+                        i64_t.const_zero(),
+                        "arr_lo",
+                    )?,
+                    self.builder.build_int_compare(
+                        IntPredicate::SLT,
+                        idx,
+                        i64_t.const_int(n, false),
+                        "arr_hi",
+                    )?,
                     "arr_inb",
                 )?;
                 let oob_bb = self.context.append_basic_block(function, "arr_oob");
                 let ok_bb = self.context.append_basic_block(function, "arr_ok");
-                self.builder.build_conditional_branch(in_bounds, ok_bb, oob_bb)?;
+                self.builder
+                    .build_conditional_branch(in_bounds, ok_bb, oob_bb)?;
                 self.builder.position_at_end(oob_bb);
-                let oob_fn = self
-                    .module
-                    .get_function("aion_array_oob")
-                    .ok_or_else(|| CompileError::internal("aion_array_oob not found".to_string()))?;
+                let oob_fn = self.module.get_function("aion_array_oob").ok_or_else(|| {
+                    CompileError::internal("aion_array_oob not found".to_string())
+                })?;
                 self.builder.build_call(
                     oob_fn,
                     &[idx.into(), i64_t.const_int(n, false).into()],
@@ -2686,7 +2692,9 @@ impl<'ctx> Compiler<'ctx> {
                         let arr_ty = elem_llvm.array_type(n as u32);
                         return Ok(arr_ty
                             .size_of()
-                            .ok_or_else(|| CompileError::internal("Array size unknown".to_string()))?
+                            .ok_or_else(|| {
+                                CompileError::internal("Array size unknown".to_string())
+                            })?
                             .into());
                     }
                     let lt = self.aion_type_to_llvm(&tnm);
@@ -3302,10 +3310,7 @@ impl<'ctx> Compiler<'ctx> {
                         self.builder.build_in_bounds_gep(
                             arr_ty,
                             arr_ptr,
-                            &[
-                                i64_t.const_int(0, false),
-                                i64_t.const_int(i as u64, false),
-                            ],
+                            &[i64_t.const_int(0, false), i64_t.const_int(i as u64, false)],
                             &format!("arr_set{}", i),
                         )?
                     };
@@ -3321,26 +3326,36 @@ impl<'ctx> Compiler<'ctx> {
                 let idx_val = self.compile_expr(index, variables, function)?;
                 let idx = idx_val.into_int_value();
                 let tn = self.get_expr_type_name(target, variables);
-                let (elem_llvm, n) = self
-                    .parse_array_type_name(&tn)
-                    .ok_or_else(|| CompileError::internal(format!("array type '{}' not parseable", tn)))?;
+                let (elem_llvm, n) = self.parse_array_type_name(&tn).ok_or_else(|| {
+                    CompileError::internal(format!("array type '{}' not parseable", tn))
+                })?;
                 let arr_ty = elem_llvm.array_type(n as u32);
                 let arr_ptr = arr_val.into_pointer_value();
                 // Bounds check: idx >= 0 && idx < n, else exit.
                 let in_bounds = self.builder.build_and(
-                    self.builder.build_int_compare(IntPredicate::SGE, idx, i64_t.const_zero(), "arr_lo")?,
-                    self.builder.build_int_compare(IntPredicate::SLT, idx, i64_t.const_int(n, false), "arr_hi")?,
+                    self.builder.build_int_compare(
+                        IntPredicate::SGE,
+                        idx,
+                        i64_t.const_zero(),
+                        "arr_lo",
+                    )?,
+                    self.builder.build_int_compare(
+                        IntPredicate::SLT,
+                        idx,
+                        i64_t.const_int(n, false),
+                        "arr_hi",
+                    )?,
                     "arr_inb",
                 )?;
                 let oob_bb = self.context.append_basic_block(function, "arr_oob");
                 let ok_bb = self.context.append_basic_block(function, "arr_ok");
-                self.builder.build_conditional_branch(in_bounds, ok_bb, oob_bb)?;
+                self.builder
+                    .build_conditional_branch(in_bounds, ok_bb, oob_bb)?;
                 // OOB: call the runtime trap aion_array_oob(idx, len).
                 self.builder.position_at_end(oob_bb);
-                let oob_fn = self
-                    .module
-                    .get_function("aion_array_oob")
-                    .ok_or_else(|| CompileError::internal("aion_array_oob not found".to_string()))?;
+                let oob_fn = self.module.get_function("aion_array_oob").ok_or_else(|| {
+                    CompileError::internal("aion_array_oob not found".to_string())
+                })?;
                 self.builder.build_call(
                     oob_fn,
                     &[idx.into(), i64_t.const_int(n, false).into()],

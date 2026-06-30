@@ -1138,14 +1138,22 @@ impl TypeChecker {
                         elem_ty = t;
                     } else if elem_ty != t {
                         return Err(self.err(
-                            format!("array literal has mixed element types {} and {}", elem_ty.name(), t.name()),
+                            format!(
+                                "array literal has mixed element types {} and {}",
+                                elem_ty.name(),
+                                t.name()
+                            ),
                             e,
                         ));
                     }
                 }
                 Ok(Type::Array(Box::new(elem_ty), elements.len() as u64))
             }
-            Expression::Index { target, index, span } => {
+            Expression::Index {
+                target,
+                index,
+                span,
+            } => {
                 let t = self.check_expression(target)?;
                 let idx_t = self.check_expression(index)?;
                 if !idx_t.is_integer() {
