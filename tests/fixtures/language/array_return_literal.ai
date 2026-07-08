@@ -1,0 +1,10 @@
+// Returning an array literal directly hits the same dangling-pointer hole:
+// the literal lowers to a stack alloca in the callee frame. #107.
+
+fn make() -> [i64; 2] {
+    return [10, 20]
+}
+
+fn main() {
+    return 0
+}
