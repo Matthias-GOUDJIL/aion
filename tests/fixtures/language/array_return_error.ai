@@ -1,0 +1,16 @@
+use std.io
+use std.string
+
+// Returning a stack-allocated array is a compile error: the alloca does not
+// outlive the call. Direction 1 stopgap until heap-allocated arrays land. #107.
+
+fn make() -> [i64; 3] {
+    let a = [1, 2, 3]
+    return a
+}
+
+fn main() {
+    let b = make()
+    io.println(string.from_int(b[0]))
+    return 0
+}

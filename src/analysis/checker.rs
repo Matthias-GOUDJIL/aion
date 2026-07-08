@@ -496,8 +496,25 @@ impl TypeChecker {
                 self.check_expression(value)?;
                 Ok(Type::Unit)
             }
-            Statement::Return { value, .. } => {
-                self.check_expression(value)?;
+            Statement::Return { value, span, .. } => {
+                let ty = self.check_expression(value)?;
+                // Arrays lower to a stack alloca in the callee frame; returning
+                // one yields a dangling pointer. No heap array path yet —
+                // reject until direction 2 (heap-allocated arrays) lands. #107.
+                if let Type::Array(elem, n) = &ty {
+                    return Err(CompileError::new(
+                        format!(
+                            "cannot return stack-allocated array `[{}; {}]` \
+                             — it does not outlive the call (arrays are not \
+                             heap-allocated yet)",
+                            elem.name(),
+                            n,
+                        ),
+                        span.line,
+                        span.col,
+                    )
+                    .with_snippet(&self.source));
+                }
                 Ok(Type::Unit)
             }
             Statement::ExpressionStmt(expr, _) => self.check_expression(expr),

@@ -327,6 +327,16 @@ fn test_array_bounds() {
 fn test_array_as_param() {
     assert_snapshot!(run_aion_test("language/array_as_param"));
 }
+#[test]
+fn test_array_return_error() {
+    // #107 — returning a stack-allocated local array is a compile error.
+    assert_snapshot!(run_aion_test("language/array_return_error"));
+}
+#[test]
+fn test_array_return_literal() {
+    // #107 — returning an array literal directly is the same dangling hole.
+    assert_snapshot!(run_aion_test("language/array_return_literal"));
+}
 
 // --- Stdlib Tests ---
 

@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/array_return_literal\")"
+---
+Type Error: cannot return stack-allocated array `[i64; 2]` — it does not outlive the call (arrays are not heap-allocated yet)

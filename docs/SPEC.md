@@ -83,7 +83,12 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   passed by pointer. Indexing is bounds-checked at runtime; an
   out-of-bounds access calls the `aion_array_oob(idx, len)` trap
   (stderr message + `exit(1)`) instead of producing undefined behavior.
-  `@sizeof([T; N])` returns `N * sizeof(T)`.
+  `@sizeof([T; N])` returns `N * sizeof(T)`. Because arrays are stack
+  alloca in the callee frame and there is no heap array path yet,
+  returning an `Array`-typed value from a function is a **compile error**
+  ("cannot return stack-allocated array ... it does not outlive the call"),
+  preventing dangling-pointer use-after-scope (#107). Heap-allocated
+  arrays are a planned follow-up.
 - **Fuzzy resolution**: if a simple name is not found, the compiler
   searches for qualified names ending with that suffix (e.g. `args` →
   `std.env.args`). Avoids complex AST rewriting for imports.
