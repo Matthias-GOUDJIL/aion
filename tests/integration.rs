@@ -25,10 +25,10 @@ fn run_aion_test(path: &str) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    if !output.status.success() && !stderr.is_empty() {
-        return stderr.trim().to_string();
-    }
-
+    // Always extract program output from between the dashes first, even when
+    // `aion run` propagated a non-zero child exit code (#106). Compile
+    // failures (no dashes, empty stdout) fall through to the stderr fallback
+    // below; runtime crashes (OOB trap) hit the same fallback.
     let full = format!("{}\n{}", stdout, stderr);
     let lines: Vec<&str> = full.lines().collect();
     let mut between = Vec::new();
@@ -60,6 +60,72 @@ fn run_aion_test(path: &str) -> String {
 }
 
 // --- Language Tests ---
+
+#[test]
+fn test_run_exit_code_propagation() {
+    // #106 — `aion run` must propagate the child process exit code so
+    // shell/CI callers detect runtime failures and explicit return codes.
+    let root = project_root();
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "run",
+            "tests/fixtures/language/run_exit_code.ai",
+        ])
+        .current_dir(&root)
+        .timeout(std::time::Duration::from_secs(60))
+        .output()
+        .expect("failed to execute cargo run");
+    assert_eq!(
+        output.status.code(),
+        Some(42),
+        "aion run should exit with the program's return code, not 0"
+    );
+}
+
+#[test]
+fn test_run_exit_code_runtime_crash() {
+    // #106 — a runtime trap (OOB) must surface as a non-zero `aion run` exit.
+    let root = project_root();
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "run",
+            "tests/fixtures/language/array_bounds.ai",
+        ])
+        .current_dir(&root)
+        .timeout(std::time::Duration::from_secs(60))
+        .output()
+        .expect("failed to execute cargo run");
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "aion run should exit non-zero when the program crashes at runtime"
+    );
+}
+
+#[test]
+fn test_run_exit_code_success() {
+    // #106 — nominal: hello.ai returns 0 → `aion run` exits 0.
+    let root = project_root();
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "run",
+            "tests/fixtures/language/hello.ai",
+        ])
+        .current_dir(&root)
+        .timeout(std::time::Duration::from_secs(60))
+        .output()
+        .expect("failed to execute cargo run");
+    assert_eq!(output.status.code(), Some(0));
+}
 
 #[test]
 fn test_hello() {
