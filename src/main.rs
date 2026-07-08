@@ -124,24 +124,30 @@ fn main() {
             println!("-------------------------------");
             let output = Command::new(&bin_file).args(&args).output();
 
+            // Propagate the child exit code so shell/CI callers detect
+            // runtime failures (OOB traps, non-zero returns). #106.
+            let child_code: i32;
             match output {
                 Ok(out) => {
                     print!("{}", String::from_utf8_lossy(&out.stdout));
                     eprint!("{}", String::from_utf8_lossy(&out.stderr));
+                    child_code = out.status.code().unwrap_or(1);
                     if !out.status.success() {
-                        eprintln!(
-                            "error: process exited with code: {}",
-                            out.status.code().unwrap_or(-1)
-                        );
+                        eprintln!("error: process exited with code: {}", child_code);
                     }
                 }
-                Err(e) => eprintln!("error: execution failed: {}", e),
+                Err(e) => {
+                    eprintln!("error: execution failed: {}", e);
+                    child_code = 1;
+                }
             }
             println!("-------------------------------");
 
             let _ = fs::remove_file(ir_file);
             let _ = fs::remove_file(obj_file);
             let _ = fs::remove_file(bin_file);
+
+            std::process::exit(child_code);
         }
         Commands::Transpile {
             input,
