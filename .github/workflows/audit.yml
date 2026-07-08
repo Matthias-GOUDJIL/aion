@@ -1,0 +1,41 @@
+name: cargo-audit
+
+# Guards the supply chain: audits Cargo.lock against the RustSec advisory
+# database. Runs on every push/PR (catches a newly-added vulnerable crate
+# before merge) and on a weekly schedule (catches a new advisory filed
+# against an already-pinned crate even with no PR activity). #114.
+#
+# cargo-audit parses Cargo.lock only — no LLVM/GC toolchain is needed, so the
+# job runs on the bare ubuntu runner and stays fast. `cargo audit` exits
+# non-zero on vulnerability advisories (RustSec IDs of kind `vulnerability`);
+# `unmaintained`/`notice` advisories are reported but do not fail the build,
+# because they often target transitive crates this project cannot upgrade
+# directly. Add an `--ignore RUSTSEC-XXXX-XXXX` flag below if a specific
+# advisory is reviewed and accepted.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly scan (Sunday 00:00 UTC) — matches the CodeQL cadence.
+    - cron: "0 0 * * 0"
+
+jobs:
+  audit:
+    name: Audit Cargo.lock for vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit Cargo.lock
+        run: cargo audit
