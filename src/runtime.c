@@ -218,6 +218,7 @@ struct AionTensor* aion_ai_tensor_rand(struct AionVector* shape) {
 }
 
 void aion_ai_tensor_backward(struct AionTensor* t) {
+    // Placeholder: prints only, no gradient computation
     printf("Called t.backward()\n");
 }
 

@@ -49,4 +49,11 @@ else
     echo "ok: docs/STDLIB.md has the implementation-status legend"
 fi
 
+# --- Check 4: [stable] stdlib modules must not reference unimplemented intrinsics. #112. ---
+if bash "$(dirname "${BASH_SOURCE[0]}")/docs-check-intrinsics.sh"; then
+    :
+else
+    status=1
+fi
+
 exit $status

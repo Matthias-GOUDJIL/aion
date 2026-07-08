@@ -232,8 +232,16 @@ Universally Unique Identifiers.
 
 ## 11. Time & Date
 
-### `std.time` **[stable]**
-Duration and Date types with arithmetic operations.
+### `std.time` **[partial]**
+Duration works (constructors, `as_secs`/`as_millis`, arithmetic — exercised by
+`duration_literal`). `now()` and `sleep()` are **not implemented**: their
+`@intrinsic("time_now")` / `@intrinsic("time_sleep")` resolve to
+`aion_time_now` / `aion_time_sleep`, which are absent from `src/runtime.c`.
+Add the runtime symbols before re-promoting to [stable].
 
-### `std.date` **[stable]**
-Date utilities and formatting.
+### `std.date` **[partial]**
+The `Date` struct and date-literal arithmetic work (exercised by
+`date_arithmetic`). `DateTime::now()` is **not implemented**: its
+`date_year`/`date_month`/`date_day`/`date_hour`/`date_min`/`date_sec`
+intrinsics resolve to `aion_date_*` symbols absent from `src/runtime.c`.
+Add the runtime symbols before re-promoting to [stable].
