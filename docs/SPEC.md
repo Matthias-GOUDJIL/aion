@@ -179,8 +179,10 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 - **Threading**: 1:1 via `pthread`. `spawn { ... }` creates detached
   threads. `aion_spawn` is currently a C runtime builtin — rewriting it
   in Aion is a ROADMAP item (Self-Runtime).
-- **AI Tensors**: first-class `std.ai.tensor` with `zeros`, `ones`,
-  `rand`, `matmul`, `backward` (autograd), `to(device)`.
+- **AI Tensors**: first-class `std.ai.tensor`. Constructors `zeros`,
+  `ones`, `rand` are functional; `matmul`, `add` and `backward` (autograd)
+  are runtime placeholders, not yet implemented (see `docs/STDLIB.md` and
+  `src/runtime.c:220-235`).
 - **Intents**: `::intent "..."` syntax for AI-guided compilation hints.
   Handled as a `NoOp` statement (not an expression).
 - **Short-circuiting**: `&&` and `||` use lazy evaluation via

@@ -124,12 +124,14 @@ Native Clustering.
 
 ## 6. Artificial Intelligence (Native)
 
-### `std.ai.tensor` **[stable]**
-The core of Aion.
-- `Tensor`: N-dimensional array.
-- `matmul`, `add`: Accelerated math.
-- `backward()`: Automatic differentiation (Autograd).
-- `to(device)`: GPU/TPU support.
+### `std.ai.tensor` **[partial]**
+The core of Aion. Only the constructors are functional today; the math ops
+and autograd are runtime placeholders (see `src/runtime.c:220-235`).
+- `tensor_zeros`, `tensor_ones`, `tensor_rand`: Working constructors.
+- `tensor_move`: Device transfer stub (currently a no-op string swap, not real GPU/TPU).
+- `matmul`, `add`: **Not implemented** — `aion_ai_tensor_matmul` / `aion_ai_tensor_add` return a zero tensor regardless of input (`// Placeholder: return zeros for now`).
+- `backward()`: **Not implemented** — `aion_ai_tensor_backward` only prints to stdout, no gradient is computed.
+- `to(device)`: See `tensor_move` above; no real device support yet.
 
 ### `std.media`
 - **`image`** **[skeleton]** — Load/Save images, convert to Tensor.
