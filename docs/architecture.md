@@ -31,6 +31,7 @@ src/              — Rust compiler (lexer → parser → type checker → LLVM 
     control_flow.rs — Statement-level codegen: compile_block (let/return/if/while/match/unsafe) (phase 4)
     lvalues.rs      — Assignment-target lowering: compile_lvalue (field/index/deref) (phase 5)
     expressions.rs  — Expression-level codegen: compile_expr (literals/calls/structs/enum/match/...) (phase 6)
+    type_helpers.rs — Type-recovery: get_field_type + get_expr_type_name (phase 7)
     transpiler/   — Transpilation backends
       mod.rs      — Module root
       sql.rs      — SQL transpiler (Aion → PostgreSQL functions)
