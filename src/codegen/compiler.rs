@@ -52,7 +52,11 @@ impl<'ctx> Compiler<'ctx> {
         compiler
     }
 
-    pub(in crate::codegen) fn err(&self, msg: impl Into<String>, expr: &Expression) -> CompileError {
+    pub(in crate::codegen) fn err(
+        &self,
+        msg: impl Into<String>,
+        expr: &Expression,
+    ) -> CompileError {
         let span = expr.span();
         CompileError::new(msg, span.line, span.col).with_snippet(&self.source)
     }
