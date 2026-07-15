@@ -24,7 +24,11 @@ src/              — Rust compiler (lexer → parser → type checker → LLVM 
     environment.rs — Scoped symbol table for type checker
   codegen/        — LLVM IR generation via inkwell (Rust bindings for LLVM)
     mod.rs        — Re-exports Compiler
-    compiler.rs   — LLVM code generation
+    compiler.rs   — Compiler struct, compile_function, module entry + lowerings (split in progress, see #113)
+    intrinsics.rs — Builtin/intrinsic registration + token-aware generic substitution (phase 1)
+    types.rs      — AionType → LLVM type lowering (phase 2)
+    generics.rs   — Generic function instantiation + body/expr substitution (phase 3)
+    control_flow.rs — Statement-level codegen: compile_block (let/return/if/while/match/unsafe) (phase 4)
     transpiler/   — Transpilation backends
       mod.rs      — Module root
       sql.rs      — SQL transpiler (Aion → PostgreSQL functions)
@@ -86,7 +90,7 @@ editors/          — Editor integrations (vscode/)
 
 - **All structs → `ptr_type` at LLVM level**: `aion_type_to_llvm` maps every struct/enum/string type to an opaque pointer. Field access uses GEP with the LLVM struct type for offset calculation, but load/store operations are always pointer-sized (8 bytes). `@intrinsic("mem_zero", Type)` now looks up the actual LLVM struct type from `struct_types` and returns a properly-sized zero constant. `@intrinsic("mem_zero_ptr", ptr, size)` calls `aion_memzero` to zero existing memory blocks (fixed #62).
 
-- **String-based type resolution in codegen**: `get_expr_type_name` resolves types via string manipulation. Generic-parameter substitution used to use naive `str::replace(p, c)`, which corrupted type names when a generic parameter appeared as a substring of another type name (e.g. param `V` corrupting `Vector` → `Stringector`, fixed in #61 via `<Param>`-pattern matching; param `T` corrupting `Tensor` → `i64ensor`, fixed in #67). All generic substitution now goes through a single tokenizer-based helper, `substitute_type_string` (`src/codegen/compiler.rs`), which scans the type string into identifier tokens and replaces a token only when it EXACTLY equals a param name. This is lossless because Aion's type syntax only ever uses a generic param as a standalone identifier (`T`, `*T`, `Vector<T>`, `HashMap<K, V>`). `substitute_generic_params` now delegates to it. A token containing `.` (a qualified name like `std.foo`) is never replaced — generic params are always bare identifiers.
+- **String-based type resolution in codegen**: `get_expr_type_name` resolves types via string manipulation. Generic-parameter substitution used to use naive `str::replace(p, c)`, which corrupted type names when a generic parameter appeared as a substring of another type name (e.g. param `V` corrupting `Vector` → `Stringector`, fixed in #61 via `<Param>`-pattern matching; param `T` corrupting `Tensor` → `i64ensor`, fixed in #67). All generic substitution now goes through a single tokenizer-based helper, `substitute_type_string` (`src/codegen/intrinsics.rs`), which scans the type string into identifier tokens and replaces a token only when it EXACTLY equals a param name. This is lossless because Aion's type syntax only ever uses a generic param as a standalone identifier (`T`, `*T`, `Vector<T>`, `HashMap<K, V>`). `substitute_generic_params` now delegates to it. A token containing `.` (a qualified name like `std.foo`) is never replaced — generic params are always bare identifiers.
 
 - **`%` operator is unsigned remainder**: Changed from `srem` to `urem` (#66). This ensures `hash % cap` always yields `[0, cap-1]` regardless of hash sign. Code relying on signed remainder semantics for negative numbers would break — no known cases in the current codebase.
 
@@ -94,7 +98,7 @@ editors/          — Editor integrations (vscode/)
 
 - **HashMap bucket array is an array of pointers (8 bytes/slot)**: `core.heap.alloc(cap * 8)` is correct — each bucket slot stores a single pointer to a heap-allocated Entry (24 bytes). The `@sizeof(Entry<V>)` returns 24 but that's the entry size, not the bucket slot size.
 
-- **Struct representation is uniformly boxed** (#87): `StructInst`, `EnumInst`, and `@intrinsic("mem_zero", Struct/EnumType)` all heap-allocate via `aion_malloc` and yield an 8-byte opaque **box pointer** as their value. `let s = Triple{...}` and `*p = mem_zero(Triple)` therefore both store an 8-byte box pointer; `(*p).field` (Deref + MemberAccess in `src/codegen/compiler.rs:843`/`:856`) loads that box pointer, GEPs into the heap struct, and loads the field. This unified convention is what makes `(*p).field` consistent regardless of how `*p` was last written. Earlier, `mem_zero(Type)` returned an inline struct *value* (24 bytes) which broke `(*p).field` after `*p = mem_zero(T)` (#87); the no-arg `mem_zero` (→ null pointer) and primitive `mem_zero(i64)` (→ 0) paths were already consistent and are unchanged.
+- **Struct representation is uniformly boxed** (#87): `StructInst`, `EnumInst`, and `@intrinsic("mem_zero", Struct/EnumType)` all heap-allocate via `aion_malloc` and yield an 8-byte opaque **box pointer** as their value. `let s = Triple{...}` and `*p = mem_zero(Triple)` therefore both store an 8-byte box pointer; `(*p).field` (Deref + MemberAccess in `src/codegen/compiler.rs`'s `compile_expr`) loads that box pointer, GEPs into the heap struct, and loads the field. This unified convention is what makes `(*p).field` consistent regardless of how `*p` was last written. Earlier, `mem_zero(Type)` returned an inline struct *value* (24 bytes) which broke `(*p).field` after `*p = mem_zero(T)` (#87); the no-arg `mem_zero` (→ null pointer) and primitive `mem_zero(i64)` (→ 0) paths were already consistent and are unchanged.
 
   **Caveat — storing an inline struct value is still unrepresentable**: Aion has no by-value struct storage; any expression that materializes a struct must do so boxed. Do not return raw `st.const_zero()` struct values from intrinsics — store them into a fresh box and return the box pointer (see the `mem_zero` struct/enum arms in `compile_expr`). The `Deref`+`MemberAccess` path assumes every 8-byte slot it loads is a box pointer.
 
