@@ -68,7 +68,7 @@ editors/          — Editor integrations (vscode/)
 - **LLVM 15** is hardcoded (inkwell feature `llvm15-0`, Docker installs `llvm-15-dev`)
 - **Boehm GC** is required (`-lgc` in link step, `GC_init()` called in main)
 - **PIC relocation** is mandatory (`-relocation-model=pic` in llc-15 call)
-- **gcc-free link path**: the user binary is linked with `clang-15 -fuse-ld=lld` (lld-15) against the pre-compiled runtime bitcode. `gcc` remains in the Docker image only as the C compiler for `cargo`/`build-optional` deps (inkwell, llvm-sys); it is **not** invoked by `aion run`. #73.
+- **gcc-free link path / toolchain**: the user binary is linked with `clang-15 -fuse-ld=lld` (lld-15) against the pre-compiled runtime bitcode. Since #100, `gcc` is **absent** from the `aion-compiler` Docker image entirely — `cargo`/`build-optional` deps (inkwell, llvm-sys) are built with the pure-LLVM toolchain (`CC=clang-15 CXX=clang++-15 AR=llvm-ar-15`, rustc links via `-Clinker=clang-15 -Clink-arg=-fuse-ld=lld`). #73, #100.
 - **Rust edition 2024** (see `Cargo.toml`)
 - Import resolution: `compiler.*` → project root, everything else → `stdlib/`
 
