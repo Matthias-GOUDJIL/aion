@@ -1,5 +1,6 @@
 pub mod compiler;
 mod control_flow;
+mod expressions;
 mod generics;
 mod intrinsics;
 mod lvalues;
