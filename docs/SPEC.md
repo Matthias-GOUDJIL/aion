@@ -28,7 +28,7 @@ source → Lexer → Parser → TypeChecker → LLVM Codegen → FPM+MPM → .ll
                                                                 ↓
                                               llc-15 (PIC) → .o
                                                                 ↓
-                                            gcc links runtime.c → binary
+                                            clang-15 links runtime.c → binary
 ```
 
 `compile_file()` in `src/lib.rs` orchestrates imports → TypeChecker →

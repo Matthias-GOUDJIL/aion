@@ -96,3 +96,7 @@ docker rmi aion-compiler && docker volume rm aion-target-cache aion-cargo-cache 
 ```
 
 Note: the Dockerfile pre-compiles `src/runtime.c` to `/opt/aion_runtime.bc` (build-time, `clang-15`). If you edit `src/runtime.c`, rebuild the image so the bitcode is refreshed — `docker rmi aion-compiler && docker build -t aion-compiler .` (#73).
+
+### Toolchain (pure-LLVM, gcc-free)
+
+Since #100, the `aion-compiler` image ships **no gcc** — `build-essential` was replaced by a pure-LLVM C/C++ toolchain. Cargo build scripts (`cc`/`bindgen`/`llvm-sys`) pick up `CC=clang-15`, `CXX=clang++-15`, `AR=llvm-ar-15`, and rustc links the `aionc` binary via `RUSTFLAGS="-Clinker=clang-15 -Clink-arg=-fuse-ld=lld"`. If you add a Rust dependency with a build script that hardcodes `gcc` (rare), set the same env vars in the `docker run` invocation.
