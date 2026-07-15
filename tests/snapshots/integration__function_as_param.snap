@@ -1,0 +1,6 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/function_as_param\")"
+---
+10
+42

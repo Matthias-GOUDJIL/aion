@@ -1,0 +1,6 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/function_pointer\")"
+---
+10
+11

@@ -53,6 +53,23 @@ impl<'ctx> Compiler<'ctx> {
                     {
                         return Ok(self.builder.build_load(pt, g.as_pointer_value(), "argv")?);
                     }
+                    // Bare function name used as a value → return the function
+                    // pointer. #84. Only non-generic functions (generic
+                    // functions need monomorphization and can't be taken as a
+                    // single pointer).
+                    if let Some(Declaration::Function(f)) = self.decls.get(name)
+                        && f.generic_params.is_empty()
+                    {
+                        if let Some(fv) = self
+                            .resolve_fuzzy_name(&self.decls, name)
+                            .and_then(|n| self.module.get_function(&n))
+                        {
+                            return Ok(fv.as_global_value().as_pointer_value().into());
+                        }
+                        if let Some(fv) = self.module.get_function(name) {
+                            return Ok(fv.as_global_value().as_pointer_value().into());
+                        }
+                    }
                     Err(self.err(format!("variable '{}' not found", name), e))
                 }
             }
@@ -65,6 +82,47 @@ impl<'ctx> Compiler<'ctx> {
                 let mut afn = fnm.clone();
                 let mut aga = generic_args.clone();
                 let mut aa = arguments.clone();
+                // Indirect call: if the callee name is a local variable holding
+                // a function pointer, load it and emit an indirect call instead
+                // of resolving a direct function name. #84.
+                if aga.is_empty()
+                    && let Some((ptr, vt, tn)) = variables.get(fnm)
+                    && tn.starts_with("fn(")
+                {
+                    let parsed = crate::analysis::types::Type::parse(tn);
+                    if let crate::analysis::types::Type::Function {
+                        return_type,
+                        params,
+                        ..
+                    } = parsed
+                    {
+                        let fp = self.builder.build_load(*vt, *ptr, "fptr")?;
+                        let fp = if fp.is_int_value() {
+                            self.builder
+                                .build_int_to_ptr(fp.into_int_value(), pt, "i2p")?
+                        } else {
+                            fp.into_pointer_value()
+                        };
+                        let llvm_ret = self.aion_type_to_llvm(&return_type.name());
+                        let llvm_params: Vec<inkwell::types::BasicMetadataTypeEnum> = params
+                            .iter()
+                            .map(|p| self.aion_type_to_llvm(&p.name()).into())
+                            .collect();
+                        let fn_type = llvm_ret.fn_type(&llvm_params, false);
+                        let mut ca: Vec<inkwell::values::BasicMetadataValueEnum> = Vec::new();
+                        for arg in &aa {
+                            let v = self.compile_expr(arg, variables, function)?;
+                            ca.push(v.into());
+                        }
+                        let call = self
+                            .builder
+                            .build_indirect_call(fn_type, fp, &ca, "icall")?;
+                        return Ok(match call.try_as_basic_value() {
+                            ValueKind::Basic(v) => v,
+                            _ => i64_t.const_zero().into(),
+                        });
+                    }
+                }
                 let mut is_mc = false;
                 let mut tga_from_receiver: Vec<String> = vec![];
                 if let Some((rn, mn)) = fnm.rsplit_once('.') {

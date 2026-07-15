@@ -556,3 +556,13 @@ fn run_aion_doc(path: &str) -> String {
 fn test_doc_gen() {
     assert_snapshot!(run_aion_doc("compiler/doc_gen"));
 }
+
+#[test]
+fn test_function_pointer() {
+    assert_snapshot!(run_aion_test("language/function_pointer"));
+}
+
+#[test]
+fn test_function_as_param() {
+    assert_snapshot!(run_aion_test("language/function_as_param"));
+}
