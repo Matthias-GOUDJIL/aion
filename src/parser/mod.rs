@@ -457,6 +457,34 @@ impl<'a> Parser<'a> {
         }
 
         let mut full_type;
+        // Function type: `fn(P1, P2) -> Ret`. #84. `fn` is a keyword, not an
+        // identifier, so it needs its own arm before the Identifier fallback.
+        if self.current_token.kind == TokenKind::Fn {
+            self.next_token();
+            full_type = "fn".to_string();
+            if self.current_token.kind == TokenKind::LParen {
+                self.next_token();
+                let mut parts = Vec::new();
+                while self.current_token.kind != TokenKind::RParen
+                    && self.current_token.kind != TokenKind::EOF
+                {
+                    parts.push(self.parse_type_name());
+                    if self.current_token.kind == TokenKind::Comma {
+                        self.next_token();
+                    }
+                }
+                if self.current_token.kind == TokenKind::RParen {
+                    self.next_token();
+                }
+                full_type = format!("fn({})", parts.join(", "));
+                if self.current_token.kind == TokenKind::Arrow {
+                    self.next_token();
+                    full_type.push_str(" -> ");
+                    full_type.push_str(&self.parse_type_name());
+                }
+            }
+            return full_type;
+        }
         if let TokenKind::Identifier(id) = self.current_token.clone().kind {
             full_type = id;
             self.next_token();

@@ -1,0 +1,26 @@
+use std.io
+use std.string
+
+// Function pointer: store a bare function name as a value, then call it
+// indirectly. #84. No syntax change — `let f = double` stores the function
+// pointer; `f(5)` dispatches via an indirect call.
+
+fn double(x: i64) -> i64 {
+    return x * 2
+}
+
+fn add_one(x: i64) -> i64 {
+    return x + 1
+}
+
+fn main() {
+    let f = double
+    let result = f(5)
+    io.println(string.from_int(result))
+
+    let g = add_one
+    let r2 = g(10)
+    io.println(string.from_int(r2))
+
+    return 0
+}

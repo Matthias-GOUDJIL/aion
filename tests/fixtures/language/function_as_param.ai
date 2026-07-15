@@ -1,0 +1,23 @@
+use std.io
+use std.string
+
+// Function as parameter: a `fn(i64) -> i64` parameter receives a bare
+// function name and calls it indirectly. #84.
+
+fn double(x: i64) -> i64 {
+    return x * 2
+}
+
+fn apply(f: fn(i64) -> i64, x: i64) -> i64 {
+    return f(x)
+}
+
+fn main() {
+    let r1 = apply(double, 5)
+    io.println(string.from_int(r1))
+
+    let r2 = apply(double, 21)
+    io.println(string.from_int(r2))
+
+    return 0
+}

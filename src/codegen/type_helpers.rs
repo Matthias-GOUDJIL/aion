@@ -106,10 +106,19 @@ impl<'ctx> Compiler<'ctx> {
                     return ct.replace(" ", "");
                 }
                 if let Some((_, _, t)) = variables.get(name) {
-                    t.clone().replace(" ", "")
-                } else {
-                    "unknown".to_string()
+                    return t.clone().replace(" ", "");
                 }
+                // Bare function name used as a value → recover its signature
+                // from the declaration so `let f = double` stores a
+                // recognizable `fn(...)->...` type-name. #84.
+                if let Some(Declaration::Function(f)) = self.decls.get(name)
+                    && f.generic_params.is_empty()
+                {
+                    let params: Vec<String> =
+                        f.params.iter().map(|(_, pt, _)| pt.clone()).collect();
+                    return format!("fn({})->{}", params.join(","), f.return_type).replace(" ", "");
+                }
+                "unknown".to_string()
             }
             Expression::Call {
                 function: name,

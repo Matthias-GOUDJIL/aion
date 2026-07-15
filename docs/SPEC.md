@@ -89,6 +89,16 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   ("cannot return stack-allocated array ... it does not outlive the call"),
   preventing dangling-pointer use-after-scope (#107). Heap-allocated
   arrays are a planned follow-up.
+- **Function pointers**: bare function names can be used as values and
+  passed to higher-order functions (#84). `let f = double` stores the
+  function's address as an opaque `ptr`; `f(5)` emits an indirect call
+  (`build_indirect_call`) through the loaded pointer. Function-type
+  annotations use `fn(P1, P2) -> Ret` syntax, e.g. `fn apply(f: fn(i64) ->
+  i64, x: i64) -> i64`. No closures (captured variables) — only top-level
+  non-generic function pointers are supported. Generic functions cannot be
+  taken as a pointer because they require monomorphization at the call
+  site.
+
 - **Fuzzy resolution**: if a simple name is not found, the compiler
   searches for qualified names ending with that suffix (e.g. `args` →
   `std.env.args`). Avoids complex AST rewriting for imports.

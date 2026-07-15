@@ -91,6 +91,28 @@ impl Type {
         if let Some(stripped) = trimmed.strip_prefix('*') {
             return Type::Pointer(Box::new(Type::parse(stripped.trim())));
         }
+        // Function type: `fn(P1, P2) -> Ret`. #84.
+        if trimmed.starts_with("fn(")
+            && let Some(close) = find_matching_paren(trimmed, 2)
+        {
+            let params_str = &trimmed[3..close];
+            let after = trimmed[close + 1..].trim();
+            if let Some(ret_str) = after.strip_prefix("->") {
+                let mut params = Vec::new();
+                for part in split_top_level_commas(params_str) {
+                    let p = part.trim();
+                    if !p.is_empty() {
+                        params.push(Type::parse(p));
+                    }
+                }
+                let return_type = Box::new(Type::parse(ret_str.trim()));
+                return Type::Function {
+                    is_unsafe: false,
+                    params,
+                    return_type,
+                };
+            }
+        }
         // Tuple type: `(T, U, ...)`. #53.
         if trimmed.starts_with('(') && trimmed.ends_with(')') {
             let inner = &trimmed[1..trimmed.len() - 1];
@@ -246,6 +268,25 @@ impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name())
     }
+}
+
+/// Find the index of the closing `)` matching the `(` at `open_idx`. Returns
+/// `None` if unbalanced. Used by `Type::parse` for `fn(...) -> Ret`. #84.
+fn find_matching_paren(s: &str, open_idx: usize) -> Option<usize> {
+    let mut depth = 0i32;
+    for (i, b) in s.bytes().enumerate().skip(open_idx) {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Split `s` on top-level commas (depth 0), respecting nested `<>` and `()`
