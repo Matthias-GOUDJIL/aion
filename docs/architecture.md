@@ -29,6 +29,7 @@ src/              — Rust compiler (lexer → parser → type checker → LLVM 
     types.rs      — AionType → LLVM type lowering (phase 2)
     generics.rs   — Generic function instantiation + body/expr substitution (phase 3)
     control_flow.rs — Statement-level codegen: compile_block (let/return/if/while/match/unsafe) (phase 4)
+    lvalues.rs      — Assignment-target lowering: compile_lvalue (field/index/deref) (phase 5)
     transpiler/   — Transpilation backends
       mod.rs      — Module root
       sql.rs      — SQL transpiler (Aion → PostgreSQL functions)

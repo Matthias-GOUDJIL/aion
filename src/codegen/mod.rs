@@ -2,6 +2,7 @@ pub mod compiler;
 mod control_flow;
 mod generics;
 mod intrinsics;
+mod lvalues;
 pub mod transpiler;
 mod types;
 
