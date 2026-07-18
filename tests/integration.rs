@@ -419,6 +419,11 @@ fn test_string_escape_llvm() {
     assert_snapshot!(run_aion_test("stdlib/string_escape_llvm"));
 }
 #[test]
+fn test_string_join() {
+    // #140 — concatenates a Vector<String> with a separator between elements.
+    assert_snapshot!(run_aion_test("stdlib/string_join"));
+}
+#[test]
 fn test_tensor_basic() {
     assert_snapshot!(run_aion_test("stdlib/tensor_basic"));
 }

@@ -1,0 +1,16 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/string_join\")"
+---
+comma_list: a, b, c
+ir_block: define i64 @main() {
+  ret i64 0
+}
+empty: 
+single: lone
+two_empty: |
+no_sep: abcdef
+len: 7
+four_dashes: x---y---z---w
+middle_empty: a,,b
+round-trip single ok

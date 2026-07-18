@@ -1,5 +1,7 @@
 module std.string
 
+use std.collections.vector
+
 pub fn len(s: String) -> i64 {
     @intrinsic("str_len", s)
 }
@@ -206,6 +208,27 @@ pub fn escape_llvm_c_string(s: String) -> String {
             _ => std.string.substr(s, i, 1),
         };
         result = std.string.concat(result, chunk);
+        i = i + 1;
+    }
+    return result;
+}
+
+// Concatenate the entries of `parts` separated by `sep`, with the separator
+// inserted only between elements (not appended after the last). Returns ""
+// for an empty vector, and the sole element verbatim for a single-element
+// vector. Issue #140 — used by `compiler/codegen.ai` (#9) to assemble the
+// LLVM IR text buffer (`Vector<String>` of lines) into a single `String`
+// before writing it via `std.fs.write`.
+pub fn join(parts: vector.Vector<String>, sep: String) -> String {
+    let n = parts.len();
+    if n == 0 {
+        return "";
+    }
+    let mut result = parts.get(0).unwrap();
+    let mut i = 1;
+    while i < n {
+        result = std.string.concat(result, sep);
+        result = std.string.concat(result, parts.get(i).unwrap());
         i = i + 1;
     }
     return result;
