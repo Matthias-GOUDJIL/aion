@@ -222,7 +222,10 @@ Type conversion utilities.
 
 ### `std.fmt` **[stable]**
 Formatting utilities. `Display`/`Debug` interfaces and `format(template,
-args)` for `'{}'`-placeholder interpolation.
+args)` for `'{}'`-placeholder interpolation. Also provides `s(template,
+args)` for explicit numeric `{N}` placeholders (re-usable, out-of-order,
+emits `<fmt:bad index>` for out-of-range or empty-brace cases, treats
+other malformed `{` as a literal).
 
 ---
 

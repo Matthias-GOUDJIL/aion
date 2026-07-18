@@ -1,0 +1,85 @@
+use std.fmt
+use std.collections.vector
+use std.string
+use std.io
+
+fn show(label: String, template: String, args: vector.Vector<String>) {
+    let out = fmt.s(template, args)
+    io.print(label)
+    io.print(": ")
+    io.println(out)
+}
+
+fn main() {
+    // Nominal: single placeholder, multiple placeholders, repeated index.
+    let mut a1 = vector.Vector<String>.new()
+    a1.push("world")
+    show("one_arg", "Hi, {0}!", a1)
+
+    let mut a2 = vector.Vector<String>.new()
+    a2.push("a")
+    a2.push("b")
+    a2.push("c")
+    show("three_args", "{0}-{1}-{2}", a2)
+
+    let mut a3 = vector.Vector<String>.new()
+    a3.push("x")
+    a3.push("y")
+    show("repeated", "{0}+{0}={1}", a3)
+
+    // Out-of-order indices.
+    let mut a4 = vector.Vector<String>.new()
+    a4.push("first")
+    a4.push("second")
+    show("reverse", "{1} then {0}", a4)
+
+    // Edge: empty template, no placeholders, empty args.
+    let empty_args = vector.Vector<String>.new()
+    show("empty_template", "", empty_args)
+    show("no_placeholders", "static text", empty_args)
+
+    // Edge: out-of-range index.
+    show("out_of_range", "{5} missing", empty_args)
+
+    // Edge: empty braces `{}` — no index.
+    let mut a5 = vector.Vector<String>.new()
+    a5.push("foo")
+    show("empty_braces", "{} empty braces", a5)
+
+    // Edge: malformed `{abc}` — non-digit between braces — emitted literally
+    // (the `{` is treated as a literal and the scan resumes from `abc}`).
+    show("malformed", "{abc} body", a5)
+
+    // Edge: unterminated `{` — emit literally and continue.
+    show("unterminated", "{xyz malformed", a5)
+
+    // Edge: two consecutive placeholders with no separator.
+    let mut a6 = vector.Vector<String>.new()
+    a6.push("Hello")
+    a6.push("World")
+    show("adjacent", "{0}{1}", a6)
+
+    // Edge: leading and trailing text.
+    show("lead_trail", "before {0} after", a6)
+
+    // Edge: leading 0 in index (`{01}` — should parse as 1 unless we say otherwise).
+    let mut a7 = vector.Vector<String>.new()
+    a7.push("a")
+    a7.push("b")
+    show("leading_zero", "{01} -> {0}", a7)
+
+    // Codegen-shaped example: emit a single LLVM IR line.
+    let mut ir = vector.Vector<String>.new()
+    ir.push("%t3")
+    ir.push("%t1")
+    ir.push("%t2")
+    show("ir_line", "  {0} = add i64 {1}, {2}", ir)
+
+    // Length sanity: 2 args of len 3, separator len 1 -> output len 7.
+    let mut chk = vector.Vector<String>.new()
+    chk.push("abc")
+    chk.push("xyz")
+    let joined = fmt.s("{0}-{1}", chk)
+    io.print("len: ")
+    io.println(string.from_int(string.len(joined)))
+}
