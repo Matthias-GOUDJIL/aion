@@ -1,0 +1,80 @@
+use std.string
+use std.collections.vector
+use std.io
+
+fn show(label: String, parts: vector.Vector<String>, sep: String) {
+    let joined = std.string.join(parts, sep)
+    io.print(label)
+    io.print(": ")
+    io.println(joined)
+}
+
+fn main() {
+    // Nominal: 3 elements, comma+space separator.
+    let mut v1 = vector.Vector<String>.new()
+    v1.push("a")
+    v1.push("b")
+    v1.push("c")
+    show("comma_list", v1, ", ")
+
+    // n-element vector with newline separator (simulating IR line buffer).
+    let mut v2 = vector.Vector<String>.new()
+    v2.push("define i64 @main() {")
+    v2.push("  ret i64 0")
+    v2.push("}")
+    show("ir_block", v2, "\n")
+
+    // Edge: empty vector -> "".
+    let empty = vector.Vector<String>.new()
+    show("empty", empty, ", ")
+
+    // Edge: single-element vector -> element verbatim (no separator inserted).
+    let mut solo = vector.Vector<String>.new()
+    solo.push("lone")
+    show("single", solo, ", ")
+
+    // Edge: two empty strings.
+    let mut two_empty = vector.Vector<String>.new()
+    two_empty.push("")
+    two_empty.push("")
+    show("two_empty", two_empty, "|")
+
+    // Edge: empty separator.
+    let mut v3 = vector.Vector<String>.new()
+    v3.push("ab")
+    v3.push("cd")
+    v3.push("ef")
+    show("no_sep", v3, "")
+
+    // Length sanity: 3 entries "a","b","c" joined with ", " -> 8 chars total.
+    let mut chk = vector.Vector<String>.new()
+    chk.push("a")
+    chk.push("b")
+    chk.push("c")
+    let out = std.string.join(chk, ", ")
+    io.print("len: ")
+    io.println(string.from_int(string.len(out)))
+
+    // Re-using a separator multiple times — repeated separator at every gap.
+    let mut v4 = vector.Vector<String>.new()
+    v4.push("x")
+    v4.push("y")
+    v4.push("z")
+    v4.push("w")
+    show("four_dashes", v4, "---")
+
+    // Edge: empty string entries interleaved with non-empty.
+    let mut v5 = vector.Vector<String>.new()
+    v5.push("a")
+    v5.push("")
+    v5.push("b")
+    show("middle_empty", v5, ",")
+
+    // Round-trip: split-like sanity (manual split via known separator).
+    let mut v6 = vector.Vector<String>.new()
+    v6.push("key=value")
+    let one = std.string.join(v6, "&")
+    if string.equals(one, "key=value") {
+        io.println("round-trip single ok")
+    }
+}
