@@ -43,6 +43,112 @@ pub fn format(template: String, args: Vector<String>) -> String {
             i = i + 1
         }
     }
-    
+
+    return result
+}
+
+// Placeholder formatter with explicit numeric indices. Issue #137.
+//
+// Differs from `format` (which uses auto-advancing empty `{}` placeholders)
+// by accepting only `{N}` where N is a non-negative decimal index into
+// `args`. The same `{N}` may appear more than once. Out-of-range indices
+// or empty braces `{}` emit the literal marker `<fmt:bad index>` so codegen
+// output stays readable instead of crashing. A `{` that is not followed
+// by an `N}` (e.g. `{xyz` or `{abc}`) is treated as a literal `{` and the
+// scan resumes from the next character — no error marker is emitted.
+//
+// Examples:
+//   s("Hi, {0}!", vec("world"))         -> "Hi, world!"
+//   s("{0}+{0}={1}", vec("a","b"))      -> "a+a=b"
+//   s("no placeholders", vec())         -> "no placeholders"
+//   s("{5} missing", vec())             -> "<fmt:bad index> missing"
+//   s("{} empty braces", vec("a"))      -> "<fmt:bad index> empty braces"
+//   s("{xyz malformed", vec("a"))       -> "{xyz malformed"  (no '}')
+//   s("{abc} body", vec("a"))           -> "{abc} body"     (non-digit inside)
+//
+// Literal `{{` and `}}` are not a separate escape — they simply don't
+// match the `{N}` pattern and pass through verbatim.
+//
+// Motivation: the upcoming `compiler/codegen.ai` (#9, sub-issue #131)
+// will format ~1 000+ LLVM IR lines like
+//   "%t{0} = add i64 {1}, {2}"
+// Without `s`, the port falls back to long `string.concat` chains —
+// acceptable but markedly less readable. Issue #137.
+pub fn s(template: String, args: vector.Vector<String>) -> String {
+    let template_len = string.len(template)
+    let args_count = args.len()
+    let mut result = ""
+    let mut i = 0
+    while i < template_len {
+        let c = string.at(template, i)
+        if c == 123 {  // '{'
+            let mut j = i + 1
+            let mut digits = ""
+            let mut found_digits = false
+            let mut closed = false
+            let mut malformed = false
+            while j < template_len {
+                let d = string.at(template, j)
+                if d == 125 {  // '}'
+                    closed = true
+                    j = j + 1
+                    break
+                }
+                if d >= 48 && d <= 57 {  // '0'..'9'
+                    digits = string.concat(digits, string.substr(template, j, 1))
+                    found_digits = true
+                    j = j + 1
+                } else {
+                    // Non-digit before '}' — malformed.
+                    malformed = true
+                    break
+                }
+            }
+            if malformed || (closed && !found_digits) || !closed {
+                if !closed {
+                    // No matching '}' — emit '{' verbatim and continue.
+                    result = string.concat(result, string.substr(template, i, 1))
+                    i = i + 1
+                } else {
+                    // Malformed (non-digit before '}') or empty `{}`.
+                    result = string.concat(result, "<fmt:bad index>")
+                    i = j
+                }
+            } else {
+                let idx = parse_ascii_int(digits)
+                if idx < 0 || idx >= args_count {
+                    result = string.concat(result, "<fmt:bad index>")
+                } else {
+                    let arg_val = args.get(idx).unwrap()
+                    result = string.concat(result, arg_val)
+                }
+                i = j
+            }
+        } else {
+            result = string.concat(result, string.substr(template, i, 1))
+            i = i + 1
+        }
+    }
+    return result
+}
+
+// Parse a string of ASCII digits (no leading sign) into a non-negative
+// i64. Returns -1 on empty input or any non-digit character. Used by
+// `std.fmt.s` to resolve `{N}` placeholder indices.
+fn parse_ascii_int(s: String) -> i64 {
+    let n = string.len(s)
+    if n == 0 {
+        return -1
+    }
+    let mut result = 0
+    let mut i = 0
+    while i < n {
+        let c = string.at(s, i)
+        if c < 48 || c > 57 {
+            return -1
+        }
+        result = result * 10 + (c - 48)
+        i = i + 1
+    }
     return result
 }

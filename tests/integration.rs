@@ -424,6 +424,11 @@ fn test_string_join() {
     assert_snapshot!(run_aion_test("stdlib/string_join"));
 }
 #[test]
+fn test_fmt_s() {
+    // #137 — placeholder formatter with explicit numeric `{N}` indices.
+    assert_snapshot!(run_aion_test("stdlib/fmt_s"));
+}
+#[test]
 fn test_tensor_basic() {
     assert_snapshot!(run_aion_test("stdlib/tensor_basic"));
 }

@@ -1,0 +1,19 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/fmt_s\")"
+---
+one_arg: Hi, world!
+three_args: a-b-c
+repeated: x+x=y
+reverse: second then first
+empty_template: 
+no_placeholders: static text
+out_of_range: <fmt:bad index> missing
+empty_braces: <fmt:bad index> empty braces
+malformed: {abc} body
+unterminated: {xyz malformed
+adjacent: HelloWorld
+lead_trail: before Hello after
+leading_zero: b -> a
+ir_line:   %t3 = add i64 %t1, %t2
+len: 7
