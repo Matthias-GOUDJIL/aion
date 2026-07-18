@@ -1,4 +1,4 @@
-module std.ordered_map
+module std.collections.ordered_map
 
 use std.collections.vector
 use std.option
