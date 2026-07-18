@@ -414,6 +414,11 @@ fn test_ordered_map_basic() {
     assert_snapshot!(run_aion_test("stdlib/ordered_map_basic"));
 }
 #[test]
+fn test_string_escape_llvm() {
+    // #139 — escapes a String for inclusion inside an LLVM `c"..."` literal.
+    assert_snapshot!(run_aion_test("stdlib/string_escape_llvm"));
+}
+#[test]
 fn test_tensor_basic() {
     assert_snapshot!(run_aion_test("stdlib/tensor_basic"));
 }

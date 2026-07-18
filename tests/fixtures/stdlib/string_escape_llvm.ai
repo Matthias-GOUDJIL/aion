@@ -1,0 +1,49 @@
+use std.string
+use std.io
+
+fn show(label: String, raw: String) {
+    let escaped = std.string.escape_llvm_c_string(raw)
+    io.print(label)
+    io.print(": ")
+    io.println(escaped)
+}
+
+fn main() {
+    // Nominal: ASCII text mixed with every escape-triggering char.
+    // Input chars: a, \n, b, ", c, \, d (7 chars)
+    // Output tokens: a, \0A, b, \22, c, \5C, d (13 chars)
+    show("mixed", "a\nb\"c\\d")
+
+    // Each escape char in isolation.
+    show("newline", "a\nb")
+    show("tab", "a\tb")
+    show("cr", "a\rb")
+    show("quote", "say \"hi\"")
+    show("backslash", "path\\to\\file")
+    show("nul", "a\0b")
+
+    // All escape chars together.
+    show("all", "\n\t\r\"\\")
+
+    // No-escape ASCII — verbatim pass-through.
+    show("plain", "hello, world")
+    show("numbers", "0123456789")
+    show("symbols", "!@#$%^&*(){}[]")
+
+    // Edge cases: empty string, single-char strings of each escape type.
+    show("empty", "")
+    show("solo_backslash", "\\")
+    show("solo_quote", "\"")
+    show("solo_newline", "\n")
+    show("solo_tab", "\t")
+    show("solo_cr", "\r")
+    show("solo_nul", "\0")
+
+    // Length sanity: count input vs output chars for a 7-char input.
+    let raw = "a\nb\"c\\d"
+    let out = std.string.escape_llvm_c_string(raw)
+    io.print("in_len: ")
+    io.println(string.from_int(string.len(raw)))
+    io.print("out_len: ")
+    io.println(string.from_int(string.len(out)))
+}
