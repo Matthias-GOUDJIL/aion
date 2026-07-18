@@ -76,12 +76,29 @@ This document outlines the technical path to transform Aion from its current Rus
 
 ### **v0.7: Aion Lexer**
 - [x] `lexer.ai` implementation. Validation by the Rust (Bootstrap) compiler.
+- [ ] **v0.7.1 — Lexer Gap Closure (#147)**: the v0.7 skeleton does not tokenize
+      string literals, integer/float literals (they are emitted as
+      `Identifier(...)`), `::intent` attribute values, f-strings, durations,
+      dates, or most keywords (`struct`, `enum`, `impl`, `while`, `for`,
+      `use`, `pub`, `unsafe`, `extern`, `interface`, ...). `hello.ai`
+      currently produces 4 `Illegal` tokens via `compiler/lexer.ai`.
+      Downgrades the v0.7 line to _partial_ and unblocks Phase 2 #129.
+      Hard-blocks #129 → #135.
+      Direct prerequisite: `std.string.to_int` (#148) so the lexer can
+      materialize `IntLiteral(i64)` from digit substrings.
 
 ### **v0.8: Aion Parser**
 - [x] `parser.ai` implementation. AST manipulation via Aion `struct` and `match`.
+- [ ] **v0.8.1 — Parser Gap Closure (depending on #147)**: `parser.ai`
+      structurally handles all AST types in `ast.ai`, but is gated by
+      the lexer gap above. Once #147 lands, every
+      `tests/fixtures/language/*.ai` (55 files) must parse end-to-end
+      into a `Program`. New issue to open after #147 closes.
 
 ### **v0.9: Aion LLVM Backend**
 - [ ] Direct generation of `.ll` (LLVM IR) text files from the AST.
+      Blocked by #147 + #148 (front-end gap) — see issue #9 for the
+      8-slice breakdown (#128 → #135) and the landing order.
 
 ---
 
