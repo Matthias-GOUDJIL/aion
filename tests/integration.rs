@@ -523,6 +523,18 @@ fn test_error_undefined_method() {
 fn test_error_internal() {
     assert_snapshot!(run_aion_test("compiler/error_internal"));
 }
+#[test]
+fn test_mut_use() {
+    // #141 — verifies two-way cross-module `use` (mutual imports) compiles
+    // and runs correctly between sibling files in `compiler/`.
+    assert_snapshot!(run_aion_test("compiler/mut_use"));
+}
+#[test]
+fn test_mut_use_missing() {
+    // #141 — error path: importing a non-existent module surfaces the
+    // "Import not found" resolver error rather than crashing silently.
+    assert_snapshot!(run_aion_test("compiler/mut_use_missing"));
+}
 
 // --- Example Tests ---
 

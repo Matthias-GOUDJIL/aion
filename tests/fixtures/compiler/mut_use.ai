@@ -1,0 +1,45 @@
+use compiler.mut_a
+use compiler.mut_b
+use std.io
+use std.string
+
+fn main() {
+    // Nominal: depth 10 — call_b alternates with call_a, each subtracts 1.
+    // call_b(10) -> call_a(9) -> call_b(8) -> ... -> call_a(1) -> call_b(0) -> 0
+    let r10 = compiler.mut_a.call_b(10)
+    io.print("depth 10: ")
+    io.println(string.from_int(r10))
+
+    // Starting from call_a with odd parity — alternates similarly.
+    // call_a(11) -> call_b(10) -> call_a(9) -> ... -> call_b(0) -> 0
+    let r11 = compiler.mut_b.call_a(11)
+    io.print("depth 11: ")
+    io.println(string.from_int(r11))
+
+    // Base case 0 — direct invocation, no cross-call.
+    let r0_b = compiler.mut_a.call_b(0)
+    let r0_a = compiler.mut_b.call_a(0)
+    io.print("call_b(0): ")
+    io.println(string.from_int(r0_b))
+    io.print("call_a(0): ")
+    io.println(string.from_int(r0_a))
+
+    // Depth 1 — exactly one cross-call before hitting the base case.
+    let r1_b = compiler.mut_a.call_b(1)
+    let r1_a = compiler.mut_b.call_a(1)
+    io.print("call_b(1): ")
+    io.println(string.from_int(r1_b))
+    io.print("call_a(1): ")
+    io.println(string.from_int(r1_a))
+
+    // Ping-pong single-hop call into mut_a (no recursion).
+    let ping = compiler.mut_b.ping_a()
+    io.print("ping_a: ")
+    io.println(string.from_int(ping))
+
+    // Self-recursion in mut_a — confirms the same module's own function
+    // still resolves when a mutual import is present.
+    let self5 = compiler.mut_a.call_self(5)
+    io.print("call_self(5): ")
+    io.println(string.from_int(self5))
+}
