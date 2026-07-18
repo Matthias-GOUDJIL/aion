@@ -1,0 +1,12 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/mut_use\")"
+---
+depth 10: 0
+depth 11: 0
+call_b(0): 0
+call_a(0): 1
+call_b(1): 1
+call_a(1): 0
+ping_a: 0
+call_self(5): 0

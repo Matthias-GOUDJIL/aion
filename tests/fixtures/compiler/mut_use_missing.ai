@@ -1,0 +1,11 @@
+// Mutual-use error-path fixture (issue #141).
+//
+// Imports a non-existent module to verify the Aion resolver surfaces a
+// clear "Import not found" error rather than crashing or silently
+// accepting the dangling reference. Snapshots the resolver's stderr.
+
+use compiler.missing_module
+
+fn main() {
+    let _ = compiler.missing_module.does_not_exist()
+}

@@ -1,0 +1,39 @@
+module compiler.mut_a
+
+// Mutual-use test fixture (issue #141, audit blocker B9).
+//
+// This module `use`s `compiler.mut_b`, and `compiler.mut_b` `use`s back
+// `compiler.mut_a`. The Aion import resolver must handle the cycle by
+// short-circuiting in `process_imports`'s `visited` set (`src/lib.rs`).
+// Both modules expose one public function that recurse into each other.
+//
+// `call_b(n)`: returns 0 when `n <= 0`; otherwise calls
+// `compiler.mut_b.call_a(n - 1)`.
+// Together with `call_a(n)`, the chain `call_b(10) -> call_a(9) ->
+// call_b(8) -> ... -> call_a(1) -> call_b(0) -> 0` yields 0.
+//
+// This fixture exercises every requirement of issue #141:
+//   * Two sibling modules with two-way `use` of each other.
+//   * Cross-module recursive calls (depth > 1).
+//   * Both modules live under `compiler/` — the same directory the
+//     upcoming `compiler/codegen.ai` (#9) and its potential split into
+//     `compiler/codegen/expressions.ai` + `compiler/codegen/lvalues.ai`
+//     will occupy.
+
+use compiler.mut_b
+
+pub fn call_b(n: i64) -> i64 {
+    if n <= 0 {
+        return 0
+    }
+    return compiler.mut_b.call_a(n - 1)
+}
+
+// Self-call (single-module recursion, base case 1) — confirms the same
+// module's own functions still resolve once a mutual import is present.
+pub fn call_self(n: i64) -> i64 {
+    if n <= 0 {
+        return n
+    }
+    return compiler.mut_a.call_self(n - 1)
+}

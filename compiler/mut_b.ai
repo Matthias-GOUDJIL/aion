@@ -1,0 +1,27 @@
+module compiler.mut_b
+
+// Mutual-use test fixture (issue #141, audit blocker B9) — the other
+// half of the cycle. See `compiler/mut_a.ai` for the contract and
+// recursion-shaped rationale.
+//
+// `call_a(n)`: returns 1 when `n <= 0`; otherwise calls
+// `compiler.mut_a.call_b(n - 1)`.
+// Together with `call_b(n)`, the chain `call_a(11) -> call_b(10) ->
+// call_a(9) -> ... -> call_b(0) -> 0` yields 0. Starting with `call_a`
+// and even `n`, the final return alternates 0 vs 1 depending on parity.
+
+use compiler.mut_a
+
+pub fn call_a(n: i64) -> i64 {
+    if n <= 0 {
+        return 1
+    }
+    return compiler.mut_a.call_b(n - 1)
+}
+
+// Single-hop cross-call: invokes `mut_a` directly without further
+// recursion. Used to isolate forward-reference behaviour from the
+// recursion depth test.
+pub fn ping_a() -> i64 {
+    return compiler.mut_a.call_self(0)
+}

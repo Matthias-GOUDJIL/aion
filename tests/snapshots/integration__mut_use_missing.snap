@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/mut_use_missing\")"
+---
+Import error: Import not found: "./compiler/missing_module.ai"
