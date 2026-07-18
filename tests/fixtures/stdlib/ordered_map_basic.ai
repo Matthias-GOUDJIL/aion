@@ -1,0 +1,140 @@
+use std.collections.ordered_map
+use std.collections.vector
+use std.io
+use std.string
+
+fn main() {
+    // Basic operations
+    let mut m = OrderedMap<String>.new()
+    m.insert("hello", "world")
+    m.insert("foo", "bar")
+    m.insert("baz", "qux")
+
+    let l = m.len()
+    io.println(string.from_int(l))
+
+    let has_foo = m.contains_key("foo")
+    let has_nope = m.contains_key("nope")
+    if has_foo {
+        io.println("has foo")
+    }
+    if has_nope == false {
+        io.println("no nope")
+    }
+
+    // get() lookups
+    match m.get("hello") {
+        Some(s) => {
+            io.print("hello: ")
+            io.println(s)
+        },
+        None => io.println("hello not found")
+    }
+    match m.get("missing") {
+        Some(s) => {
+            io.print("missing: ")
+            io.println(s)
+        },
+        None => io.println("missing not found")
+    }
+
+    // Update existing key — value changes, position preserved
+    m.insert("foo", "BAR")
+    match m.get("foo") {
+        Some(s) => {
+            io.print("foo updated: ")
+            io.println(s)
+        },
+        None => io.println("foo gone")
+    }
+    let l_after_update = m.len()
+    io.println(string.from_int(l_after_update))
+
+    // Ordered iteration — keys_in_order + values_in_order
+    let mut m2 = OrderedMap<String>.new()
+    m2.insert("a", "1")
+    m2.insert("b", "2")
+    m2.insert("c", "3")
+
+    let ks = m2.keys_in_order()
+    io.print("keys len: ")
+    io.println(string.from_int(ks.len()))
+    io.print("k0: ")
+    io.println(ks.get(0).unwrap())
+    io.print("k1: ")
+    io.println(ks.get(1).unwrap())
+    io.print("k2: ")
+    io.println(ks.get(2).unwrap())
+
+    let vs = m2.values_in_order()
+    io.print("values len: ")
+    io.println(string.from_int(vs.len()))
+    io.print("v0: ")
+    io.println(vs.get(0).unwrap())
+    io.print("v1: ")
+    io.println(vs.get(1).unwrap())
+    io.print("v2: ")
+    io.println(vs.get(2).unwrap())
+
+    // Remove middle entry — order preserved, len decremented
+    let mut m3 = OrderedMap<String>.new()
+    m3.insert("x", "1")
+    m3.insert("y", "2")
+    m3.insert("z", "3")
+    let removed = m3.remove("y")
+    if removed {
+        io.println("y removed")
+    }
+    let l3 = m3.len()
+    io.println(string.from_int(l3))
+    let has_y = m3.contains_key("y")
+    if has_y == false {
+        io.println("y gone")
+    }
+    let ks3 = m3.keys_in_order()
+    io.print("after-remove k0: ")
+    io.println(ks3.get(0).unwrap())
+    io.print("after-remove k1: ")
+    io.println(ks3.get(1).unwrap())
+
+    // Remove missing key — no-op, returns false
+    let removed_missing = m3.remove("nope")
+    if removed_missing == false {
+        io.println("removing missing is no-op")
+    }
+
+    // clear
+    let mut m4 = OrderedMap<String>.new()
+    m4.insert("h", "w")
+    m4.clear()
+    let l4 = m4.len()
+    io.println(string.from_int(l4))
+    let is_empty = m4.is_empty()
+    if is_empty {
+        io.println("empty after clear")
+    }
+
+    // Empty map iteration — zero entries, no crash
+    let m5 = OrderedMap<String>.new()
+    let ks5 = m5.keys_in_order()
+    io.print("empty keys len: ")
+    io.println(string.from_int(ks5.len()))
+    let vs5 = m5.values_in_order()
+    io.print("empty values len: ")
+    io.println(string.from_int(vs5.len()))
+
+    // Re-insert after removal lands at the end (new position, NOT old slot)
+    let mut m6 = OrderedMap<String>.new()
+    m6.insert("a", "1")
+    m6.insert("b", "2")
+    m6.insert("c", "3")
+    let _ = m6.remove("a")
+    m6.insert("a", "4")
+    let ks6 = m6.keys_in_order()
+    io.print("reinsert k0: ")
+    io.println(ks6.get(0).unwrap())
+    io.print("reinsert k1: ")
+    io.println(ks6.get(1).unwrap())
+    io.print("reinsert k2: ")
+    io.println(ks6.get(2).unwrap())
+}

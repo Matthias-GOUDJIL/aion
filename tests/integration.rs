@@ -409,6 +409,11 @@ fn test_hashmap_utils() {
     assert_snapshot!(run_aion_test("stdlib/hashmap_utils"));
 }
 #[test]
+fn test_ordered_map_basic() {
+    // #136 — insertion-ordered associative array with deterministic iteration.
+    assert_snapshot!(run_aion_test("stdlib/ordered_map_basic"));
+}
+#[test]
 fn test_tensor_basic() {
     assert_snapshot!(run_aion_test("stdlib/tensor_basic"));
 }
