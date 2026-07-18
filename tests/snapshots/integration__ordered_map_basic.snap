@@ -1,0 +1,32 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/ordered_map_basic\")"
+---
+3
+has foo
+no nope
+hello: world
+missing not found
+foo updated: BAR
+3
+keys len: 3
+k0: a
+k1: b
+k2: c
+values len: 3
+v0: 1
+v1: 2
+v2: 3
+y removed
+2
+y gone
+after-remove k0: x
+after-remove k1: z
+removing missing is no-op
+0
+empty after clear
+empty keys len: 0
+empty values len: 0
+reinsert k0: b
+reinsert k1: c
+reinsert k2: a

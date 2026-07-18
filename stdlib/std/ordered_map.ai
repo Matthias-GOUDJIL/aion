@@ -1,0 +1,138 @@
+module std.ordered_map
+
+use std.collections.vector
+use std.option
+use std.string
+
+// Insertion-ordered associative array backed by two parallel `Vector`s.
+// Designed for callers that need deterministic iteration order — e.g.
+// `compiler/codegen.ai` (`#9`) emits LLVM IR into snapshots whose line
+// order must be reproducible across runs. Rust's `HashMap` is randomized
+// via `RandomState`, and Aion's existing `HashMap` (`stdlib/std/collections/
+// map.ai`) has unspecified iteration order and previously lost entries via
+// `keys()` (regression tracked by #66). `OrderedMap` sidesteps both
+// problems at the cost of O(n) lookup — acceptable for maps of <1000
+// entries (the codegen symbol tables are <500). Issue #136.
+//
+// Constraints:
+//   * `insert(k, v)` on an existing key updates the value and preserves
+//     the original position (stable iteration).
+//   * `remove(k)` gaps the entry by shifting — earlier indices remain
+//     in order, later entries slide down by one.
+//   * `keys_in_order` / `values_in_order` return fresh `Vector` copies
+//     so callers cannot mutate internal state.
+//   * Keys are `String` only — `V` is generic. Generic `K` is deferred
+//     until `==` is generalised beyond primitives/String (see #136 body).
+
+pub struct OrderedMap<V> {
+    keys: vector.Vector<String>,
+    vals: vector.Vector<V>,
+    len: i64,
+}
+
+impl OrderedMap<V> {
+    pub fn new() -> OrderedMap<V> {
+        OrderedMap<V> {
+            keys: vector.Vector<String>.new(),
+            vals: vector.Vector<V>.new(),
+            len: 0,
+        }
+    }
+
+    // Insert or update. Existing key keeps its original position.
+    pub fn insert(mut self, key: String, value: V) {
+        let mut i = 0;
+        while i < self.len {
+            let k = self.keys.get(i).unwrap();
+            if std.string.equals(k, key) {
+                self.vals.set(i, value);
+                return;
+            }
+            i = i + 1;
+        }
+        self.keys.push(key);
+        self.vals.push(value);
+        self.len = self.len + 1;
+    }
+
+    pub fn get(self, key: String) -> Option<V> {
+        let mut i = 0;
+        while i < self.len {
+            let k = self.keys.get(i).unwrap();
+            if std.string.equals(k, key) {
+                return Option::Some(self.vals.get(i).unwrap());
+            }
+            i = i + 1;
+        }
+        return Option::None;
+    }
+
+    pub fn contains_key(self, key: String) -> bool {
+        let mut i = 0;
+        while i < self.len {
+            let k = self.keys.get(i).unwrap();
+            if std.string.equals(k, key) {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    // Remove `key` and shift subsequent entries down by one. Returns
+    // `true` iff `key` was present.
+    pub fn remove(mut self, key: String) -> bool {
+        let mut i = 0;
+        while i < self.len {
+            let k = self.keys.get(i).unwrap();
+            if std.string.equals(k, key) {
+                let _ = self.keys.remove(i);
+                let _ = self.vals.remove(i);
+                self.len = self.len - 1;
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    pub fn len(self) -> i64 {
+        return self.len;
+    }
+
+    pub fn is_empty(self) -> bool {
+        return self.len == 0;
+    }
+
+    // Return a fresh `Vector<String>` snapshot of the keys in
+    // insertion order. The caller owns the returned vector.
+    pub fn keys_in_order(self) -> vector.Vector<String> {
+        let mut out = vector.Vector<String>.new();
+        let mut i = 0;
+        while i < self.len {
+            let k = self.keys.get(i).unwrap();
+            out.push(k);
+            i = i + 1;
+        }
+        return out;
+    }
+
+    // Return a fresh `Vector<V>` snapshot of the values in insertion
+    // order. Matches `keys_in_order` index-for-index.
+    pub fn values_in_order(self) -> vector.Vector<V> {
+        let mut out = vector.Vector<V>.new();
+        let mut i = 0;
+        while i < self.len {
+            let v = self.vals.get(i).unwrap();
+            out.push(v);
+            i = i + 1;
+        }
+        return out;
+    }
+
+    pub fn clear(mut self) {
+        self.keys.clear();
+        self.vals.clear();
+        self.len = 0;
+    }
+}

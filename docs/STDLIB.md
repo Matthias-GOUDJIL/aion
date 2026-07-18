@@ -36,6 +36,13 @@ Common imports (`Option`, `Result`, `String`, `Vector`, `print`, `println`).
 - **`list`** **[stub]** — `LinkedList<T>` (singly linked).
 - **`map`** **[stable]** — `HashMap<V>` (generic V, string key). Includes
   `contains_key`, `keys`, `values`, `clear`, `remove`.
+- **`ordered_map`** **[stable]** — `OrderedMap<V>` (insertion-ordered,
+  generic V, string key). Backed by two parallel `Vector`s so iteration
+  order is deterministic across runs. Includes `new`, `insert`, `get`,
+  `contains_key`, `remove`, `len`, `is_empty`, `keys_in_order`,
+  `values_in_order`, `clear`. O(n) lookup — intended for small maps
+  (<1000 entries) where snapshot/dump ordering matters (e.g. codegen #9).
+  Issue #136.
 - **`set`** **[stub]** — `HashSet`.
 
 ### `std.string` **[stable]** & `std.char` **[stable]**
