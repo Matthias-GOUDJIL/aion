@@ -429,6 +429,11 @@ fn test_fmt_s() {
     assert_snapshot!(run_aion_test("stdlib/fmt_s"));
 }
 #[test]
+fn test_string_to_int() {
+    // #148 — parses a non-negative decimal String into Option<i64>.
+    assert_snapshot!(run_aion_test("stdlib/string_to_int"));
+}
+#[test]
 fn test_tensor_basic() {
     assert_snapshot!(run_aion_test("stdlib/tensor_basic"));
 }

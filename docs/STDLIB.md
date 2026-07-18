@@ -49,9 +49,13 @@ Common imports (`Option`, `Result`, `String`, `Vector`, `print`, `println`).
 Full string and character manipulation suite (`len`, `concat`, `from_int`,
 `from_float`, `to_float`, `at`, `substr`, `contains`, `starts_with`,
 `ends_with`, `find`, `trim`, `to_upper`, `to_lower`, `replace`,
-`escape_llvm_c_string`, `join`). Must be paired with a single NUL
-terminator appended by the caller — `str_len` stops at `\0`, so embedded
-NULs are not representable in Aion `String` literals.
+`escape_llvm_c_string`, `join`, `to_int`). Must be paired with a single
+NUL terminator appended by the caller — `str_len` stops at `\0`, so
+embedded NULs are not representable in Aion `String` literals.
+`to_int` parses a non-negative decimal String into `Option<i64>` —
+returns `None` on empty input, non-digit chars (no partial parse), or
+overflow past i64::MAX. Leading `-` is intentionally out of scope
+(callers handle sign explicitly).
 
 ### `std.iter` **[stub]**
 `Iterator` interface and `Range`.
