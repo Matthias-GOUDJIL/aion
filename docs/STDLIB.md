@@ -48,7 +48,10 @@ Common imports (`Option`, `Result`, `String`, `Vector`, `print`, `println`).
 ### `std.string` **[stable]** & `std.char` **[stable]**
 Full string and character manipulation suite (`len`, `concat`, `from_int`,
 `from_float`, `to_float`, `at`, `substr`, `contains`, `starts_with`,
-`ends_with`, `find`, `trim`, `to_upper`, `to_lower`, `replace`).
+`ends_with`, `find`, `trim`, `to_upper`, `to_lower`, `replace`,
+`escape_llvm_c_string`). Must be paired with a single NUL terminator
+appended by the caller — `str_len` stops at `\0`, so embedded NULs are
+not representable in Aion `String` literals.
 
 ### `std.iter` **[stub]**
 `Iterator` interface and `Range`.

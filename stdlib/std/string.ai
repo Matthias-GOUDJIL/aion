@@ -174,3 +174,39 @@ pub fn replace(s: String, from: String, to: String) -> String {
     }
     return result
 }
+
+// LLVM IR `c"..."` string escape per #139.
+// Returns ONLY the inner escaped contents — caller wraps with `c"..."` and
+// appends the NUL terminator `\00` per the LLVM textual IR spec.
+//
+// Escape rules (input char code -> output literal substring):
+//   0x00 NUL  -> "\00"
+//   0x09 \t   -> "\09"
+//   0x0A \n   -> "\0A"
+//   0x0D \r   -> "\0D"
+//   0x22 "    -> "\22"
+//   0x5C \    -> "\5C"
+// All other printable ASCII chars pass through verbatim. Non-ASCII (>127)
+// is not supported here — the codegen only emits ASCII source literals
+// today; once Unicode string literals land in Aion, this helper must be
+// extended to emit `\XX` octets for the UTF-8 encoding.
+pub fn escape_llvm_c_string(s: String) -> String {
+    let s_len = std.string.len(s);
+    let mut result = "";
+    let mut i = 0;
+    while i < s_len {
+        let c = std.string.at(s, i);
+        let chunk = match c {
+            0 => "\\00",
+            9 => "\\09",
+            10 => "\\0A",
+            13 => "\\0D",
+            34 => "\\22",
+            92 => "\\5C",
+            _ => std.string.substr(s, i, 1),
+        };
+        result = std.string.concat(result, chunk);
+        i = i + 1;
+    }
+    return result;
+}

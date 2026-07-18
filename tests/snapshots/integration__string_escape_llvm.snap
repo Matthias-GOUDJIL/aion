@@ -1,0 +1,24 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/string_escape_llvm\")"
+---
+mixed: a\0Ab\22c\5Cd
+newline: a\0Ab
+tab: a\09b
+cr: a\0Db
+quote: say \22hi\22
+backslash: path\5Cto\5Cfile
+nul: a
+all: \0A\09\0D\22\5C
+plain: hello, world
+numbers: 0123456789
+symbols: !@#$%^&*(){}[]
+empty: 
+solo_backslash: \5C
+solo_quote: \22
+solo_newline: \0A
+solo_tab: \09
+solo_cr: \0D
+solo_nul: 
+in_len: 7
+out_len: 13
