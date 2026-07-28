@@ -501,6 +501,12 @@ fn test_self_lexer() {
     assert_snapshot!(run_aion_test("compiler/self_lexer"));
 }
 #[test]
+fn test_self_lexer_hello() {
+    // #147 — verify `compiler/lexer.ai` can tokenize `hello.ai` end-to-end
+    // (0 Illegal tokens, expected StringLiteral + IntLiteral counts).
+    assert_snapshot!(run_aion_test("compiler/self_lexer_hello"));
+}
+#[test]
 fn test_optimization_check() {
     assert_snapshot!(run_aion_test("compiler/optimization_check"));
 }

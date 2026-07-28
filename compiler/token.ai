@@ -6,6 +6,7 @@ pub enum TokenKind {
     Use, Pub, Async, Unsafe, Require, Extern,
     Interface, Impl, Channel,
     For, In, Type, SelfToken, Spawn,
+    Break, Continue, Loop,
     
     // AI-Native & Logic
     Intent, 
@@ -15,6 +16,7 @@ pub enum TokenKind {
     // Identifiers and Literals
     Identifier(String),
     StringLiteral(String),
+    CharLiteral(i64),  // i64 since Aion doesn't have a char type yet — stores char code
     FString(String),
     IntLiteral(i64),
     FloatLiteral(f64),
@@ -24,17 +26,21 @@ pub enum TokenKind {
 
     // Symbols and Operators
     Plus, Minus, Star, Slash, Percent, Caret, // Arithmetic (+ % ^)
-    Eq, EqEq, NotEq, Arrow, 
+    Eq, EqEq, NotEq, Arrow,
     LArrow, // <- (Send/Receive)
     Pipeline, // |>
     And, Or, Bang, // Logic (&& || !)
+    Pipe, // | (single, not ||)
     Gt, Lt, GtEq, LtEq,
-    LParen, RParen, LBrace, RBrace, LBracket, RBracket, 
-    Colon, Semicolon, Comma, Dot, 
-    DoubleColon, 
-    Range,       
+    LParen, RParen, LBrace, RBrace, LBracket, RBracket,
+    Colon, Semicolon, Comma, Dot,
+    DoubleColon,
+    Range,
     At,
     Question,
+
+    // Doc Comments (/// ...)
+    DocComment(String),
 
     // End of File
     EOF,

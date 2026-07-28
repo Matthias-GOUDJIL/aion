@@ -1,0 +1,21 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/self_lexer_hello\")"
+---
+total tokens: 18
+illegal: 0
+identifiers: 3
+strings: 2
+ints: 1
+DoubleColon
+Other
+StringLiteral("Test standard output")
+Fn
+Identifier("main")
+LParen
+RParen
+LBrace
+Identifier("io")
+Dot
+Identifier("println")
+LParen

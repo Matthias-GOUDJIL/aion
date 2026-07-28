@@ -1,6 +1,7 @@
 module compiler.lexer
 
 use std.string
+use std.collections.vector
 use compiler.token
 
 pub struct Lexer {
@@ -14,7 +15,7 @@ pub struct Lexer {
 pub fn Lexer_new(input: String) -> Lexer {
     Lexer {
         input: input,
-        len: string.len(input),
+        len: std.string.len(input),
         pos: 0,
         line: 1,
         col: 1,
@@ -56,14 +57,24 @@ impl Lexer {
         if self.pos >= self.len {
             return 0; // EOF
         }
-        return string.at(self.input, self.pos);
+        return std.string.at(self.input, self.pos);
+    }
+
+    // Two-character lookahead — used to disambiguate `1..10` (range) from
+    // `1.5` (float). Returns 0 at EOF.
+    pub fn peek_char_at(self, offset: i64) -> i64 {
+        let p = self.pos + offset;
+        if p >= self.len || p < 0 {
+            return 0;
+        }
+        return std.string.at(self.input, p);
     }
 
     pub fn read_char(mut self) -> i64 {
         if self.pos >= self.len {
             return 0;
         }
-        let c = string.at(self.input, self.pos);
+        let c = std.string.at(self.input, self.pos);
         self.pos = self.pos + 1;
         if c == 10 { // '\n'
             self.line = self.line + 1;
@@ -85,7 +96,421 @@ impl Lexer {
         while is_alphanumeric(self.peek_char()) {
             let _ = self.read_char();
         }
-        return string.substr(self.input, start, self.pos - start);
+        return std.string.substr(self.input, start, self.pos - start);
+    }
+
+    // Skip a `// ...` line comment. Caller has consumed the second `/`.
+    // Returns nothing — the next-token dispatcher recurses into next_token
+    // after a comment is consumed.
+    fn skip_line_comment(mut self) {
+        let mut done = false;
+        while !done {
+            let c = self.peek_char();
+            if c == 10 || c == 0 {
+                done = true;
+            } else {
+                let _ = self.read_char();
+            }
+        }
+    }
+
+    // Read a `/// ...` doc comment. The caller has consumed the first two
+    // `/`. We've additionally consumed the third here. Return a Token of
+    // kind DocComment(trimmed_text).
+    fn read_doc_comment(mut self, line: i64, col: i64) -> compiler.token.Token {
+        // Skip leading whitespace after the `///`.
+        let mut done = false;
+        while !done {
+            let c = self.peek_char();
+            if c == 32 || c == 9 {
+                let _ = self.read_char();
+            } else {
+                done = true;
+            }
+        }
+        let start = self.pos;
+        // Read until newline or EOF.
+        done = false;
+        while !done {
+            let c = self.peek_char();
+            if c == 10 || c == 0 {
+                done = true;
+            } else {
+                let _ = self.read_char();
+            }
+        }
+        let text = std.string.substr(self.input, start, self.pos - start);
+        return compiler.token.Token::new(compiler.token.TokenKind::DocComment(text), line, col);
+    }
+
+    // Skip a `/* ... */` block comment. The caller has consumed the `*`.
+    fn skip_block_comment(mut self) {
+        let mut done = false;
+        while !done {
+            let c = self.read_char();
+            if c == 42 {  // '*'
+                if self.peek_char() == 47 {  // `/`
+                    let _ = self.read_char();
+                    done = true;
+                }
+            }
+            if c == 0 {
+                done = true;  // unterminated
+            }
+        }
+    }
+
+    // Read a string literal starting at the opening `"` (already consumed
+    // by the caller). Supports escapes `\n \t \r \\ \" \0` (Rust-lexer
+    // parity). Unknown escapes pass the escaped char through verbatim
+    // (matching Rust). NUL `\0` in the source string will truncate the
+    // emitted literal — a known Aion limitation (str_len stops at NUL),
+    // documented in `docs/SPEC.md` §2 String. Issue #147.
+    fn read_string(mut self) -> compiler.token.TokenKind {
+        let mut s = "";
+        let mut done = false;
+        while !done {
+            let c = self.peek_char();
+            if c == 34 {  // '"'
+                let _ = self.read_char();
+                done = true;
+            } else if c == 0 {  // EOF — unterminated
+                return compiler.token.TokenKind::Illegal(34);
+            } else if c == 92 {  // '\\'
+                let _ = self.read_char();  // consume backslash
+                let esc = self.read_char();
+                if esc == 110 {
+                    s = std.string.concat(s, "\n");
+                } else if esc == 116 {
+                    s = std.string.concat(s, "\t");
+                } else if esc == 114 {
+                    s = std.string.concat(s, "\r");
+                } else if esc == 92 {
+                    s = std.string.concat(s, "\\");
+                } else if esc == 34 {
+                    s = std.string.concat(s, "\"");
+                } else if esc == 48 {
+                    s = std.string.concat(s, "\0");
+                } else if esc == 0 {
+                    return compiler.token.TokenKind::Illegal(92);
+                } else {
+                    // Unknown escape — pass the escaped char through
+                    // verbatim (Rust behaviour). CharLiteral escape
+                    // We push the character at self.pos - 1 via substr.
+                    s = std.string.concat(s, std.string.substr(self.input, self.pos - 1, 1));
+                }
+            } else {
+                let _ = self.read_char();
+                s = std.string.concat(s, std.string.substr(self.input, self.pos - 1, 1));
+            }
+        }
+        return compiler.token.TokenKind::StringLiteral(s);
+    }
+
+    // Read a char literal `'a'` (opening `'` already consumed). Returns a
+    // CharLiteral(i64) holding the char code, or Illegal on malformed input.
+    fn read_char_literal(mut self) -> compiler.token.TokenKind {
+        let c = self.read_char();
+        if c == 0 {
+            return compiler.token.TokenKind::Illegal(39);
+        }
+        let mut ch = 0;
+        if c == 92 {  // '\\'
+            let esc = self.read_char();
+            if esc == 110 { ch = 10; }       // 'n'
+            else if esc == 116 { ch = 9; }   // 't'
+            else if esc == 114 { ch = 13; }  // 'r'
+            else if esc == 92 { ch = 92; }   // '\'
+            else if esc == 39 { ch = 39; }   // '\''
+            else if esc == 34 { ch = 34; }   // '"'
+            else if esc == 48 { ch = 0; }    // '0'
+            else if esc == 0 {
+                return compiler.token.TokenKind::Illegal(92);
+            } else {
+                ch = esc;
+            }
+        } else {
+            ch = c;
+        }
+        if self.peek_char() == 39 {  // '\''
+            let _ = self.read_char();
+            return compiler.token.TokenKind::CharLiteral(ch);
+        }
+        return compiler.token.TokenKind::Illegal(ch);
+    }
+
+    // Read an f-string `f"..."`. The caller has consumed the `f` and the
+    // opening `"`. Captures everything up to the matching `"`, tracking
+    // `{...}` brace depth so that `f"hello {{"world"}}"` eats the entire
+    // string instead of stopping at the first `"` inside the braces.
+    fn read_fstring(mut self) -> compiler.token.TokenKind {
+        let mut s = "";
+        let mut depth: i64 = 0;
+        let mut done = false;
+        while !done {
+            let c = self.peek_char();
+            if c == 34 && depth == 0 {  // '"' — end of f-string
+                let _ = self.read_char();
+                done = true;
+            } else if c == 0 {
+                return compiler.token.TokenKind::Illegal(34);
+            } else {
+                let ch = self.read_char();
+                if ch == 123 {  // '{'
+                    depth = depth + 1;
+                } else if ch == 125 && depth > 0 {  // '}'
+                    depth = depth - 1;
+                }
+                s = std.string.concat(s, std.string.substr(self.input, self.pos - 1, 1));
+            }
+        }
+        return compiler.token.TokenKind::FString(s);
+    }
+
+    // Read a Date literal `D<YYYY-MM-DD>` starting right after the leading
+    // `D` (already consumed). Converts the date to a Unix-epoch timestamp
+    // in seconds, matching the Rust lexer (`src/lexer/mod.rs:342-382`).
+    // Returns `Illegal('D')` for a malformed date.
+    fn read_date(mut self) -> compiler.token.TokenKind {
+        let mut s = "";
+        let mut done = false;
+        // Date chars are digits and '-'.
+        while !done {
+            let c = self.peek_char();
+            if is_numeric(c) || c == 45 {  // digit or '-'
+                let _ = self.read_char();
+                s = std.string.concat(s, std.string.substr(self.input, self.pos - 1, 1));
+            } else {
+                done = true;
+            }
+        }
+        // Split on '-' into 3 parts. Use a manual scan since Aion has no
+        // split() yet.
+        let slen = std.string.len(s);
+        let mut parts = vector.Vector<String>.new();
+        let mut current = "";
+        let mut i = 0;
+        while i < slen {
+            let ch = std.string.at(s, i);
+            if ch == 45 {  // '-'
+                parts.push(current);
+                current = "";
+            } else {
+                current = std.string.concat(current, std.string.substr(s, i, 1));
+            }
+            i = i + 1;
+        }
+        parts.push(current);
+        if parts.len() != 3 {
+            return compiler.token.TokenKind::Illegal(68);  // 'D'
+        }
+        let y_opt = std.string.to_int(parts.get(0).unwrap());
+        let m_opt = std.string.to_int(parts.get(1).unwrap());
+        let d_opt = std.string.to_int(parts.get(2).unwrap());
+        let mut y: i64 = 0;
+        match y_opt {
+            Option::Some(n) => { y = n; },
+            Option::None => { y = 0; },
+        }
+        let mut m: i64 = 1;
+        match m_opt {
+            Option::Some(n) => { m = n; },
+            Option::None => { m = 1; },
+        }
+        let mut d: i64 = 1;
+        match d_opt {
+            Option::Some(n) => { d = n; },
+            Option::None => { d = 1; },
+        }
+        let mut total_days: i64 = 0;
+        let mut year: i64 = 1970;
+        while year < y {
+            let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+            if is_leap {
+                total_days = total_days + 366;
+            } else {
+                total_days = total_days + 365;
+            }
+            year = year + 1;
+        }
+        let mut mi: i64 = 1;
+        while mi < m {
+            if mi == 1 {
+                total_days = total_days + 31;
+            } else if mi == 2 {
+                total_days = total_days + 28;
+                let is_leap = (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
+                if is_leap {
+                    total_days = total_days + 1;
+                }
+            } else if mi == 3 {
+                total_days = total_days + 31;
+            } else if mi == 4 {
+                total_days = total_days + 30;
+            } else if mi == 5 {
+                total_days = total_days + 31;
+            } else if mi == 6 {
+                total_days = total_days + 30;
+            } else if mi == 7 {
+                total_days = total_days + 31;
+            } else if mi == 8 {
+                total_days = total_days + 31;
+            } else if mi == 9 {
+                total_days = total_days + 30;
+            } else if mi == 10 {
+                total_days = total_days + 31;
+            } else if mi == 11 {
+                total_days = total_days + 30;
+            }
+            // mi == 12 — December adds no days for "current" month.
+            mi = mi + 1;
+        }
+        total_days = total_days + d - 1;
+        let ts = total_days * 86400;
+        return compiler.token.TokenKind::DateLiteral(ts);
+    }
+
+    // Read a numeric literal with optional fractional part and unit suffix.
+    // Mirrors `src/lexer/mod.rs:384-448` with one limitation:
+    //
+    //   Fractional duration literals (`1.5ms`) currently emit
+    //   `Illegal('?')` because Aion cannot cast `f64` to `i64`/`u64`
+    //   (issue #151 — the codegen falls through to `bit_cast` and
+    //   reinterprets the IEEE-754 bits). Integer literals (`5s`, `10d`,
+    //   `500ms`) work via pure i64 arithmetic. Fractional non-duration
+    //   floats (`1.5`) still return `FloatLiteral`.
+    //
+    // Re-enable the fractional-duration path when #151 lands.
+    fn read_number(mut self, first: i64) -> compiler.token.TokenKind {
+        let mut num_str = "";
+        num_str = std.string.concat(num_str, std.string.substr(self.input, self.pos - 1, 1));
+        let mut is_float = false;
+        let mut done = false;
+        while !done {
+            let c = self.peek_char();
+            if c == 46 {  // '.'
+                // Lookahead: if the next-next char is '.', this is a Range
+                // token boundary (e.g. `1..10`), break without consuming.
+                if self.peek_char_at(1) == 46 {
+                    done = true;
+                } else {
+                    is_float = true;
+                    let _ = self.read_char();
+                    num_str = std.string.concat(num_str, ".");
+                }
+            } else if is_numeric(c) {
+                let _ = self.read_char();
+                num_str = std.string.concat(num_str, std.string.substr(self.input, self.pos - 1, 1));
+            } else {
+                done = true;
+            }
+        }
+        // Read alphabetic suffix (duration unit): s/ms/us/ns/m/h/d.
+        let mut suffix = "";
+        done = false;
+        while !done {
+            let c = self.peek_char();
+            if is_alpha(c) {
+                let _ = self.read_char();
+                suffix = std.string.concat(suffix, std.string.substr(self.input, self.pos - 1, 1));
+            } else {
+                done = true;
+            }
+        }
+        let suffix_len = std.string.len(suffix);
+        if suffix_len > 0 {
+            // Duration literal — fractional durations deferred to #151.
+            if is_float {
+                return compiler.token.TokenKind::Illegal('?');
+            }
+            // Integer-duration path: parse as i64, then split across
+            // unit-specific secs/nanos arithmetic.
+            let val_opt = std.string.to_int(num_str);
+            let mut val: i64 = 0;
+            match val_opt {
+                Option::Some(n) => { val = n; },
+                Option::None => { val = 0; },
+            }
+            let mut secs: u64 = 0;
+            let mut nanos: u32 = 0;
+            if std.string.equals(suffix, "s") {
+                secs = val as u64;
+                nanos = 0 as u32;
+            } else if std.string.equals(suffix, "ms") {
+                secs = (val / 1000) as u64;
+                let rem: i64 = val % 1000;
+                nanos = (rem * 1000000) as u32;
+            } else if std.string.equals(suffix, "us") {
+                secs = (val / 1000000) as u64;
+                let rem: i64 = val % 1000000;
+                nanos = (rem * 1000) as u32;
+            } else if std.string.equals(suffix, "ns") {
+                secs = 0 as u64;
+                nanos = (val % 1000000000) as u32;
+            } else if std.string.equals(suffix, "m") {
+                secs = (val * 60) as u64;
+                nanos = 0 as u32;
+            } else if std.string.equals(suffix, "h") {
+                secs = (val * 3600) as u64;
+                nanos = 0 as u32;
+            } else if std.string.equals(suffix, "d") {
+                secs = (val * 86400) as u64;
+                nanos = 0 as u32;
+            } else {
+                return compiler.token.TokenKind::Illegal('?');
+            }
+            return compiler.token.TokenKind::DurationLiteral(secs, nanos);
+        }
+        if is_float {
+            return compiler.token.TokenKind::FloatLiteral(std.string.to_float(num_str));
+        }
+        let opt = std.string.to_int(num_str);
+        let mut v: i64 = 0;
+        match opt {
+            Option::Some(n) => { v = n; },
+            Option::None => { v = 0; },
+        }
+        return compiler.token.TokenKind::IntLiteral(v);
+    }
+
+    // Look up an identifier string in the keyword table. Returns the
+    // matching TokenKind keyword variant or `Identifier(name)` for unknown
+    // identifiers.
+    fn keyword_or_ident(name: String) -> compiler.token.TokenKind {
+        if std.string.equals(name, "fn") { return compiler.token.TokenKind::Fn; }
+        if std.string.equals(name, "let") { return compiler.token.TokenKind::Let; }
+        if std.string.equals(name, "mut") { return compiler.token.TokenKind::Mut; }
+        if std.string.equals(name, "struct") { return compiler.token.TokenKind::Struct; }
+        if std.string.equals(name, "enum") { return compiler.token.TokenKind::Enum; }
+        if std.string.equals(name, "return") { return compiler.token.TokenKind::Return; }
+        if std.string.equals(name, "if") { return compiler.token.TokenKind::If; }
+        if std.string.equals(name, "else") { return compiler.token.TokenKind::Else; }
+        if std.string.equals(name, "while") { return compiler.token.TokenKind::While; }
+        if std.string.equals(name, "match") { return compiler.token.TokenKind::Match; }
+        if std.string.equals(name, "as") { return compiler.token.TokenKind::As; }
+        if std.string.equals(name, "use") { return compiler.token.TokenKind::Use; }
+        if std.string.equals(name, "pub") { return compiler.token.TokenKind::Pub; }
+        if std.string.equals(name, "async") { return compiler.token.TokenKind::Async; }
+        if std.string.equals(name, "unsafe") { return compiler.token.TokenKind::Unsafe; }
+        if std.string.equals(name, "extern") { return compiler.token.TokenKind::Extern; }
+        if std.string.equals(name, "require") { return compiler.token.TokenKind::Require; }
+        if std.string.equals(name, "intent") { return compiler.token.TokenKind::Intent; }
+        if std.string.equals(name, "invariant") { return compiler.token.TokenKind::Invariant; }
+        if std.string.equals(name, "inside") { return compiler.token.TokenKind::Inside; }
+        if std.string.equals(name, "interface") { return compiler.token.TokenKind::Interface; }
+        if std.string.equals(name, "impl") { return compiler.token.TokenKind::Impl; }
+        if std.string.equals(name, "channel") { return compiler.token.TokenKind::Channel; }
+        if std.string.equals(name, "for") { return compiler.token.TokenKind::For; }
+        if std.string.equals(name, "in") { return compiler.token.TokenKind::In; }
+        if std.string.equals(name, "type") { return compiler.token.TokenKind::Type; }
+        if std.string.equals(name, "self") { return compiler.token.TokenKind::SelfToken; }
+        if std.string.equals(name, "spawn") { return compiler.token.TokenKind::Spawn; }
+        if std.string.equals(name, "break") { return compiler.token.TokenKind::Break; }
+        if std.string.equals(name, "continue") { return compiler.token.TokenKind::Continue; }
+        if std.string.equals(name, "loop") { return compiler.token.TokenKind::Loop; }
+        if std.string.equals(name, "true") { return compiler.token.TokenKind::True; }
+        if std.string.equals(name, "false") { return compiler.token.TokenKind::False; }
+        return compiler.token.TokenKind::Identifier(name);
     }
 
     pub fn next_token(mut self) -> compiler.token.Token {
@@ -94,126 +519,151 @@ impl Lexer {
         let col = self.col;
 
         let ch = self.read_char();
-        
         let mut kind = compiler.token.TokenKind::EOF;
 
         if ch == 0 {
-            return compiler.token.Token::new(kind, line, col);
+            return compiler.token.Token::new(compiler.token.TokenKind::EOF, line, col);
         }
 
-        if ch == 40 { kind = compiler.token.TokenKind::LParen; } // '('
-        else if ch == 41 { kind = compiler.token.TokenKind::RParen; } // ')'
-        else if ch == 123 { kind = compiler.token.TokenKind::LBrace; } // '{'
-        else if ch == 125 { kind = compiler.token.TokenKind::RBrace; } // '}'
-        else if ch == 91 { kind = compiler.token.TokenKind::LBracket; } // '['
-        else if ch == 93 { kind = compiler.token.TokenKind::RBracket; } // ']'
-        else if ch == 44 { kind = compiler.token.TokenKind::Comma; } // ','
-        else if ch == 59 { kind = compiler.token.TokenKind::Semicolon; } // ';'
-        else if ch == 58 { // ':'
-            if self.peek_char() == 58 { // '::'
+        if ch == 40 {  // '('
+            kind = compiler.token.TokenKind::LParen;
+        } else if ch == 41 {  // ')'
+            kind = compiler.token.TokenKind::RParen;
+        } else if ch == 123 {  // '{'
+            kind = compiler.token.TokenKind::LBrace;
+        } else if ch == 125 {  // '}'
+            kind = compiler.token.TokenKind::RBrace;
+        } else if ch == 91 {  // '['
+            kind = compiler.token.TokenKind::LBracket;
+        } else if ch == 93 {  // ']'
+            kind = compiler.token.TokenKind::RBracket;
+        } else if ch == 44 {  // ','
+            kind = compiler.token.TokenKind::Comma;
+        } else if ch == 59 {  // ';'
+            kind = compiler.token.TokenKind::Semicolon;
+        } else if ch == 42 {  // '*'
+            kind = compiler.token.TokenKind::Star;
+        } else if ch == 43 {  // '+'
+            kind = compiler.token.TokenKind::Plus;
+        } else if ch == 37 {  // '%'
+            kind = compiler.token.TokenKind::Percent;
+        } else if ch == 94 {  // '^'
+            kind = compiler.token.TokenKind::Caret;
+        } else if ch == 63 {  // '?'
+            kind = compiler.token.TokenKind::Question;
+        } else if ch == 64 {  // '@'
+            kind = compiler.token.TokenKind::At;
+        } else if ch == 47 {  // '/'
+            // Comment anxiety + Slash token.
+            let next_c = self.peek_char();
+            if next_c == 47 {  // // line comment (or /// doc)
+                let _ = self.read_char();
+                if self.peek_char() == 47 {  // /// doc
+                    let _ = self.read_char();
+                    return self.read_doc_comment(line, col);
+                }
+                self.skip_line_comment();
+                return self.next_token();
+            } else if next_c == 42 {  // /* block
+                let _ = self.read_char();
+                self.skip_block_comment();
+                return self.next_token();
+            } else {
+                kind = compiler.token.TokenKind::Slash;
+            }
+        } else if ch == 58 {  // ':'
+            if self.peek_char() == 58 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::DoubleColon;
             } else {
                 kind = compiler.token.TokenKind::Colon;
             }
-        }
-        else if ch == 42 { kind = compiler.token.TokenKind::Star; } // '*'
-        else if ch == 43 { kind = compiler.token.TokenKind::Plus; } // '+'
-        else if ch == 45 { // '-'
-            if self.peek_char() == 62 { // '->'
+        } else if ch == 45 {  // -
+            if self.peek_char() == 62 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::Arrow;
             } else {
                 kind = compiler.token.TokenKind::Minus;
             }
-        }
-        else if ch == 37 { kind = compiler.token.TokenKind::Percent; } // '%'
-        else if ch == 94 { kind = compiler.token.TokenKind::Caret; } // '^'
-        else if ch == 63 { kind = compiler.token.TokenKind::Question; } // '?'
-        else if ch == 64 { kind = compiler.token.TokenKind::At; } // '@'
-        
-        // Complex symbols like ==, =>, ->
-        else if ch == 61 { // '='
-            if self.peek_char() == 61 { // '=='
+        } else if ch == 61 {  // '='
+            let p = self.peek_char();
+            if p == 61 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::EqEq;
-            } else if self.peek_char() == 62 { // '=>'
+            } else if p == 62 {
                 let _ = self.read_char();
-                kind = compiler.token.TokenKind::Arrow; // actually should probably be FatArrow if it exists, but Aion might use Arrow for both or maybe Arrow is just ->
+                kind = compiler.token.TokenKind::Arrow;
             } else {
                 kind = compiler.token.TokenKind::Eq;
             }
-        } else if ch == 33 { // '!'
-            if self.peek_char() == 61 { // '!='
+        } else if ch == 33 {  // '!'
+            if self.peek_char() == 61 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::NotEq;
             } else {
                 kind = compiler.token.TokenKind::Bang;
             }
-        } else if ch == 46 { // '.'
-            if self.peek_char() == 46 { // '..'
+        } else if ch == 46 {  // '.'
+            if self.peek_char() == 46 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::Range;
             } else {
                 kind = compiler.token.TokenKind::Dot;
             }
-        } else if ch == 60 { // '<'
-            if self.peek_char() == 45 { // '<-'
+        } else if ch == 60 {  // '<'
+            let p = self.peek_char();
+            if p == 45 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::LArrow;
-            } else if self.peek_char() == 61 { // '<='
+            } else if p == 61 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::LtEq;
             } else {
                 kind = compiler.token.TokenKind::Lt;
             }
-        } else if ch == 62 { // '>'
-            if self.peek_char() == 61 { // '>='
+        } else if ch == 62 {  // '>'
+            if self.peek_char() == 61 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::GtEq;
             } else {
                 kind = compiler.token.TokenKind::Gt;
             }
-        } else if ch == 124 { // '|'
-            if self.peek_char() == 62 { // '|>'
-                let _ = self.read_char();
-                kind = compiler.token.TokenKind::Pipeline;
-            } else if self.peek_char() == 124 { // '||'
+        } else if ch == 124 {  // '|'
+            let p = self.peek_char();
+            if p == 124 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::Or;
+            } else if p == 62 {
+                let _ = self.read_char();
+                kind = compiler.token.TokenKind::Pipeline;
             } else {
-                kind = compiler.token.TokenKind::Illegal(ch);
+                kind = compiler.token.TokenKind::Pipe;
             }
-        } else if ch == 38 { // '&'
-            if self.peek_char() == 38 { // '&&'
+        } else if ch == 38 {  // '&'
+            if self.peek_char() == 38 {
                 let _ = self.read_char();
                 kind = compiler.token.TokenKind::And;
             } else {
                 kind = compiler.token.TokenKind::Illegal(ch);
             }
+        } else if ch == 34 {  // '"'
+            return compiler.token.Token::new(self.read_string(), line, col);
+        } else if ch == 39 {  // '\''
+            return compiler.token.Token::new(self.read_char_literal(), line, col);
         } else if is_alpha(ch) {
-            // Identifier / Keywords
-            let ident = self.read_identifier(ch);
-            
-            if std.string.equals(ident, "fn") { kind = compiler.token.TokenKind::Fn; }
-            else if std.string.equals(ident, "let") { kind = compiler.token.TokenKind::Let; }
-            else if std.string.equals(ident, "if") { kind = compiler.token.TokenKind::If; }
-            else if std.string.equals(ident, "else") { kind = compiler.token.TokenKind::Else; }
-            else if std.string.equals(ident, "return") { kind = compiler.token.TokenKind::Return; }
-            else if std.string.equals(ident, "match") { kind = compiler.token.TokenKind::Match; }
-            else if std.string.equals(ident, "true") { kind = compiler.token.TokenKind::True; }
-            else if std.string.equals(ident, "false") { kind = compiler.token.TokenKind::False; }
-            else { kind = compiler.token.TokenKind::Identifier(ident); }
-        } else if is_numeric(ch) {
-            // Simplified numeric parser
-            let start = self.pos - 1;
-            while is_numeric(self.peek_char()) {
-                let _ = self.read_char();
+            // f-string: identifier 'f' immediately followed by '"'.
+            if ch == 102 && self.peek_char() == 34 {
+                let _ = self.read_char();  // consume the opening '"'
+                return compiler.token.Token::new(self.read_fstring(), line, col);
             }
-            let num_str = string.substr(self.input, start, self.pos - start);
-            // Since Aion doesn't have an int_parse yet, we will just store as identifier for now
-            // A true self-hosted lexer needs string to int conversion
-            kind = compiler.token.TokenKind::Identifier(num_str);
+            // Date literal: identifier 'D' immediately followed by a digit.
+            if ch == 68 && is_numeric(self.peek_char()) {
+                return compiler.token.Token::new(self.read_date(), line, col);
+            }
+            let ident = self.read_identifier(ch);
+            kind = Lexer::keyword_or_ident(ident);
+        } else if is_numeric(ch) {
+            return compiler.token.Token::new(self.read_number(ch), line, col);
         } else {
             kind = compiler.token.TokenKind::Illegal(ch);
         }
