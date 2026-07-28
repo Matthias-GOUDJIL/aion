@@ -76,24 +76,27 @@ This document outlines the technical path to transform Aion from its current Rus
 
 ### **v0.7: Aion Lexer**
 - [x] `lexer.ai` implementation. Validation by the Rust (Bootstrap) compiler.
-- [ ] **v0.7.1 — Lexer Gap Closure (#147)**: the v0.7 skeleton does not tokenize
-      string literals, integer/float literals (they are emitted as
-      `Identifier(...)`), `::intent` attribute values, f-strings, durations,
-      dates, or most keywords (`struct`, `enum`, `impl`, `while`, `for`,
-      `use`, `pub`, `unsafe`, `extern`, `interface`, ...). `hello.ai`
-      currently produces 4 `Illegal` tokens via `compiler/lexer.ai`.
-      Downgrades the v0.7 line to _partial_ and unblocks Phase 2 #129.
-      Hard-blocks #129 → #135.
-      Direct prerequisite: `std.string.to_int` (#148) so the lexer can
-      materialize `IntLiteral(i64)` from digit substrings.
+- [x] **v0.7.1 — Lexer Gap Closure (#147)**: string literals + escapes,
+      integer/float literals via `std.string.to_int`/`to_float`
+      (previously emitted as `Identifier("N")`), `::intent` lexes as
+      `DoubleColon, Identifier("intent"), StringLiteral`, f-strings
+      with brace-depth tracking, integer-only duration literals
+      (`s`/`ms`/`us`/`ns`/`m`/`h`/`d`), date literals `D<YYYY-MM-DD>` with
+      epoch-day computation, char literals, line/block/doc comments, all
+      32 Rust keywords. `hello.ai` now lexes with 0 `Illegal` tokens
+      (verified by `tests/fixtures/compiler/self_lexer_hello.ai`).
+      Fractional durations (`1.5ms`) deferred to #151 (broken `f64 as i64`
+      cast upstream). Workaround for #152 (`let v: T = match` segfault)
+      applied — block-form `let mut v: T = default; match` used instead.
 
 ### **v0.8: Aion Parser**
 - [x] `parser.ai` implementation. AST manipulation via Aion `struct` and `match`.
 - [ ] **v0.8.1 — Parser Gap Closure (depending on #147)**: `parser.ai`
-      structurally handles all AST types in `ast.ai`, but is gated by
-      the lexer gap above. Once #147 lands, every
-      `tests/fixtures/language/*.ai` (55 files) must parse end-to-end
-      into a `Program`. New issue to open after #147 closes.
+      structurally handles all AST types in `ast.ai`, but needs fitness
+      verification on every `tests/fixtures/language/*.ai` (55 files)
+      now that the lexer is at feature parity. Issue to open once we
+      confirm whether the parser is functionally complete or needs
+      porting work for statements the v0.8 skeleton skipped.
 
 ### **v0.9: Aion LLVM Backend**
 - [ ] Direct generation of `.ll` (LLVM IR) text files from the AST.
