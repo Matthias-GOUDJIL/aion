@@ -32,12 +32,12 @@ fn main() {
         _ => io.println("Token 3: FAIL"),
     }
 
-    // 4. 42 (parsed as Identifier for now because no string.parse_int yet)
+    // 4. 42 — now lexed as IntLiteral (per #147 — was Identifier pre-fix).
     let tok4 = l.next_token();
     match tok4.kind {
-        compiler.token.TokenKind::Identifier(val) => {
-            io.print("Token 4: Identifier(");
-            io.print(val);
+        compiler.token.TokenKind::IntLiteral(val) => {
+            io.print("Token 4: IntLiteral(");
+            io.print(string.from_int(val));
             io.println(")");
         },
         _ => io.println("Token 4: FAIL"),

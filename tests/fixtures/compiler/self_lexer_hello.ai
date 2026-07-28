@@ -1,0 +1,123 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.token
+
+// #147 — lex `hello.ai` end-to-end via the self-hosted lexer and assert
+// every token variant. Pre-#147 this fixture would have emitted 4
+// `Illegal` tokens and 0 `StringLiteral` (per the diagnostic in #147);
+// post-#147 the source must lex with zero `Illegal` tokens and the
+// expected `StringLiteral(...)` and `IntLiteral(0)`.
+//
+// The source string is the content of `tests/fixtures/language/hello.ai`
+// (minus the leading `::intent` attribute value's `::` comment for
+// brevity — actually included here verbatim). Lexing `::intent \"...\"`
+// produces `DoubleColon, Identifier(\"intent\"), StringLiteral(...)` —
+// matching the Rust-lexer behaviour exactly.
+
+fn count_kind(kind_name: String, kind: compiler.token.TokenKind) -> bool {
+    // Tag-based dispatch is the cleanest way to count by enum variant
+    // in Aion today (no kind() method or reflection). Each arm returns
+    // true so a `match` can branch on the variant name.
+    match kind {
+        compiler.token.TokenKind::Let => { return std.string.equals(kind_name, "Let"); },
+        compiler.token.TokenKind::Identifier(_) => { return std.string.equals(kind_name, "Identifier"); },
+        compiler.token.TokenKind::StringLiteral(_) => { return std.string.equals(kind_name, "StringLiteral"); },
+        compiler.token.TokenKind::IntLiteral(_) => { return std.string.equals(kind_name, "IntLiteral"); },
+        compiler.token.TokenKind::DoubleColon => { return std.string.equals(kind_name, "DoubleColon"); },
+        compiler.token.TokenKind::Illegal(_) => { return std.string.equals(kind_name, "Illegal"); },
+        compiler.token.TokenKind::LBrace => { return std.string.equals(kind_name, "LBrace"); },
+        compiler.token.TokenKind::RBrace => { return std.string.equals(kind_name, "RBrace"); },
+        compiler.token.TokenKind::LParen => { return std.string.equals(kind_name, "LParen"); },
+        compiler.token.TokenKind::RParen => { return std.string.equals(kind_name, "RParen"); },
+        compiler.token.TokenKind::Dot => { return std.string.equals(kind_name, "Dot"); },
+        compiler.token.TokenKind::Comma => { return std.string.equals(kind_name, "Comma"); },
+        compiler.token.TokenKind::Semicolon => { return std.string.equals(kind_name, "Semicolon"); },
+        compiler.token.TokenKind::Eq => { return std.string.equals(kind_name, "Eq"); },
+        compiler.token.TokenKind::Return => { return std.string.equals(kind_name, "Return"); },
+        compiler.token.TokenKind::EOF => { return std.string.equals(kind_name, "EOF"); },
+        _ => { return false; },
+    }
+}
+
+fn main() {
+    // hello.ai source, verbatim (single-line).
+    let source = "::intent \"Test standard output\"
+fn main() {
+    io.println(\"Hello from Test Harness!\")
+    return 0
+}"
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut legal = 0
+    let mut illegal = 0
+    let mut idents = 0
+    let mut strings = 0
+    let mut ints = 0
+    let mut total = 0
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        total = total + 1
+        match tok.kind {
+            compiler.token.TokenKind::EOF => { done = true },
+            compiler.token.TokenKind::Illegal(_) => { illegal = illegal + 1 },
+            compiler.token.TokenKind::Identifier(_) => { idents = idents + 1 },
+            compiler.token.TokenKind::StringLiteral(_) => { strings = strings + 1 },
+            compiler.token.TokenKind::IntLiteral(_) => { ints = ints + 1 },
+            _ => { legal = legal + 1 },
+        }
+    }
+    io.print("total tokens: ")
+    io.println(string.from_int(total))
+    io.print("illegal: ")
+    io.println(string.from_int(illegal))
+    io.print("identifiers: ")
+    io.println(string.from_int(idents))
+    io.print("strings: ")
+    io.println(string.from_int(strings))
+    io.print("ints: ")
+    io.println(string.from_int(ints))
+
+    // Re-lex and print the first 8 tokens so the snapshot exercises
+    // concrete variants. We rebuild the lexer to keep code simple.
+    let mut lex2 = compiler.lexer.Lexer_new(source)
+    let mut i = 0
+    let mut done2 = false
+    while !done2 && i < 12 {
+        let tok = lex2.next_token()
+        match tok.kind {
+            compiler.token.TokenKind::DoubleColon => io.println("DoubleColon"),
+            compiler.token.TokenKind::Identifier(s) => {
+                io.print("Identifier(\"")
+                io.print(s)
+                io.println("\")")
+            },
+            compiler.token.TokenKind::StringLiteral(s) => {
+                io.print("StringLiteral(\"")
+                io.print(s)
+                io.println("\")")
+            },
+            compiler.token.TokenKind::IntLiteral(n) => {
+                io.print("IntLiteral(")
+                io.print(string.from_int(n))
+                io.println(")")
+            },
+            compiler.token.TokenKind::Fn => io.println("Fn"),
+            compiler.token.TokenKind::Let => io.println("Let"),
+            compiler.token.TokenKind::Return => io.println("Return"),
+            compiler.token.TokenKind::LBrace => io.println("LBrace"),
+            compiler.token.TokenKind::RBrace => io.println("RBrace"),
+            compiler.token.TokenKind::LParen => io.println("LParen"),
+            compiler.token.TokenKind::RParen => io.println("RParen"),
+            compiler.token.TokenKind::Dot => io.println("Dot"),
+            compiler.token.TokenKind::Eq => io.println("Eq"),
+            compiler.token.TokenKind::EOF => {
+                io.println("EOF")
+                done2 = true
+            },
+            _ => io.println("Other"),
+        }
+        i = i + 1
+    }
+}
