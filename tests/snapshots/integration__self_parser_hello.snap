@@ -1,0 +1,12 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/self_parser_hello\")"
+---
+tokens: 9
+parser constructed
+parse_program returned
+parse_program ok
+unwrap done
+decls bound
+declarations: 1
+done

@@ -507,6 +507,11 @@ fn test_self_lexer_hello() {
     assert_snapshot!(run_aion_test("compiler/self_lexer_hello"));
 }
 #[test]
+fn test_self_parser_hello() {
+    // Validates the self-hosted lex+parse chain on a minimal `fn main()`. #147 / #129 prerequisite.
+    assert_snapshot!(run_aion_test("compiler/self_parser_hello"));
+}
+#[test]
 fn test_optimization_check() {
     assert_snapshot!(run_aion_test("compiler/optimization_check"));
 }

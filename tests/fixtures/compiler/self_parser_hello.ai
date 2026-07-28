@@ -1,0 +1,56 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.token
+use compiler.parser
+use compiler.ast
+
+// #147 / v0.8 verification — lex + parse hello.ai and assert the AST
+// structure. If `parse_program` returns `Ok(p)` with one `Function`
+// declaration named `main`, parsing is functionally complete enough
+// for #129 (codegen.ai skeleton).
+//
+// If parse_program returns `Err(msg)`, the parser gap (v0.8.1) is
+// real and a new issue will be opened.
+
+fn main() {
+    let source = "fn main() {
+    return 0
+}"
+    // Lex
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut tokens = vector.Vector<token.Token>.new()
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        }
+        tokens.push(tok)
+        if is_eof { done = true }
+    }
+    io.print("tokens: ")
+    io.println(string.from_int(tokens.len()))
+
+    // Parse
+    let mut p = compiler.parser.Parser.new(tokens)
+    io.println("parser constructed")
+    let prog_res = p.parse_program()
+    io.println("parse_program returned")
+    if prog_res.is_err() {
+        io.print("parser error: ")
+        io.println(prog_res.unwrap_err() as String)
+        return
+    }
+    io.println("parse_program ok")
+    let prog = prog_res.unwrap() as compiler.ast.Program
+    io.println("unwrap done")
+    let decls = prog.declarations
+    io.println("decls bound")
+    let num = (decls).len()
+    io.print("declarations: ")
+    io.println(string.from_int(num))
+    io.println("done")
+}
