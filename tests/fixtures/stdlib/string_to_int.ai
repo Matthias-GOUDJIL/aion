@@ -1,0 +1,71 @@
+use std.string
+use std.io
+
+fn show(label: String, input: String) {
+    let out = std.string.to_int(input)
+    match out {
+        Option::Some(n) => {
+            io.print(label)
+            io.print(": Some(")
+            io.print(string.from_int(n))
+            io.println(")")
+        },
+        Option::None => {
+            io.print(label)
+            io.println(": None")
+        },
+    }
+}
+
+fn expect_none(label: String, input: String) {
+    let out = std.string.to_int(input)
+    match out {
+        Option::Some(n) => {
+            io.print(label)
+            io.print(": BUG Some(")
+            io.print(string.from_int(n))
+            io.println(")")
+        },
+        Option::None => {
+            io.print(label)
+            io.println(": None ok")
+        },
+    }
+}
+
+fn main() {
+    // Nominal.
+    show("zero", "0")
+    show("one", "1")
+    show("ten", "10")
+    show("large", "123456789")
+    show("zeros_pad", "007")
+    show("all_digits", "9876543210")
+
+    // Boundary cases — i64::MAX = 9223372036854775807 (19 digits).
+    show("max", "9223372036854775807")
+    show("max_plus_one", "9223372036854775808")
+    show("max_minus_one", "9223372036854775806")
+    show("twenty_nines", "99999999999999999999")
+
+    // Error cases.
+    expect_none("empty", "")
+    expect_none("abc", "abc")
+    expect_none("mixed", "12abc")
+    expect_none("leading_space", " 42")
+    expect_none("trailing_space", "42 ")
+    expect_none("negative", "-42")
+    expect_none("float", "3.14")
+    expect_none("plus_sign", "+42")
+    expect_none("hex", "0x10")
+
+    // Length sanity: 3-digit input -> 3-char output `Some(...)` line.
+    let chk = std.string.to_int("123")
+    match chk {
+        Option::Some(n) => {
+            io.print("len_check_value: ")
+            io.println(string.from_int(n))
+        },
+        Option::None => io.println("len_check: BUG None"),
+    }
+}

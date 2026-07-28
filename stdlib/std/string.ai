@@ -22,6 +22,55 @@ pub fn to_float(s: String) -> f64 {
     @intrinsic("str_to_float", s)
 }
 
+// Parse a non-negative decimal integer string into `Option<i64>`.
+// Returns `Option::None` on:
+//   - empty input
+//   - any non-digit character (no partial parse)
+//   - overflow past i64::MAX (9223372036854775807)
+//
+// A leading `-` is intentionally out of scope — the lexer handles `-`
+// separately and binds unary minus at the parser level. Callers needing
+// signed parse should pair `to_int` with explicit sign handling
+// (check the first char, then call `to_int` on the rest).
+//
+// Issue #148. Pure-Aion implementation (no C runtime change) so the
+// overflow boundary is detectable; `aion_str_to_float` and similar
+// intrinsics lose the "0 vs. error" distinction by returning 0.0.
+//
+// Overflow check: walk chars left-to-right, accumulate `result = result *
+// 10 + digit`, but reject BEFORE the multiplication when:
+//   - `result > 9 223 372 036 854 775 80` (== i64::MAX / 10), OR
+//   - `result == 9 223 372 036 854 775 80` and `digit > 7`
+// 9223372036854775807 = i64::MAX. 9223372036854775808 wraps silently to
+// -9223372036854775808 in Aion's wrapping arithmetic — must be detected
+// before the multiply.
+pub fn to_int(s: String) -> Option<i64> {
+    let n = std.string.len(s)
+    if n == 0 {
+        return Option::None
+    }
+    let max_div_10: i64 = 922337203685477580
+    let max_mod_10: i64 = 7
+    let mut result: i64 = 0
+    let mut i = 0
+    while i < n {
+        let c = std.string.at(s, i)
+        if c < 48 || c > 57 {
+            return Option::None
+        }
+        let d = c - 48
+        if result > max_div_10 {
+            return Option::None
+        }
+        if result == max_div_10 && d > max_mod_10 {
+            return Option::None
+        }
+        result = result * 10 + d
+        i = i + 1
+    }
+    return Option::Some(result)
+}
+
 pub fn equals(s1: String, s2: String) -> bool {
     let len1 = std.string.len(s1);
     let len2 = std.string.len(s2);

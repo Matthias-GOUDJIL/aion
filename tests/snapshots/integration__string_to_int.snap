@@ -1,0 +1,24 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/string_to_int\")"
+---
+zero: Some(0)
+one: Some(1)
+ten: Some(10)
+large: Some(123456789)
+zeros_pad: Some(7)
+all_digits: Some(9876543210)
+max: Some(9223372036854775807)
+max_plus_one: None
+max_minus_one: Some(9223372036854775806)
+twenty_nines: None
+empty: None ok
+abc: None ok
+mixed: None ok
+leading_space: None ok
+trailing_space: None ok
+negative: None ok
+float: None ok
+plus_sign: None ok
+hex: None ok
+len_check_value: 123
