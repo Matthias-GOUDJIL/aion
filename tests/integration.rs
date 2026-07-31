@@ -512,6 +512,14 @@ fn test_self_parser_hello() {
     assert_snapshot!(run_aion_test("compiler/self_parser_hello"));
 }
 #[test]
+fn test_codegen_skeleton() {
+    // #129 — codegen.ai skeleton: emits a minimal `.ll` for `fn main() { return 0 }`.
+    // The snapshot's body is the produced LLVM IR text; `opt-15 --opaque-pointers
+    // -verify` accepts it (verified manually — the integration runner does not
+    // invoke opt-15 today).
+    assert_snapshot!(run_aion_test("compiler/codegen_skeleton"));
+}
+#[test]
 fn test_optimization_check() {
     assert_snapshot!(run_aion_test("compiler/optimization_check"));
 }

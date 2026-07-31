@@ -1,0 +1,62 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.token
+use compiler.parser
+use compiler.ast
+use compiler.codegen
+
+// #129 — codegen.ai skeleton end-to-end test.
+//
+// Lex + parse a minimal source via the self-hosted front end, feed
+// the AST to `compiler/codegen.ai`, print the emitted `.ll` to stdout.
+// The snapshot test asserts the exact `.ll` text.
+//
+// Why `fn main() { return 0 }` inline and not `tests/fixtures/language/
+// hello.ai`: the self-hosted parser (`compiler/parser.ai`) cannot parse
+// `::intent` attribute prefixes yet (#156 — parser gap closure). Once
+// #156 lands, a follow-up will run the full fixture through this path.
+//
+// Acceptance (per #129):
+//   - `compiler/codegen.ai` compiles with the current Rust `aionc`     [x]
+//   - `aion_type_to_llvm` covers every primitive in SPEC §2             [x]
+//   - Emit a minimal `.ll` containing only the `main` declaration       [x]
+//   - Output passes `opt-15 -verify` with no errors
+//     (verified separately by the fixture's snapshot review — the test
+//      runner does not invoke opt-15 in CI today)
+//   - Snapshot test committed                                          [x]
+
+fn main() {
+    let source = "fn main() {
+    return 0
+}";
+    // Lex
+    let mut lex = compiler.lexer.Lexer_new(source);
+    let mut tokens = vector.Vector<token.Token>.new();
+    let mut done = false;
+    while !done {
+        let tok = lex.next_token();
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        };
+        tokens.push(tok);
+        if is_eof { done = true; }
+    }
+
+    // Parse
+    let mut p = compiler.parser.Parser.new(tokens);
+    let prog_res = p.parse_program();
+    if prog_res.is_err() {
+        io.print("parser error: ");
+        io.println(prog_res.unwrap_err() as String);
+        return;
+    }
+    let prog = prog_res.unwrap() as compiler.ast.Program;
+
+    // Compile
+    let mut cg = compiler.codegen.Codegen.new("aion_module");
+    let ir = cg.compile(prog);
+    io.println(ir);
+}
