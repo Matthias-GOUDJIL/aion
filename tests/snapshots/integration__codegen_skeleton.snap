@@ -1,0 +1,21 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/codegen_skeleton\")"
+---
+; ModuleID = 'aion_module'
+source_filename = "aion_module"
+
+declare i32 @printf(i8*, ...)
+declare void @exit(i32)
+declare void @GC_init()
+declare ptr @aion_malloc(i64)
+declare void @aion_io_println(ptr)
+declare void @aion_io_print(ptr)
+declare ptr @aion_int_to_str(i64)
+@aion_argc = global i64 0
+@aion_argv = global ptr null
+
+define i32 @main() {
+entry:
+  ret i32 0
+}

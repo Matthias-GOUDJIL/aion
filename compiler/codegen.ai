@@ -1,0 +1,262 @@
+module compiler.codegen
+
+use std.string
+use std.collections.vector
+use std.collections.ordered_map
+use std.option
+use compiler.ast
+
+// `compiler/codegen.ai` — Aion self-hosted LLVM IR emitter. #9.1 / #129.
+//
+// Aims: take a `compiler.ast.Program` and emit a textual `.ll` (LLVM 15
+// IR) string. Mirrors `src/codegen/` (Rust, 5 110 LOC) at a structural
+// level: every Rust helper has an Aion counterpart, but the codegen
+// state lives in a single Codegen struct for now (the planned split
+// into `compiler/codegen/expressions.ai` + `compiler/codegen/lvalues.ai`
+// is tracked by the audit in `docs/codegen_blockers.md` §B9 → #141,
+// which proves mutual `use` works).
+//
+// Phase 2 v0.9 sub-issue #129 — skeleton + primitive type lowering
+// only. All expression & statement variants come in later sub-issues
+// (#9.3/#131 expressions, #9.4/#132 control flow, #9.5/#133 calls &
+// generics, #9.6/#134 aggregate types & match, #9.7/#135 Ouroboros).
+//
+// Known limitations of this skeleton slice:
+//
+// - Only `ast.Statement::Return(expr, ty)` and
+//   `ast.Expression::Integer(n)` are lowered. Every other variant
+//   lowers to a placeholder `i64 0` literal so the `.ll` text is still
+//   syntactically valid. The full lowering is the subject of #131/#132.
+// - Only `ast.Declaration::Function` is processed. `Struct`/`Enum`/
+//   `Impl`/`Interface` are skipped for now — #134 covers aggregates.
+// - `_`/`N`/`Self` token handling issues deferred to #156 (parser gap).
+// - `let`/`if`/`while`/`for`/`match` are NOT lowered yet (#132).
+//
+// Determinism: this struct uses `OrderedMap` (stdlib/std/collections/
+// ordered_map.ai, #136) for struct/enum name -> signature storage so
+// that the emitted IR is byte-identical across runs (no `HashMap`'s
+// randomized iteration order). Snapshot tests rely on this.
+
+pub struct Codegen {
+    module_name: String,
+    output: vector.Vector<String>,
+    ssa_counter: i64,
+    struct_types: ordered_map.OrderedMap<String>,
+    function_signatures: ordered_map.OrderedMap<String>,
+}
+
+// LLVM type lowering for every primitive in `docs/SPEC.md` §2.
+// Mirrors `src/codegen/types.rs:135-162` (type_to_llvm).
+//
+//   i8/u8      -> "i8"        (LLVM int width = the bit width)
+//   i16/u16    -> "i16"
+//   i32/u32    -> "i32"
+//   i64/u64    -> "i64"       (default Aion integer width)
+//   f32        -> "float"     (LLVM's 32-bit float)
+//   f64        -> "double"    (LLVM's 64-bit float)
+//   bool       -> "i64"       (matches `types.rs:149` — bool is i64,
+//                              not i1, at the codegen level; the type
+//                              checker coerces uses to 0/1)
+//   String     -> "ptr"       (opaque pointer — `String` is a heap
+//                              pointer to a C-string per SPEC §2)
+//   Duration   -> "i64"       (ns epoch, per SPEC_TIME.md)
+//   Date       -> "i64"       (epoch millis, per SPEC_TIME.md)
+//   ptr        -> "ptr"
+//   () / void  -> "void"
+//   everything else (struct/enum/tuple/array/generic/ptr-to-T) -> "ptr"
+//   (opaque pointer per `types.rs:152-160`'s fall-through).
+pub fn aion_type_to_llvm(name: String) -> String {
+    if std.string.equals(name, "i8") { return "i8"; }
+    if std.string.equals(name, "u8") { return "i8"; }
+    if std.string.equals(name, "i16") { return "i16"; }
+    if std.string.equals(name, "u16") { return "i16"; }
+    if std.string.equals(name, "i32") { return "i32"; }
+    if std.string.equals(name, "u32") { return "i32"; }
+    if std.string.equals(name, "i64") { return "i64"; }
+    if std.string.equals(name, "u64") { return "i64"; }
+    if std.string.equals(name, "f32") { return "float"; }
+    if std.string.equals(name, "f64") { return "double"; }
+    if std.string.equals(name, "bool") { return "i64"; }
+    if std.string.equals(name, "String") { return "ptr"; }
+    if std.string.equals(name, "Duration") { return "i64"; }
+    if std.string.equals(name, "Date") { return "i64"; }
+    if std.string.equals(name, "ptr") { return "ptr"; }
+    if std.string.equals(name, "()") { return "void"; }
+    if std.string.equals(name, "void") { return "void"; }
+    return "ptr";
+}
+
+impl Codegen {
+    pub fn new(module_name: String) -> Codegen {
+        Codegen {
+            module_name: module_name,
+            output: vector.Vector<String>.new(),
+            ssa_counter: 0,
+            struct_types: ordered_map.OrderedMap<String>.new(),
+            function_signatures: ordered_map.OrderedMap<String>.new(),
+        }
+    }
+
+    // Emit the leading module header + runtime `declare` lines.
+    // Mirrors `src/codegen/compiler.rs:275-410` — only the subset needed
+    // for #129's `fn main() { return 0 }` target is emitted; every
+    // additional runtime symbol will be added as later sub-issues
+    // (#130/#131/#134) actually exercise the corresponding feature.
+    //
+    // Note: no `target datalayout` / `target triple` lines — the Rust
+    // codegen (`src/codegen/compiler.rs`) also omits them, letting LLVM
+    // derive the defaults when `opt-15`/`llc-15` consume the `.ll`. Hard-
+    // coding a datalayout here made `opt-15 -verify` reject the output
+    // (pointer ABI alignment must be a power of 2 in LLVM 15's stricter
+    // verifier).
+    fn emit_header(mut self) {
+        let mut buf = self.output;
+        buf.push("; ModuleID = '" + self.module_name + "'");
+        buf.push("source_filename = \"" + self.module_name + "\"");
+        buf.push("");
+        // Common runtime symbols needed by every Aion program (GC,
+        // print, exit, the args globals). Mirrors Rust's `register_builtins`
+        // + the `module.add_function(...)` block in `compiler.rs:275-410`.
+        buf.push("declare i32 @printf(i8*, ...)");
+        buf.push("declare void @exit(i32)");
+        buf.push("declare void @GC_init()");
+        buf.push("declare ptr @aion_malloc(i64)");
+        buf.push("declare void @aion_io_println(ptr)");
+        buf.push("declare void @aion_io_print(ptr)");
+        buf.push("declare ptr @aion_int_to_str(i64)");
+        buf.push("@aion_argc = global i64 0");
+        buf.push("@aion_argv = global ptr null");
+        buf.push("");
+        self.output = buf;
+    }
+
+    // Full program compile. Returns the joined IR text so the caller can
+    // `std.fs.write(path, content)` it (using `std.string.join`, #140)
+    // and run `opt-15 -verify` on the file.
+    pub fn compile(mut self, prog: compiler.ast.Program) -> String {
+        self.emit_header();
+        let decls = prog.declarations;
+        let n = (decls).len();
+        let mut i = 0;
+        while i < n {
+            let decl_opt = (decls).get(i);
+            match decl_opt {
+                Option::Some(d) => {
+                    self.compile_decl(d);
+                },
+                Option::None => {},
+            }
+            i = i + 1;
+        }
+        let joined = std.string.join(self.output, "\n");
+        return joined;
+    }
+
+    fn compile_decl(mut self, d: compiler.ast.Declaration) {
+        match d {
+            compiler.ast.Declaration::Function(f) => {
+                self.compile_function(f);
+            },
+            // #129 skeleton skips Struct/Enum/Impl/Interface — #134 covers them.
+            _ => {},
+        }
+    }
+
+    // Emit `define <ret_ty> @<name>(...) { entry: ... }`.
+    // For #129, the body is a forward scan for the first `Return` statement.
+    // Every other statement is silently skipped — full control-flow
+    // lowering is #132.
+    fn compile_function(mut self, f: compiler.ast.Function) {
+        let ret_ty_str = aion_type_to_llvm(f.return_type);
+        // `main` has the C signature `i32 @main(i32, ptr)` per
+        // `src/codegen/compiler.rs:100-108`. Aion's parser defaults
+        // `return_type` to "void" when no `-> T` is present (parser.ai
+        // parse_function), but `main` returning no value must still
+        // produce `ret i32 0` to match the C ABI. Override here.
+        let mut ret_ty = ret_ty_str;
+        let mut sig = "define i32 @main() {";
+        if std.string.equals(f.name, "main") {
+            sig = "define i32 @main() {";
+            ret_ty = "i32";
+        } else {
+            sig = "define " + ret_ty + " @" + f.name + "() {";
+        }
+        let mut buf = self.output;
+        buf.push(sig);
+        buf.push("entry:");
+        // For #129: only handle the first Return statement we find.
+        let body = f.body;
+        let n = (body).len();
+        let mut i = 0;
+        let mut emitted_ret = false;
+        while i < n {
+            let stmt_opt = (body).get(i);
+            match stmt_opt {
+                Option::Some(s) => {
+                    if self.compile_stmt(s, ret_ty) {
+                        emitted_ret = true;
+                    }
+                },
+                Option::None => {},
+            }
+            i = i + 1;
+        }
+        // LLVM requires every block to end in a terminator. If no `ret`
+        // was emitted, emit a default `ret void` / `ret <ret_ty> 0`.
+        if !emitted_ret {
+            if std.string.equals(ret_ty, "void") {
+                buf.push("  ret void");
+            } else {
+                buf.push("  ret " + ret_ty + " 0");
+            }
+        }
+        buf.push("}");
+        buf.push("");
+        self.output = buf;
+    }
+
+    // Lower a single statement. Returns `true` iff a terminator was
+    // emitted (so the caller knows not to add a default one).
+    fn compile_stmt(mut self, s: compiler.ast.Statement, ret_ty: String) -> bool {
+        match s {
+            compiler.ast.Statement::Return(expr, _ty) => {
+                let v = self.compile_expr(expr);
+                // For `main`, the codegen converts i64 -> i32 per
+                // `src/codegen/compiler.rs:206-214`. We respect that
+                // here only for `main`; other functions return their
+                // declared type verbatim.
+                if std.string.equals(ret_ty, "i64") {
+                    let mut buf = self.output;
+                    buf.push("  ret i64 " + v);
+                    self.output = buf;
+                } else {
+                    let mut buf = self.output;
+                    buf.push("  ret " + ret_ty + " " + v);
+                    self.output = buf;
+                }
+                return true;
+            },
+            // Other statements lowered in later sub-issues (#132, #134).
+            _ => {},
+        }
+        return false;
+    }
+
+    // Lower an expression to an LLVM operand VALUE STRING (e.g. `"0"`,
+    // not the typed form). The caller assembles `"ret i64 " + value` so
+    // the type comes from the function's return type, not from the
+    // expression. #131 will introduce typed operand tracking and SSA.
+    fn compile_expr(mut self, e: compiler.ast.Expression) -> String {
+        match e {
+            compiler.ast.Expression::Integer(n) => {
+                return std.string.from_int(n);
+            },
+            // All other variants lowered in #131 — emit a safe placeholder
+            // for now so the `.ll` remains syntactically valid (later
+            // sub-issues will replace these with real operands).
+            _ => {
+                return "0";
+            },
+        }
+    }
+}
