@@ -515,9 +515,16 @@ fn test_self_parser_hello() {
 fn test_codegen_skeleton() {
     // #129 — codegen.ai skeleton: emits a minimal `.ll` for `fn main() { return 0 }`.
     // The snapshot's body is the produced LLVM IR text; `opt-15 --opaque-pointers
-    // -verify` accepts it (verified manually — the integration runner does not
+    // -verify` accepts it (verified manually — the integration runners do not
     // invoke opt-15 today).
     assert_snapshot!(run_aion_test("compiler/codegen_skeleton"));
+}
+#[test]
+fn test_self_parser_call() {
+    // #156 Slice 1 — verifies the parser's postfix dispatch loop produces
+    // a Call AST node for `io.println("hello")` (vs the pre-#156 fold-only
+    // path that emitted Identifier("io.println") without the call shape).
+    assert_snapshot!(run_aion_test("compiler/self_parser_call"));
 }
 #[test]
 fn test_optimization_check() {

@@ -36,6 +36,22 @@ impl Parser {
         return opt_token.unwrap();
     }
 
+    // Look ahead `offset` tokens without consuming. Returns EOF for
+    // out-of-range indices (mirrors `src/parser/mod.rs::peek_at`).
+    // Used by `parse_primary` to detect dotted-identifier chains
+    // (`io.println`) without consuming the `.` first. #156 Slice 1.
+    pub fn peek_at(self, offset: i64) -> token.Token {
+        let target = self.current + offset;
+        if target < 0 {
+            return token.Token::new(token.TokenKind::EOF, 0, 0);
+        }
+        if target >= self.tokens.len() {
+            return token.Token::new(token.TokenKind::EOF, 0, 0);
+        }
+        let opt_token = self.tokens.get(target);
+        return opt_token.unwrap();
+    }
+
     pub fn previous(self) -> token.Token {
         if self.current == 0 {
             return self.tokens.get(0).unwrap();
@@ -137,11 +153,71 @@ impl Parser {
             token.TokenKind::StringLiteral(val) => {
                 return result.Result::Ok(ast.Expression::StringLit(val));
             },
+            token.TokenKind::CharLiteral(code) => {
+                // The lexer materializes CharLiteral(i64) carrying the
+                // char code. The Aion codegen treats char as an i64
+                // integer (per `docs/SPEC.md` §2). Reuse Integer here
+                // so the existing codegen path for Integer already
+                // produces the right IR (`i64 N`). #156 Phase 1.
+                return result.Result::Ok(ast.Expression::Integer(code));
+            },
             token.TokenKind::Identifier(val) => {
-                return result.Result::Ok(ast.Expression::Identifier(val));
+                // Fold dotted identifiers into a single name string:
+                // `io.println` becomes Identifier("io.println") when
+                // every dot is between two identifiers (no call). This
+                // matches `src/parser/mod.rs:1656-1680` and lets the
+                // module-prefixed free functions like `io.print`
+                // resolve via the existing name-resolution path.
+                //
+                // If a `LParen` follows the folded name, we emit a
+                // Call; if a subsequent Dot follows, we descend into
+                // MethodCall / MemberAccess via the postfix loop
+                // (`parse_postfix`).
+                let mut name = val;
+                let mut keep_folding = true;
+                while keep_folding {
+                    let p = self.peek();
+                    let mut is_dot = false;
+                    match p.kind {
+                        token.TokenKind::Dot => { is_dot = true; },
+                        _ => { is_dot = false; },
+                    }
+                    if is_dot {
+                        let p2 = self.peek_at(1);
+                        let mut next_is_ident = false;
+                        match p2.kind {
+                            token.TokenKind::Identifier(_) => { next_is_ident = true; },
+                            _ => { next_is_ident = false; },
+                        }
+                        if next_is_ident {
+                            let _ = self.advance();  // consume '.'
+                            let sub_tk = self.advance();
+                            let mut sub = "";
+                            match sub_tk.kind {
+                                token.TokenKind::Identifier(v) => { sub = v; },
+                                _ => {
+                                    return result.Result::Err(
+                                        "Expected identifier after '.'"
+                                    );
+                                },
+                            }
+                            name = std.string.concat(name, ".");
+                            name = std.string.concat(name, sub);
+                        } else {
+                            keep_folding = false;
+                        }
+                    } else {
+                        keep_folding = false;
+                    }
+                }
+                let mut expr = ast.Expression::Identifier(name);
+                expr = self.parse_postfix(expr);
+                return result.Result::Ok(expr);
             },
             token.TokenKind::SelfToken => {
-                return result.Result::Ok(ast.Expression::Identifier("self"));
+                let mut expr = ast.Expression::Identifier("self");
+                expr = self.parse_postfix(expr);
+                return result.Result::Ok(expr);
             },
             token.TokenKind::DurationLiteral(secs, nanos) => {
                 return result.Result::Ok(ast.Expression::DurationLit(secs, nanos));
@@ -160,17 +236,19 @@ impl Parser {
                 if expr_res.is_err() {
                     return expr_res;
                 }
-                
+
                 let next_tk = self.peek();
                 let mut is_rparen = false;
                 match next_tk.kind {
                     token.TokenKind::RParen => { is_rparen = true; },
                     _ => { is_rparen = false; }
                 }
-                
+
                 if is_rparen {
                     self.advance();
-                    return expr_res;
+                    let inner = expr_res.unwrap();
+                    let mut expr = self.parse_postfix(inner);
+                    return result.Result::Ok(expr);
                 } else {
                     return result.Result::Err("Expected ')' after expression");
                 }
@@ -179,6 +257,199 @@ impl Parser {
                 return result.Result::Err("Expected expression in parse_primary");
             }
         }
+    }
+
+    // Postfix dispatch loop. Mirrors `src/parser/mod.rs:1689-1764` —
+    // handles Call (`(...)` after identifier), MethodCall (`receiver .
+    // method (args)`), MemberAccess (`receiver . field`), and the
+    // downstream dot folding chain. EnumInst (`::Variant`) is deferred
+    // to Slice 2 of #156.
+    //
+    // `trans` (transformer expression) — Aion mode: takes the current
+    // `expr` and returns the dispatch-updated expression after one
+    // postfix token. Loops until no postfix token matches.
+    pub fn parse_postfix(mut self, expr: ast.Expression) -> ast.Expression {
+        let mut current = expr;
+        let mut keep_going = true;
+        while keep_going {
+            let p = self.peek();
+            let mut dispatch = false;
+            match p.kind {
+                token.TokenKind::LParen => { dispatch = true; },
+                token.TokenKind::Dot => { dispatch = true; },
+                _ => { dispatch = false; },
+            }
+            if !dispatch {
+                keep_going = false;
+            } else {
+                let p_kind = p.kind;
+                match p_kind {
+                    token.TokenKind::LParen => {
+                        let _ = self.advance();  // consume '('
+                        let mut args = vector.Vector<ast.Expression>.new();
+                        let mut loop_args = true;
+                        while loop_args {
+                            let ntk = self.peek();
+                            let mut stop = false;
+                            match ntk.kind {
+                                token.TokenKind::RParen => { stop = true; },
+                                token.TokenKind::EOF => { stop = true; },
+                                _ => { stop = false; },
+                            }
+                            if stop {
+                                loop_args = false;
+                            } else {
+                                let a_res = self.parse_expression();
+                                if a_res.is_err() {
+                                    // Bubble error up by returning the
+                                    // bare identifier — parse_primary's
+                                    // caller will observe the leftover
+                                    // tokens as a parse error. This
+                                    // matches the Aion pattern of
+                                    // surfacing parser errors through
+                                    // Result, but here postfix is
+                                    // called from inside parse_primary
+                                    // which already returned Ok.
+                                    return current;
+                                }
+                                args.push(a_res.unwrap());
+                                let ctk = self.peek();
+                                let mut is_comma = false;
+                                match ctk.kind {
+                                    token.TokenKind::Comma => { is_comma = true; },
+                                    _ => { is_comma = false; },
+                                }
+                                if is_comma { let _ = self.advance(); }
+                            }
+                        }
+                        // Consume the closing ')'.
+                        let ctk = self.peek();
+                        let mut is_rparen = false;
+                        match ctk.kind {
+                            token.TokenKind::RParen => { is_rparen = true; },
+                            _ => { is_rparen = false; },
+                        }
+                        if is_rparen { let _ = self.advance(); }
+                        // Build the Call. For now, generic_args is empty
+                        // — #156 Slice 2 (or later) will add `<T>(...)`
+                        // dispatch for generic instantiation. We extract
+                        // the name from the receiver if it is an
+                        // Identifier; otherwise, we fall back to a
+                        // method-call-shaped expression via MethodCall
+                        // (which carries the receiver).
+                        let mut name = "";
+                        match current {
+                            ast.Expression::Identifier(n) => { name = n; },
+                            _ => {
+                                // Receiver is not a bare name — shouldn't
+                                // happen here because parse_postfix is
+                                // only entered from Identifier/Self/LParen.
+                                // Fall back safely.
+                                name = "";
+                            },
+                        }
+                        current = ast.Expression::Call(name, vector.Vector<String>.new(), args);
+                    },
+                    token.TokenKind::Dot => {
+                        let _ = self.advance();  // consume '.'
+                        let m_tk = self.advance();
+                        let mut member = "";
+                        match m_tk.kind {
+                            token.TokenKind::Identifier(v) => { member = v; },
+                            _ => {
+                                // Not a valid member — bail (mirrors the
+                                // Rust parser's `break` on non-ident
+                                // after Dot).
+                                keep_going = false;
+                            },
+                        }
+                        if !keep_going {
+                            break;
+                        }
+                        let next = self.peek();
+                        let mut is_lparen = false;
+                        match next.kind {
+                            token.TokenKind::LParen => { is_lparen = true; },
+                            _ => { is_lparen = false; },
+                        }
+                        if is_lparen {
+                            let _ = self.advance();  // consume '('
+                            let mut args = vector.Vector<ast.Expression>.new();
+                            let mut loop_args = true;
+                            while loop_args {
+                                let ntk = self.peek();
+                                let mut stop = false;
+                                match ntk.kind {
+                                    token.TokenKind::RParen => { stop = true; },
+                                    token.TokenKind::EOF => { stop = true; },
+                                    _ => { stop = false; },
+                                }
+                                if stop {
+                                    loop_args = false;
+                                } else {
+                                    let a_res = self.parse_expression();
+                                    if a_res.is_err() {
+                                        return current;
+                                    }
+                                    args.push(a_res.unwrap());
+                                    let ctk = self.peek();
+                                    let mut is_comma = false;
+                                    match ctk.kind {
+                                        token.TokenKind::Comma => { is_comma = true; },
+                                        _ => { is_comma = false; },
+                                    }
+                                    if is_comma { let _ = self.advance(); }
+                                }
+                            }
+                            let ctk = self.peek();
+                            let mut is_rparen = false;
+                            match ctk.kind {
+                                token.TokenKind::RParen => { is_rparen = true; },
+                                _ => { is_rparen = false; },
+                            }
+                            if is_rparen { let _ = self.advance(); }
+                            current = ast.Expression::MethodCall(
+                                current,
+                                member,
+                                vector.Vector<String>.new(),
+                                args,
+                            );
+                        } else {
+                            // Bare member access — `receiver.member`.
+                            // The Rust parser folds into a dotted
+                            // Identifier if the receiver was an
+                            // Identifier or TypeRef (`src/parser/mod.rs:
+                            // 1742-1752`), otherwise builds MemberAccess.
+                            // We mirror that here so chain
+                            // `a.b.c.d` resolves as `Identifier("a.b.c.d")`
+                            // if all components are bare identifiers.
+                            let mut fold = "";
+                            let mut did_fold = false;
+                            match current {
+                                ast.Expression::Identifier(n) => {
+                                    fold = std.string.concat(n, ".");
+                                    fold = std.string.concat(fold, member);
+                                    did_fold = true;
+                                },
+                                _ => {
+                                    fold = "";
+                                    did_fold = false;
+                                },
+                            }
+                            if did_fold {
+                                current = ast.Expression::Identifier(fold);
+                            } else {
+                                current = ast.Expression::MemberAccess(current, member);
+                            }
+                        }
+                    },
+                    _ => {
+                        keep_going = false;
+                    },
+                }
+            }
+        }
+        return current;
     }
 
     pub fn parse_block(mut self) -> result.Result<vector.Vector<ast.Statement>, String> {

@@ -1,0 +1,10 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/self_parser_call\")"
+---
+tokens: 13
+parse ok
+declarations: 1
+function: main
+statements: 1
+call name: io.println

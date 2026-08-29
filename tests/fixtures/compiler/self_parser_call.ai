@@ -1,0 +1,64 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.parser
+use compiler.ast
+use compiler.token
+
+fn main() {
+    let source = "fn main() {
+    io.println(\"hello\")
+}"
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut tokens = vector.Vector<token.Token>.new()
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        }
+        tokens.push(tok)
+        if is_eof { done = true }
+    }
+    io.print("tokens: ")
+    io.println(string.from_int(tokens.len()))
+
+    let mut p = compiler.parser.Parser.new(tokens)
+    let prog_res = p.parse_program()
+    if prog_res.is_err() {
+        io.print("parser error: ")
+        io.println(prog_res.unwrap_err() as String)
+        return
+    }
+    io.println("parse ok")
+    let prog = prog_res.unwrap() as compiler.ast.Program
+    let decls = prog.declarations
+    io.print("declarations: ")
+    io.println(string.from_int((decls).len()))
+    let decl = (decls).get(0).unwrap() as compiler.ast.Declaration
+    match decl {
+        compiler.ast.Declaration::Function(f) => {
+            io.print("function: ")
+            io.println(f.name)
+            let body = f.body
+            io.print("statements: ")
+            io.println(string.from_int((body).len()))
+            let s0 = (body).get(0).unwrap() as compiler.ast.Statement
+            match s0 {
+                compiler.ast.Statement::ExpressionStmt(e) => {
+                    match e {
+                        compiler.ast.Expression::Call(name, _g, _args) => {
+                            io.print("call name: ")
+                            io.println(name)
+                        },
+                        _ => io.println("not a call"),
+                    }
+                },
+                _ => io.println("not expr stmt"),
+            }
+        },
+        _ => io.println("not function"),
+    }
+}
