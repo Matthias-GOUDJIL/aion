@@ -1,0 +1,129 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/codegen_control_flow\")"
+---
+; ModuleID = 'aion_module'
+source_filename = "aion_module"
+
+declare i32 @printf(i8*, ...)
+declare void @exit(i32)
+declare void @GC_init()
+declare ptr @aion_malloc(i64)
+declare ptr @aion_realloc(i64, i64)
+declare void @aion_free(ptr)
+declare void @aion_memzero(ptr, i64)
+declare void @aion_io_println(ptr)
+declare void @aion_io_print(ptr)
+declare ptr @aion_io_read_line()
+declare ptr @aion_int_to_str(i64)
+declare ptr @aion_float_to_str(double)
+declare double @aion_str_to_float(ptr)
+declare i64 @aion_string_len(ptr)
+declare i64 @aion_str_eq(ptr, ptr)
+declare ptr @aion_str_concat(ptr, ptr)
+declare i64 @aion_str_at(ptr, i64)
+declare ptr @aion_str_substr(ptr, i64, i64)
+declare ptr @aion_char_to_str(i64)
+declare ptr @aion_read_file(ptr)
+declare i64 @aion_write_file(ptr, ptr)
+declare i64 @aion_append_file(ptr, ptr)
+declare i64 @aion_fs_exists(ptr)
+declare ptr @aion_getenv(ptr)
+declare i64 @aion_get_argc()
+declare ptr @aion_get_argv_index(i64)
+declare void @aion_array_oob(i64, i64)
+declare void @aion_spawn(ptr)
+@aion_argc = global i64 0
+@aion_argv = global ptr null
+
+@.str.0 = private unnamed_addr constant [4 x i8] c"ten\00"
+@.str.1 = private unnamed_addr constant [6 x i8] c"other\00"
+@.str.2 = private unnamed_addr constant [5 x i8] c"done\00"
+
+define i32 @main() {
+entry:
+  %i.addr = alloca i64
+  store i64 0, ptr %i.addr
+  %sum.addr = alloca i64
+  store i64 0, ptr %sum.addr
+  br label %while.cond.0
+while.cond.0:
+  %t0 = load i64, ptr %i.addr
+  %t1 = icmp slt i64 %t0, 5
+  %t2 = zext i1 %t1 to i64
+  %t3 = trunc i64 %t2 to i1
+  br i1 %t3, label %while.body.0, label %while.exit.0
+while.body.0:
+  %t4 = load i64, ptr %sum.addr
+  %t5 = load i64, ptr %i.addr
+  %t6 = add i64 %t4, %t5
+  store i64 %t6, ptr %sum.addr
+  %t7 = load i64, ptr %i.addr
+  %t8 = add i64 %t7, 1
+  store i64 %t8, ptr %i.addr
+  br label %while.cond.0
+while.exit.0:
+  %t9 = load i64, ptr %sum.addr
+  %t10 = icmp eq i64 %t9, 10
+  %t11 = zext i1 %t10 to i64
+  %t12 = trunc i64 %t11 to i1
+  br i1 %t12, label %logic_rhs.1, label %logic_merge.1
+logic_rhs.1:
+  %t13 = load i64, ptr %i.addr
+  %t14 = icmp eq i64 %t13, 5
+  %t15 = zext i1 %t14 to i64
+  %t16 = trunc i64 %t15 to i1
+  br label %logic_merge.1
+logic_merge.1:
+  %t17 = phi i1 [ 0, %while.exit.0 ], [ %t16, %logic_rhs.1 ]
+  %t18 = zext i1 %t17 to i64
+  %t19 = trunc i64 %t18 to i1
+  br i1 %t19, label %then.2, label %else.2
+then.2:
+  call void @aion_io_println(ptr @.str.0)
+  br label %ifcont.2
+else.2:
+  call void @aion_io_println(ptr @.str.1)
+  br label %ifcont.2
+ifcont.2:
+  %n.addr = alloca i64
+  store i64 0, ptr %n.addr
+  br label %while.cond.3
+while.cond.3:
+  %t20 = trunc i64 1 to i1
+  br i1 %t20, label %while.body.3, label %while.exit.3
+while.body.3:
+  %t21 = load i64, ptr %n.addr
+  %t22 = add i64 %t21, 1
+  store i64 %t22, ptr %n.addr
+  %t23 = load i64, ptr %n.addr
+  %t24 = icmp eq i64 %t23, 3
+  %t25 = zext i1 %t24 to i64
+  %t26 = trunc i64 %t25 to i1
+  br i1 %t26, label %then.4, label %else.4
+then.4:
+  br label %while.exit.3
+else.4:
+  br label %ifcont.4
+ifcont.4:
+  br label %while.cond.3
+while.exit.3:
+  call void @aion_io_println(ptr @.str.2)
+  %t27 = trunc i64 0 to i32
+  ret i32 %t27
+}
+
+define i64 @twice(i64 %x) {
+entry:
+  %t28 = mul i64 %x, 2
+  ret i64 %t28
+}
+
+define i64 @usecall() {
+entry:
+  %t29 = call i64 @twice(i64 21)
+  %r.addr = alloca i64
+  store i64 %t29, ptr %r.addr
+  %t30 = load i64, ptr %r.addr
+  ret i64 %t30
+}

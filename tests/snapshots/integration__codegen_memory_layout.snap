@@ -9,9 +9,30 @@ declare i32 @printf(i8*, ...)
 declare void @exit(i32)
 declare void @GC_init()
 declare ptr @aion_malloc(i64)
+declare ptr @aion_realloc(i64, i64)
+declare void @aion_free(ptr)
+declare void @aion_memzero(ptr, i64)
 declare void @aion_io_println(ptr)
 declare void @aion_io_print(ptr)
+declare ptr @aion_io_read_line()
 declare ptr @aion_int_to_str(i64)
+declare ptr @aion_float_to_str(double)
+declare double @aion_str_to_float(ptr)
+declare i64 @aion_string_len(ptr)
+declare i64 @aion_str_eq(ptr, ptr)
+declare ptr @aion_str_concat(ptr, ptr)
+declare i64 @aion_str_at(ptr, i64)
+declare ptr @aion_str_substr(ptr, i64, i64)
+declare ptr @aion_char_to_str(i64)
+declare ptr @aion_read_file(ptr)
+declare i64 @aion_write_file(ptr, ptr)
+declare i64 @aion_append_file(ptr, ptr)
+declare i64 @aion_fs_exists(ptr)
+declare ptr @aion_getenv(ptr)
+declare i64 @aion_get_argc()
+declare ptr @aion_get_argv_index(i64)
+declare void @aion_array_oob(i64, i64)
+declare void @aion_spawn(ptr)
 @aion_argc = global i64 0
 @aion_argv = global ptr null
 
@@ -22,6 +43,8 @@ declare ptr @aion_int_to_str(i64)
 %Maybe = type { i64, [64 x i8] }
 define i32 @main() {
 entry:
+  %s.addr = alloca ptr
+  store ptr @.str.0, ptr %s.addr
   %t0 = trunc i64 0 to i32
   ret i32 %t0
 }
