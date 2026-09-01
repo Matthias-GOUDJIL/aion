@@ -1,0 +1,90 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.parser
+use compiler.ast
+use compiler.codegen
+
+// #131 — simple expression lowering: literals (int, float, string,
+// boolean, duration, date), identifiers (function params), infix
+// operators (arith + comparisons via icmp/zext), and casts (trunc/
+// zext/sitofp). SSA temporaries %tN with a module-wide counter.
+//
+// Acceptance (per #131):
+//   - Every supported variant returns a typed SSA operand          [x]
+//   - `+ - * / % == != < <= > >=` lowered; comparisons produce
+//     icmp i1 then zext to i64 (Aion bools are i64, SPEC §2)       [x]
+//   - Cast lowering: trunc / zext / sitofp (fptosi for double->int,
+//     correct in the textual IR — #151's inkwell bit_cast bug does
+//     not apply to the text emitter)                               [x]
+//   - Output passes `opt-15 --opaque-pointers -verify` (verified
+//     separately)                                                  [x]
+//   - Snapshot committed                                           [x]
+//
+// Deferred: `&&`/`||` short-circuit control flow (#132), String ops
+// via runtime calls (#133), struct/enum instantiation (#134).
+
+fn main() {
+    let source = "fn main() {
+    return 1 + 2 * 3
+}
+
+fn add(a: i64, b: i64) -> i64 {
+    return a + b
+}
+
+fn flo() -> f64 {
+    return 7.0 / 2.0
+}
+
+fn cmp() -> i64 {
+    return 3 < 5
+}
+
+fn modu() -> i64 {
+    return 10 % 3
+}
+
+fn narrow() -> i64 {
+    return 300 as i8
+}
+
+fn widen() -> i64 {
+    return 42 as i64
+}
+
+fn dur() -> i64 {
+    return 5s
+}
+
+fn greet() -> String {
+    return \"hi\"
+}"
+
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut tokens = vector.Vector<token.Token>.new()
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        }
+        tokens.push(tok)
+        if is_eof { done = true }
+    }
+
+    let mut p = compiler.parser.Parser.new(tokens)
+    let prog_res = p.parse_program()
+    if prog_res.is_err() {
+        io.print("parser error: ")
+        io.println(prog_res.unwrap_err() as String)
+        return
+    }
+    let prog = prog_res.unwrap() as compiler.ast.Program
+
+    let mut cg = compiler.codegen.Codegen.new("aion_module")
+    let ir = cg.compile(prog)
+    io.println(ir)
+}

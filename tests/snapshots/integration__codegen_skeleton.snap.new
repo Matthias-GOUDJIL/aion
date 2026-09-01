@@ -1,5 +1,6 @@
 ---
 source: tests/integration.rs
+assertion_line: 520
 expression: "run_aion_test(\"compiler/codegen_skeleton\")"
 ---
 ; ModuleID = 'aion_module'

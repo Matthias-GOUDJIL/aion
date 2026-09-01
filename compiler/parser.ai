@@ -469,14 +469,27 @@ impl Parser {
                     loop_condition = false;
                 } else {
                     let op = self.advance();
-                    
-                    let right_res = self.parse_infix(op_prec);
-                    if right_res.is_err() {
-                        return right_res;
+
+                    // `expr as Type` is a Cast, not an Infix — the right
+                    // side is a TYPE name, not an expression. Mirrors
+                    // `src/parser/mod.rs:1077-1085`. #131.
+                    let mut is_as = false;
+                    match op.kind {
+                        token.TokenKind::As => { is_as = true; },
+                        _ => { is_as = false; },
                     }
-                    let right = right_res.unwrap();
-                    
-                    left = ast.Expression::Infix(left, op, right);
+                    if is_as {
+                        let target = self.parse_type_name();
+                        left = ast.Expression::Cast(left, target);
+                    } else {
+                        let right_res = self.parse_infix(op_prec);
+                        if right_res.is_err() {
+                            return right_res;
+                        }
+                        let right = right_res.unwrap();
+
+                        left = ast.Expression::Infix(left, op, right);
+                    }
                 }
             }
         }

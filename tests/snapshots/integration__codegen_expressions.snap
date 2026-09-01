@@ -1,0 +1,73 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/codegen_expressions\")"
+---
+; ModuleID = 'aion_module'
+source_filename = "aion_module"
+
+declare i32 @printf(i8*, ...)
+declare void @exit(i32)
+declare void @GC_init()
+declare ptr @aion_malloc(i64)
+declare void @aion_io_println(ptr)
+declare void @aion_io_print(ptr)
+declare ptr @aion_int_to_str(i64)
+@aion_argc = global i64 0
+@aion_argv = global ptr null
+
+@.str.0 = private unnamed_addr constant [3 x i8] c"hi\00"
+
+define i32 @main() {
+entry:
+  %t0 = mul i64 2, 3
+  %t1 = add i64 1, %t0
+  %t2 = trunc i64 %t1 to i32
+  ret i32 %t2
+}
+
+define i64 @add(i64 %a, i64 %b) {
+entry:
+  %t3 = add i64 %a, %b
+  ret i64 %t3
+}
+
+define double @flo() {
+entry:
+  %t4 = fdiv double 7.0, 2.0
+  ret double %t4
+}
+
+define i64 @cmp() {
+entry:
+  %t5 = icmp slt i64 3, 5
+  %t6 = zext i1 %t5 to i64
+  ret i64 %t6
+}
+
+define i64 @modu() {
+entry:
+  %t7 = srem i64 10, 3
+  ret i64 %t7
+}
+
+define i64 @narrow() {
+entry:
+  %t8 = trunc i64 300 to i8
+  %t9 = zext i8 %t8 to i64
+  ret i64 %t9
+}
+
+define i64 @widen() {
+entry:
+  ret i64 42
+}
+
+define i64 @dur() {
+entry:
+  ret i64 5000000000
+}
+
+define ptr @greet() {
+entry:
+  ret ptr @.str.0
+}
