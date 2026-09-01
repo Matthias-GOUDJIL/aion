@@ -526,6 +526,12 @@ fn test_codegen_memory_layout() {
     assert_snapshot!(run_aion_test("compiler/codegen_memory_layout"));
 }
 #[test]
+fn test_codegen_expressions() {
+    // #131 — SSA lowering of literals, params, infix operators
+    // (arith + icmp/zext comparisons), and casts (trunc/zext/sitofp).
+    assert_snapshot!(run_aion_test("compiler/codegen_expressions"));
+}
+#[test]
 fn test_self_parser_call() {
     // #156 Slice 1 — verifies the parser's postfix dispatch loop produces
     // a Call AST node for `io.println("hello")` (vs the pre-#156 fold-only

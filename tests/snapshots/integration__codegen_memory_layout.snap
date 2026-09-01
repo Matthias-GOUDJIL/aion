@@ -22,5 +22,6 @@ declare ptr @aion_int_to_str(i64)
 %Maybe = type { i64, [64 x i8] }
 define i32 @main() {
 entry:
-  ret i32 0
+  %t0 = trunc i64 0 to i32
+  ret i32 %t0
 }

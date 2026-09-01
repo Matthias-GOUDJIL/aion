@@ -43,7 +43,28 @@ pub struct Codegen {
     ssa_counter: i64,
     struct_types: ordered_map.OrderedMap<String>,
     function_signatures: ordered_map.OrderedMap<String>,
-    strings: vector.Vector<String>,
+    string_ids: ordered_map.OrderedMap<String>,
+    locals: ordered_map.OrderedMap<String>,
+}
+
+// A lowered expression value: the LLVM operand text (`"0"`, `"%t3"`,
+// `"@.str.0"`) and its LLVM type (`"i64"`, `"double"`, `"ptr"`). #131.
+pub struct Operand {
+    value: String,
+    ty: String,
+}
+
+// LLVM bit width of an integer type name, or -1 for non-integers.
+fn int_width(ty: String) -> i64 {
+    if std.string.equals(ty, "i8") { return 8; }
+    if std.string.equals(ty, "u8") { return 8; }
+    if std.string.equals(ty, "i16") { return 16; }
+    if std.string.equals(ty, "u16") { return 16; }
+    if std.string.equals(ty, "i32") { return 32; }
+    if std.string.equals(ty, "u32") { return 32; }
+    if std.string.equals(ty, "i64") { return 64; }
+    if std.string.equals(ty, "u64") { return 64; }
+    return -1;
 }
 
 // LLVM type lowering for every primitive in `docs/SPEC.md` §2.
@@ -95,8 +116,16 @@ impl Codegen {
             ssa_counter: 0,
             struct_types: ordered_map.OrderedMap<String>.new(),
             function_signatures: ordered_map.OrderedMap<String>.new(),
-            strings: vector.Vector<String>.new(),
+            string_ids: ordered_map.OrderedMap<String>.new(),
+            locals: ordered_map.OrderedMap<String>.new(),
         }
+    }
+
+    // Allocate the next SSA temporary name (`%t0`, `%t1`, ...).
+    fn next_ssa(mut self) -> String {
+        let name = std.string.concat("%t", std.string.from_int(self.ssa_counter));
+        self.ssa_counter = self.ssa_counter + 1;
+        return name;
     }
 
     // Emit the leading module header + runtime `declare` lines.
@@ -232,7 +261,12 @@ impl Codegen {
     fn collect_strings_expr(mut self, e: compiler.ast.Expression) {
         match e {
             compiler.ast.Expression::StringLit(s) => {
-                self.strings.push(s);
+                // Deduplicate via the ordered map — the insertion index
+                // becomes the @.str.N number (#136 deterministic order).
+                if !self.string_ids.contains_key(s) {
+                    let idx = (self.string_ids).len();
+                    self.string_ids.insert(s, std.string.from_int(idx));
+                }
             },
             compiler.ast.Expression::Infix(l, _op, r) => {
                 self.collect_strings_expr(l);
@@ -248,11 +282,15 @@ impl Codegen {
     // escaped via `std.string.escape_llvm_c_string` (#139) — non-ASCII
     // input is out of scope (see that function's documented limitation).
     fn emit_string_globals(mut self) {
-        let n = (self.strings).len();
+        let keys = (self.string_ids).keys_in_order();
+        let n = (keys).len();
+        if n == 0 {
+            return;
+        }
         let mut buf = self.output;
         let mut i = 0;
         while i < n {
-            let s = (self.strings).get(i).unwrap();
+            let s = (keys).get(i).unwrap();
             let escaped = std.string.escape_llvm_c_string(s);
             let byte_len = std.string.len(s) + 1;
             let mut line = std.string.concat("@.str.", std.string.from_int(i));
@@ -264,9 +302,7 @@ impl Codegen {
             buf.push(line);
             i = i + 1;
         }
-        if n > 0 {
-            buf.push("");
-        }
+        buf.push("");
         self.output = buf;
     }
 
@@ -308,29 +344,52 @@ impl Codegen {
         self.output = buf;
     }
 
-    // Emit `define <ret_ty> @<name>(...) { entry: ... }`.
-    // For #129, the body is a forward scan for the first `Return` statement.
-    // Every other statement is silently skipped — full control-flow
-    // lowering is #132.
+    // Emit `define <ret_ty> @<name>(<params>) { entry: ... }`.
+    // Params are bound into the `locals` map so `Identifier` operands
+    // resolve to their SSA values (`%name`). `main` takes no params
+    // (its C argc/argv plumbing comes with #132) and coerces to i32.
     fn compile_function(mut self, f: compiler.ast.Function) {
+        // Fresh local scope per function.
+        self.locals = ordered_map.OrderedMap<String>.new();
         let ret_ty_str = aion_type_to_llvm(f.return_type);
-        // `main` has the C signature `i32 @main(i32, ptr)` per
+        // `main` has the C signature `i32 @main()` per
         // `src/codegen/compiler.rs:100-108`. Aion's parser defaults
-        // `return_type` to "void" when no `-> T` is present (parser.ai
-        // parse_function), but `main` returning no value must still
-        // produce `ret i32 0` to match the C ABI. Override here.
+        // `return_type` to "void" when no `-> T` is present, but `main`
+        // returning no value must still produce `ret i32 0`.
         let mut ret_ty = ret_ty_str;
-        let mut sig = "define i32 @main() {";
-        if std.string.equals(f.name, "main") {
-            sig = "define i32 @main() {";
+        let is_main = std.string.equals(f.name, "main");
+        if is_main {
             ret_ty = "i32";
-        } else {
-            sig = "define " + ret_ty + " @" + f.name + "() {";
         }
+        let mut sig = std.string.concat("define ", ret_ty);
+        sig = std.string.concat(sig, " @");
+        sig = std.string.concat(sig, f.name);
+        sig = std.string.concat(sig, "(");
+        if !is_main {
+            let params = f.params;
+            let np = (params).len();
+            if np > 0 {
+                let mut sig_parts = vector.Vector<String>.new();
+                let mut i = 0;
+                while i < np {
+                    let prm = (params).get(i).unwrap() as compiler.ast.Param;
+                    let lt = aion_type_to_llvm(prm.type_name);
+                    self.locals.insert(prm.name, lt);
+                    let mut sp = std.string.concat(lt, " %");
+                    sp = std.string.concat(sp, prm.name);
+                    sig_parts.push(sp);
+                    i = i + 1;
+                }
+                let joined = std.string.join(sig_parts, ", ");
+                sig = std.string.concat(sig, joined);
+            }
+        }
+        sig = std.string.concat(sig, ") {");
         let mut buf = self.output;
         buf.push(sig);
         buf.push("entry:");
-        // For #129: only handle the first Return statement we find.
+        // Forward scan for the first `Return` statement. Other statements
+        // are silently skipped — full control-flow lowering is #132.
         let body = f.body;
         let n = (body).len();
         let mut i = 0;
@@ -366,20 +425,14 @@ impl Codegen {
     fn compile_stmt(mut self, s: compiler.ast.Statement, ret_ty: String) -> bool {
         match s {
             compiler.ast.Statement::Return(expr, _ty) => {
-                let v = self.compile_expr(expr);
-                // For `main`, the codegen converts i64 -> i32 per
-                // `src/codegen/compiler.rs:206-214`. We respect that
-                // here only for `main`; other functions return their
-                // declared type verbatim.
-                if std.string.equals(ret_ty, "i64") {
-                    let mut buf = self.output;
-                    buf.push("  ret i64 " + v);
-                    self.output = buf;
-                } else {
-                    let mut buf = self.output;
-                    buf.push("  ret " + ret_ty + " " + v);
-                    self.output = buf;
-                }
+                let op = self.compile_expr(expr);
+                let final_op = self.coerce_operand(op, ret_ty);
+                let mut buf = self.output;
+                let mut line = std.string.concat("  ret ", ret_ty);
+                line = std.string.concat(line, " ");
+                line = std.string.concat(line, final_op.value);
+                buf.push(line);
+                self.output = buf;
                 return true;
             },
             // Other statements lowered in later sub-issues (#132, #134).
@@ -388,21 +441,336 @@ impl Codegen {
         return false;
     }
 
-    // Lower an expression to an LLVM operand VALUE STRING (e.g. `"0"`,
-    // not the typed form). The caller assembles `"ret i64 " + value` so
-    // the type comes from the function's return type, not from the
-    // expression. #131 will introduce typed operand tracking and SSA.
-    fn compile_expr(mut self, e: compiler.ast.Expression) -> String {
+    // Coerce an operand to the target LLVM type, emitting an explicit
+    // conversion instruction when widths differ:
+    //   int → int  (narrower target): trunc
+    //   int → int  (wider target):    zext
+    //   int → double:                 sitofp
+    //   double → int:                 fptosi (signed targets)
+    // Identity when types match; silent pass-through otherwise (the
+    // caller only coerces to types it knows are compatible). #131.
+    fn coerce_operand(mut self, src: Operand, target: String) -> Operand {
+        if std.string.equals(src.ty, target) {
+            return src;
+        }
+        let sw = int_width(src.ty);
+        let dw = int_width(target);
+        let is_src_double = std.string.equals(src.ty, "double");
+        let is_tgt_double = std.string.equals(target, "double");
+        if sw > 0 && dw > 0 {
+            let name = self.next_ssa();
+            let mut instr = "zext";
+            if dw < sw {
+                instr = "trunc";
+            }
+            let mut buf = self.output;
+            let mut line = std.string.concat("  ", name);
+            line = std.string.concat(line, " = ");
+            line = std.string.concat(line, instr);
+            line = std.string.concat(line, " ");
+            line = std.string.concat(line, src.ty);
+            line = std.string.concat(line, " ");
+            line = std.string.concat(line, src.value);
+            line = std.string.concat(line, " to ");
+            line = std.string.concat(line, target);
+            buf.push(line);
+            self.output = buf;
+            let op = Operand { value: name, ty: target };
+            return op;
+        }
+        if sw > 0 && is_tgt_double {
+            let name = self.next_ssa();
+            let mut buf = self.output;
+            let mut line = std.string.concat("  ", name);
+            line = std.string.concat(line, " = sitofp ");
+            line = std.string.concat(line, src.ty);
+            line = std.string.concat(line, " ");
+            line = std.string.concat(line, src.value);
+            line = std.string.concat(line, " to double");
+            buf.push(line);
+            self.output = buf;
+            let op = Operand { value: name, ty: "double" };
+            return op;
+        }
+        if is_src_double && dw > 0 {
+            // Unsigned targets use fptoui; everything else fptosi.
+            let mut instr = "fptosi";
+            let t0 = std.string.at(target, 0);
+            if t0 == 117 {
+                instr = "fptoui";  // 'u'
+            }
+            let name = self.next_ssa();
+            let mut buf = self.output;
+            let mut line = std.string.concat("  ", name);
+            line = std.string.concat(line, " = ");
+            line = std.string.concat(line, instr);
+            line = std.string.concat(line, " double ");
+            line = std.string.concat(line, src.value);
+            line = std.string.concat(line, " to ");
+            line = std.string.concat(line, target);
+            buf.push(line);
+            self.output = buf;
+            let op = Operand { value: name, ty: target };
+            return op;
+        }
+        return src;
+    }
+
+    // Promote an operand to double (sitofp for ints, identity otherwise).
+    fn to_double(mut self, src: Operand) -> Operand {
+        if std.string.equals(src.ty, "double") {
+            return src;
+        }
+        let op = self.coerce_operand(src, "double");
+        return op;
+    }
+
+    // Lower an expression to a typed LLVM operand. Every supported
+    // variant returns an `Operand` whose SSA value (if any) has already
+    // been emitted into the output buffer. #131.
+    fn compile_expr(mut self, e: compiler.ast.Expression) -> Operand {
         match e {
             compiler.ast.Expression::Integer(n) => {
-                return std.string.from_int(n);
+                let op = Operand {
+                    value: std.string.from_int(n),
+                    ty: "i64",
+                };
+                return op;
             },
-            // All other variants lowered in #131 — emit a safe placeholder
-            // for now so the `.ll` remains syntactically valid (later
-            // sub-issues will replace these with real operands).
+            compiler.ast.Expression::Float(f) => {
+                // %g formatting turns whole floats into integers ("7")
+                // — LLVM float literals require a decimal point, so
+                // append ".0" when missing.
+                let mut fv = std.string.from_float(f);
+                if std.string.find(fv, ".") < 0 {
+                    fv = std.string.concat(fv, ".0");
+                }
+                let op = Operand {
+                    value: fv,
+                    ty: "double",
+                };
+                return op;
+            },
+            compiler.ast.Expression::StringLit(s) => {
+                let idx = self.string_index(s);
+                let op = Operand {
+                    value: std.string.concat("@.str.", std.string.from_int(idx)),
+                    ty: "ptr",
+                };
+                return op;
+            },
+            compiler.ast.Expression::Boolean(b) => {
+                let v = "0";
+                if b {
+                    v = "1";
+                }
+                let op = Operand { value: v, ty: "i64" };
+                return op;
+            },
+            compiler.ast.Expression::DurationLit(secs, nanos) => {
+                let s64: i64 = secs as i64;
+                let n64: i64 = nanos as i64;
+                let ns_total = s64 * 1000000000 + n64;
+                let op = Operand {
+                    value: std.string.from_int(ns_total),
+                    ty: "i64",
+                };
+                return op;
+            },
+            compiler.ast.Expression::DateLit(ts) => {
+                let op = Operand {
+                    value: std.string.from_int(ts),
+                    ty: "i64",
+                };
+                return op;
+            },
+            compiler.ast.Expression::Identifier(name) => {
+                if self.locals.contains_key(name) {
+                    let lt = self.locals.get(name).unwrap();
+                    let op = Operand {
+                        value: std.string.concat("%", name),
+                        ty: lt,
+                    };
+                    return op;
+                }
+                // Unknown identifier (globals like aion_argc come with
+                // #132) — safe i64 zero placeholder.
+                let op = Operand { value: "0", ty: "i64" };
+                return op;
+            },
+            compiler.ast.Expression::Infix(l, op_tok, r) => {
+                let lo = self.compile_expr(l);
+                let ro = self.compile_expr(r);
+                let kind = op_tok.kind;
+                return self.compile_infix(lo, kind, ro);
+            },
+            compiler.ast.Expression::Cast(e, target) => {
+                let src = self.compile_expr(e);
+                return self.coerce_operand(src, target);
+            },
+            // Remaining variants lowered in later sub-issues (#132/#133/
+            // #134) — safe i64 zero placeholder keeps the `.ll` valid.
             _ => {
-                return "0";
+                let op = Operand { value: "0", ty: "i64" };
+                return op;
             },
         }
     }
+
+    // Resolve a string literal to its @.str.N index, inserting it into
+    // the dedup map on first sight (the collect pass has normally
+    // already registered it — this path covers literals discovered
+    // during lowering that the walker missed).
+    fn string_index(mut self, s: String) -> i64 {
+        if self.string_ids.contains_key(s) {
+            let v = self.string_ids.get(s).unwrap();
+            let idx = parse_ascii(v);
+            return idx;
+        }
+        let idx = (self.string_ids).len();
+        self.string_ids.insert(s, std.string.from_int(idx));
+        return idx;
+    }
+
+    // Integer infix lowering: arithmetic on i64, comparisons via icmp
+    // + zext (Aion bools are i64 per SPEC §2). #131.
+    fn compile_int_infix(mut self, lo: Operand, kind: token.TokenKind, ro: Operand) -> Operand {
+        let mut instr = "";
+        let mut cmp = "";
+        match kind {
+            token.TokenKind::Plus => { instr = "add" },
+            token.TokenKind::Minus => { instr = "sub" },
+            token.TokenKind::Star => { instr = "mul" },
+            token.TokenKind::Slash => { instr = "sdiv" },
+            token.TokenKind::Percent => { instr = "srem" },
+            token.TokenKind::Caret => { instr = "xor" },
+            // Bitwise on 0/1 — short-circuit control flow is #132.
+            token.TokenKind::And => { instr = "and" },
+            token.TokenKind::Or => { instr = "or" },
+            token.TokenKind::EqEq => { cmp = "eq" },
+            token.TokenKind::NotEq => { cmp = "ne" },
+            token.TokenKind::Lt => { cmp = "slt" },
+            token.TokenKind::Gt => { cmp = "sgt" },
+            token.TokenKind::LtEq => { cmp = "sle" },
+            token.TokenKind::GtEq => { cmp = "sge" },
+            _ => { instr = "add" },
+        }
+        if std.string.len(cmp) == 0 {
+            let name = self.next_ssa();
+            let mut buf = self.output;
+            let mut line = std.string.concat("  ", name);
+            line = std.string.concat(line, " = ");
+            line = std.string.concat(line, instr);
+            line = std.string.concat(line, " i64 ");
+            line = std.string.concat(line, lo.value);
+            line = std.string.concat(line, ", ");
+            line = std.string.concat(line, ro.value);
+            buf.push(line);
+            self.output = buf;
+            let op = Operand { value: name, ty: "i64" };
+            return op;
+        }
+        let c1 = self.next_ssa();
+        let mut buf = self.output;
+        let mut line = std.string.concat("  ", c1);
+        line = std.string.concat(line, " = icmp ");
+        line = std.string.concat(line, cmp);
+        line = std.string.concat(line, " i64 ");
+        line = std.string.concat(line, lo.value);
+        line = std.string.concat(line, ", ");
+        line = std.string.concat(line, ro.value);
+        buf.push(line);
+        let c2 = self.next_ssa();
+        let mut line2 = std.string.concat("  ", c2);
+        line2 = std.string.concat(line2, " = zext i1 ");
+        line2 = std.string.concat(line2, c1);
+        line2 = std.string.concat(line2, " to i64");
+        buf.push(line2);
+        self.output = buf;
+        let op = Operand { value: c2, ty: "i64" };
+        return op;
+    }
+
+    // Float infix lowering: fadd/fsub/fmul/fdiv/frem on double,
+    // ordered fcmp + zext for comparisons. #131.
+    fn compile_float_infix(mut self, lo: Operand, kind: token.TokenKind, ro: Operand) -> Operand {
+        let mut instr = "";
+        let mut cmp = "";
+        match kind {
+            token.TokenKind::Plus => { instr = "fadd" },
+            token.TokenKind::Minus => { instr = "fsub" },
+            token.TokenKind::Star => { instr = "fmul" },
+            token.TokenKind::Slash => { instr = "fdiv" },
+            token.TokenKind::Percent => { instr = "frem" },
+            token.TokenKind::EqEq => { cmp = "oeq" },
+            token.TokenKind::NotEq => { cmp = "one" },
+            token.TokenKind::Lt => { cmp = "olt" },
+            token.TokenKind::Gt => { cmp = "ogt" },
+            token.TokenKind::LtEq => { cmp = "ole" },
+            token.TokenKind::GtEq => { cmp = "oge" },
+            _ => { instr = "fadd" },
+        }
+        if std.string.len(cmp) == 0 {
+            let name = self.next_ssa();
+            let mut buf = self.output;
+            let mut line = std.string.concat("  ", name);
+            line = std.string.concat(line, " = ");
+            line = std.string.concat(line, instr);
+            line = std.string.concat(line, " double ");
+            line = std.string.concat(line, lo.value);
+            line = std.string.concat(line, ", ");
+            line = std.string.concat(line, ro.value);
+            buf.push(line);
+            self.output = buf;
+            let op = Operand { value: name, ty: "double" };
+            return op;
+        }
+        let c1 = self.next_ssa();
+        let mut buf = self.output;
+        let mut line = std.string.concat("  ", c1);
+        line = std.string.concat(line, " = fcmp ");
+        line = std.string.concat(line, cmp);
+        line = std.string.concat(line, " double ");
+        line = std.string.concat(line, lo.value);
+        line = std.string.concat(line, ", ");
+        line = std.string.concat(line, ro.value);
+        buf.push(line);
+        let c2 = self.next_ssa();
+        let mut line2 = std.string.concat("  ", c2);
+        line2 = std.string.concat(line2, " = zext i1 ");
+        line2 = std.string.concat(line2, c1);
+        line2 = std.string.concat(line2, " to i64");
+        buf.push(line2);
+        self.output = buf;
+        let op = Operand { value: c2, ty: "i64" };
+        return op;
+    }
+
+    // Infix dispatch: float path when either side is double (the other
+    // is promoted via sitofp), integer path otherwise. #131.
+    fn compile_infix(mut self, lo: Operand, kind: token.TokenKind, ro: Operand) -> Operand {
+        let is_float = std.string.equals(lo.ty, "double") || std.string.equals(ro.ty, "double");
+        if is_float {
+            let l2 = self.to_double(lo);
+            let r2 = self.to_double(ro);
+            return self.compile_float_infix(l2, kind, r2);
+        }
+        return self.compile_int_infix(lo, kind, ro);
+    }
+}
+
+// Parse an ASCII decimal string into i64 (used for @.str.N indices).
+fn parse_ascii(s: String) -> i64 {
+    let n = std.string.len(s);
+    let mut result = 0;
+    let mut i = 0;
+    while i < n {
+        let c = std.string.at(s, i);
+        if c < 48 || c > 57 {
+            return 0;
+        }
+        result = result * 10 + (c - 48);
+        i = i + 1;
+    }
+    return result;
 }
