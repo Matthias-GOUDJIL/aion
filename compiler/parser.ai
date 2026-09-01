@@ -578,6 +578,29 @@ impl Parser {
             token.TokenKind::False => {
                 return result.Result::Ok(ast.Expression::Boolean(false));
             },
+            token.TokenKind::Unsafe => {
+                // Expression-position `unsafe { ... }` — becomes
+                // `Expression::Block(stmts, is_unsafe=true)`. Mirrors
+                // `src/parser/mod.rs:1643-1655`. Statement-position
+                // unsafe is handled first by parse_statement.
+                // NOTE: parse_primary already consumed the 'unsafe'
+                // token via its leading advance() — do NOT advance again.
+                let lb_tk = self.peek();
+                let mut is_lbrace = false;
+                match lb_tk.kind {
+                    token.TokenKind::LBrace => { is_lbrace = true; },
+                    _ => { is_lbrace = false; },
+                }
+                if !is_lbrace {
+                    return result.Result::Err("Expected { after unsafe");
+                }
+                let body_res = self.parse_block();
+                if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
+                let stmts = body_res.unwrap();
+                let mut expr = ast.Expression::Block(stmts, true);
+                expr = self.parse_postfix(expr);
+                return result.Result::Ok(expr);
+            },
             token.TokenKind::LParen => {
                 let expr_res = self.parse_expression();
                 if expr_res.is_err() {
@@ -1012,6 +1035,61 @@ impl Parser {
                 let body = body_res.unwrap();
                 
                 return result.Result::Ok(ast.Statement::While(cond, body));
+            },
+            token.TokenKind::Break => {
+                // `break` — unit statement. Mirrors `src/parser/mod.rs:796-800`.
+                let _ = self.advance();  // consume 'break'
+                return result.Result::Ok(ast.Statement::Break);
+            },
+            token.TokenKind::Continue => {
+                // `continue` — unit statement. Mirrors
+                // `src/parser/mod.rs:801-805`.
+                let _ = self.advance();  // consume 'continue'
+                return result.Result::Ok(ast.Statement::Continue);
+            },
+            token.TokenKind::Loop => {
+                // `loop { ... }` desugars to `while (true) { ... }`.
+                // Mirrors `src/parser/mod.rs:806-816`.
+                let _ = self.advance();  // consume 'loop'
+                let body_res = self.parse_block();
+                if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
+                let body = body_res.unwrap();
+                return result.Result::Ok(ast.Statement::While(ast.Expression::Boolean(true), body));
+            },
+            token.TokenKind::Unsafe => {
+                // Statement-position `unsafe { ... }`. Mirrors
+                // `src/parser/mod.rs:1023-1031`. Expression-position
+                // unsafe blocks are handled in parse_primary.
+                let _ = self.advance();  // consume 'unsafe'
+                let lb_tk = self.peek();
+                let mut is_lbrace = false;
+                match lb_tk.kind {
+                    token.TokenKind::LBrace => { is_lbrace = true; },
+                    _ => { is_lbrace = false; },
+                }
+                if !is_lbrace {
+                    return result.Result::Err("Expected { after unsafe");
+                }
+                let body_res = self.parse_block();
+                if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
+                return result.Result::Ok(ast.Statement::UnsafeBlock(body_res.unwrap()));
+            },
+            token.TokenKind::Spawn => {
+                // `spawn { ... }` — body runs on a new thread. Mirrors
+                // `src/parser/mod.rs:1032-1040`.
+                let _ = self.advance();  // consume 'spawn'
+                let lb_tk = self.peek();
+                let mut is_lbrace = false;
+                match lb_tk.kind {
+                    token.TokenKind::LBrace => { is_lbrace = true; },
+                    _ => { is_lbrace = false; },
+                }
+                if !is_lbrace {
+                    return result.Result::Err("Expected { after spawn");
+                }
+                let body_res = self.parse_block();
+                if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
+                return result.Result::Ok(ast.Statement::Spawn(body_res.unwrap()));
             },
             _ => {
                 let expr_res = self.parse_expression();

@@ -534,6 +534,13 @@ fn test_self_parser_decls() {
     assert_snapshot!(run_aion_test("compiler/self_parser_decls"));
 }
 #[test]
+fn test_self_parser_stmts() {
+    // #156 Slice 3 — verifies break/continue/loop (desugared to
+    // while(true))/unsafe (statement + expression positions)/spawn
+    // parse into the expected Statement variants.
+    assert_snapshot!(run_aion_test("compiler/self_parser_stmts"));
+}
+#[test]
 fn test_optimization_check() {
     assert_snapshot!(run_aion_test("compiler/optimization_check"));
 }

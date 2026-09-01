@@ -95,10 +95,12 @@ pub enum Statement {
     If(Expression, vector.Vector<Statement>, vector.Vector<Statement>), // condition, then_branch, else_branch (empty if none)
     Assignment(Expression, Expression), // target, value
     While(Expression, vector.Vector<Statement>),
-    For(String, Expression, vector.Vector<Statement>),
+    For(String, Expression, vector.Vector<Statement>), // NOTE: dead variant — the Rust parser never produces it (`src/ast/stmt.rs:41`); `for` loops are not parseable; fixtures use `loop` + `break`
     Spawn(vector.Vector<Statement>),
     Match(Expression, vector.Vector<MatchArm>),
     UnsafeBlock(vector.Vector<Statement>),
+    Break,
+    Continue,
     NoOp
 }
 
