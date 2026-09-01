@@ -43,6 +43,7 @@ pub struct Codegen {
     ssa_counter: i64,
     struct_types: ordered_map.OrderedMap<String>,
     function_signatures: ordered_map.OrderedMap<String>,
+    strings: vector.Vector<String>,
 }
 
 // LLVM type lowering for every primitive in `docs/SPEC.md` §2.
@@ -94,6 +95,7 @@ impl Codegen {
             ssa_counter: 0,
             struct_types: ordered_map.OrderedMap<String>.new(),
             function_signatures: ordered_map.OrderedMap<String>.new(),
+            strings: vector.Vector<String>.new(),
         }
     }
 
@@ -133,18 +135,46 @@ impl Codegen {
     // Full program compile. Returns the joined IR text so the caller can
     // `std.fs.write(path, content)` it (using `std.string.join`, #140)
     // and run `opt-15 -verify` on the file.
+    //
+    // Two-pass layout (#130):
+    //   1. Header + runtime declares.
+    //   2. Scan all function bodies for string literals, emit them as
+    //      `@.str.N` global constants (needs escape_llvm_c_string, #139).
+    //   3. Emit struct/enum type definitions in declaration order.
+    //   4. Emit function definitions.
     pub fn compile(mut self, prog: compiler.ast.Program) -> String {
         self.emit_header();
+        self.collect_strings_prog(prog);
+        self.emit_string_globals();
         let decls = prog.declarations;
         let n = (decls).len();
+        // Types first (structs + enums), so forward references to %Name
+        // inside function bodies resolve against an already-declared type.
         let mut i = 0;
         while i < n {
-            let decl_opt = (decls).get(i);
-            match decl_opt {
-                Option::Some(d) => {
-                    self.compile_decl(d);
+            let d = (decls).get(i).unwrap() as compiler.ast.Declaration;
+            match d {
+                compiler.ast.Declaration::Struct(s) => {
+                    self.compile_struct(s);
                 },
-                Option::None => {},
+                compiler.ast.Declaration::Enum(e) => {
+                    self.compile_enum(e);
+                },
+                _ => {},
+            }
+            i = i + 1;
+        }
+        // Then functions.
+        let mut i = 0;
+        while i < n {
+            let d = (decls).get(i).unwrap() as compiler.ast.Declaration;
+            match d {
+                compiler.ast.Declaration::Function(f) => {
+                    self.compile_function(f);
+                },
+                // Aggregate lowering (struct/enum INSTANTIATION, match)
+                // is the subject of #134.
+                _ => {},
             }
             i = i + 1;
         }
@@ -152,14 +182,130 @@ impl Codegen {
         return joined;
     }
 
-    fn compile_decl(mut self, d: compiler.ast.Declaration) {
-        match d {
-            compiler.ast.Declaration::Function(f) => {
-                self.compile_function(f);
+    // Pass 1 — walk every function body and collect string literals in
+    // declaration order (deterministic @.str.N numbering, #130).
+    fn collect_strings_prog(mut self, prog: compiler.ast.Program) {
+        let decls = prog.declarations;
+        let n = (decls).len();
+        let mut i = 0;
+        while i < n {
+            let d = (decls).get(i).unwrap() as compiler.ast.Declaration;
+            match d {
+                compiler.ast.Declaration::Function(f) => {
+                    self.collect_strings_fn(f);
+                },
+                _ => {},
+            }
+            i = i + 1;
+        }
+    }
+
+    fn collect_strings_fn(mut self, f: compiler.ast.Function) {
+        let body = f.body;
+        let n = (body).len();
+        let mut i = 0;
+        while i < n {
+            let s = (body).get(i).unwrap() as compiler.ast.Statement;
+            self.collect_strings_stmt(s);
+            i = i + 1;
+        }
+    }
+
+    fn collect_strings_stmt(mut self, s: compiler.ast.Statement) {
+        match s {
+            compiler.ast.Statement::Let(_name, value, _ty, _m) => {
+                self.collect_strings_expr(value);
             },
-            // #129 skeleton skips Struct/Enum/Impl/Interface — #134 covers them.
+            compiler.ast.Statement::Return(value, _ty) => {
+                self.collect_strings_expr(value);
+            },
+            compiler.ast.Statement::ExpressionStmt(e) => {
+                self.collect_strings_expr(e);
+            },
+            compiler.ast.Statement::Assignment(_target, value) => {
+                self.collect_strings_expr(value);
+            },
             _ => {},
         }
+    }
+
+    fn collect_strings_expr(mut self, e: compiler.ast.Expression) {
+        match e {
+            compiler.ast.Expression::StringLit(s) => {
+                self.strings.push(s);
+            },
+            compiler.ast.Expression::Infix(l, _op, r) => {
+                self.collect_strings_expr(l);
+                self.collect_strings_expr(r);
+            },
+            _ => {},
+        }
+    }
+
+    // Emit collected string literals as LLVM global constants:
+    //   @.str.0 = private unnamed_addr constant [12 x i8] c"hello, aion\00"
+    // Byte length = strlen(s) + 1 (NUL terminator). The contents are
+    // escaped via `std.string.escape_llvm_c_string` (#139) — non-ASCII
+    // input is out of scope (see that function's documented limitation).
+    fn emit_string_globals(mut self) {
+        let n = (self.strings).len();
+        let mut buf = self.output;
+        let mut i = 0;
+        while i < n {
+            let s = (self.strings).get(i).unwrap();
+            let escaped = std.string.escape_llvm_c_string(s);
+            let byte_len = std.string.len(s) + 1;
+            let mut line = std.string.concat("@.str.", std.string.from_int(i));
+            line = std.string.concat(line, " = private unnamed_addr constant [");
+            line = std.string.concat(line, std.string.from_int(byte_len));
+            line = std.string.concat(line, " x i8] c\"");
+            line = std.string.concat(line, escaped);
+            line = std.string.concat(line, "\\00\"");
+            buf.push(line);
+            i = i + 1;
+        }
+        if n > 0 {
+            buf.push("");
+        }
+        self.output = buf;
+    }
+
+    // Emit a struct type definition with the exact field order from the
+    // AST: `%Point = type { i64, i64 }`. Composite fields (String, other
+    // structs/enums, arrays, tuples) lower to opaque `ptr` — matching
+    // `src/codegen/types.rs:152-160`'s fall-through. Structs are passed
+    // by pointer per SPEC §3, so the type itself is the only layout the
+    // codegen must declare. #130.
+    fn compile_struct(mut self, s: compiler.ast.Struct) {
+        let fields = s.fields;
+        let nf = (fields).len();
+        let mut parts = vector.Vector<String>.new();
+        let mut i = 0;
+        while i < nf {
+            let f = (fields).get(i).unwrap() as compiler.ast.Field;
+            let ft = aion_type_to_llvm(f.type_name);
+            parts.push(ft);
+            i = i + 1;
+        }
+        let joined = std.string.join(parts, ", ");
+        let mut line = std.string.concat("%", s.name);
+        line = std.string.concat(line, " = type { ");
+        line = std.string.concat(line, joined);
+        line = std.string.concat(line, " }");
+        let mut buf = self.output;
+        buf.push(line);
+        self.output = buf;
+    }
+
+    // Emit an enum type definition: `%Name = type { i64, [64 x i8] }` —
+    // index 0 = tag, index 1 = 64-byte inline payload buffer. Mirrors
+    // `src/codegen/compiler.rs:424-432`. #130.
+    fn compile_enum(mut self, e: compiler.ast.Enum) {
+        let mut line = std.string.concat("%", e.name);
+        line = std.string.concat(line, " = type { i64, [64 x i8] }");
+        let mut buf = self.output;
+        buf.push(line);
+        self.output = buf;
     }
 
     // Emit `define <ret_ty> @<name>(...) { entry: ... }`.

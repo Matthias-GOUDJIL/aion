@@ -520,6 +520,12 @@ fn test_codegen_skeleton() {
     assert_snapshot!(run_aion_test("compiler/codegen_skeleton"));
 }
 #[test]
+fn test_codegen_memory_layout() {
+    // #130 — struct/enum type definitions (exact field order, tagged-union
+    // enum layout) + string literal globals in the emitted `.ll`.
+    assert_snapshot!(run_aion_test("compiler/codegen_memory_layout"));
+}
+#[test]
 fn test_self_parser_call() {
     // #156 Slice 1 — verifies the parser's postfix dispatch loop produces
     // a Call AST node for `io.println("hello")` (vs the pre-#156 fold-only
