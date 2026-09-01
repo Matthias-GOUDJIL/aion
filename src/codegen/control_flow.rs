@@ -418,34 +418,56 @@ impl<'ctx> Compiler<'ctx> {
                             let mut av = variables.clone();
                             if !arm.params.is_empty() {
                                 let dp = self.builder.build_struct_gep(et, ep, 1, "arm_dataptr")?;
-                                let mut ptn = "i64".to_string();
+                                // Resolve the matched variant's element types once,
+                                // then bind each param positionally: element i lives
+                                // at byte offset i*8 in the enum payload buffer (all
+                                // Aion values are 8 bytes — ptr or i64). Previously
+                                // only params[0] was bound, leaving params[1..]
+                                // unbound at codegen. #161.
+                                let mut data_types: Vec<String> = Vec::new();
                                 if let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen) {
                                     for v in &e_decl.variants {
                                         if arm.pattern == v.name
                                             || arm.pattern.ends_with(&format!(".{}", v.name))
                                             || arm.pattern.ends_with(&format!("::{}", v.name))
                                         {
-                                            if !v.data_types.is_empty() {
-                                                ptn = v.data_types[0].clone();
-                                            }
+                                            data_types = v.data_types.clone();
                                             break;
                                         }
                                     }
                                 }
-                                let lt = self.aion_type_to_llvm(&ptn);
-                                let cp = self.builder.build_bit_cast(
-                                    dp,
-                                    self.context.ptr_type(AddressSpace::default()),
-                                    "arm_datacast",
-                                )?;
-                                let lv_val = self.builder.build_load(
-                                    lt,
-                                    cp.into_pointer_value(),
-                                    &arm.params[0],
-                                )?;
-                                let pa = self.builder.build_alloca(lt, &arm.params[0])?;
-                                self.builder.build_store(pa, lv_val)?;
-                                av.insert(arm.params[0].clone(), (pa, lt, ptn));
+                                let base_ptr = self
+                                    .builder
+                                    .build_bit_cast(
+                                        dp,
+                                        self.context.ptr_type(AddressSpace::default()),
+                                        "arm_datacast",
+                                    )?
+                                    .into_pointer_value();
+                                for (i, param) in arm.params.iter().enumerate() {
+                                    let ptn = data_types
+                                        .get(i)
+                                        .cloned()
+                                        .unwrap_or_else(|| "i64".to_string());
+                                    let lt = self.aion_type_to_llvm(&ptn);
+                                    let elem_ptr = if i == 0 {
+                                        base_ptr
+                                    } else {
+                                        let byte_off = (i * 8) as u64;
+                                        unsafe {
+                                            self.builder.build_in_bounds_gep(
+                                                self.context.i8_type(),
+                                                base_ptr,
+                                                &[i64_t.const_int(byte_off, false)],
+                                                &format!("arm_off_{}", i),
+                                            )?
+                                        }
+                                    };
+                                    let lv_val = self.builder.build_load(lt, elem_ptr, param)?;
+                                    let pa = self.builder.build_alloca(lt, param)?;
+                                    self.builder.build_store(pa, lv_val)?;
+                                    av.insert(param.clone(), (pa, lt, ptn));
+                                }
                             }
 
                             // Evaluate guard condition if present

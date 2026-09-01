@@ -665,13 +665,30 @@ impl<'ctx> Compiler<'ctx> {
                         i64_t.const_int(tv, false),
                     )?;
                     if !arguments.is_empty() {
-                        let val = self.compile_expr(&arguments[0], variables, function)?;
-                        let cp = self.builder.build_bit_cast(
-                            self.builder.build_struct_gep(et, pr, 1, "data")?,
-                            pt,
-                            "datacast",
-                        )?;
-                        self.builder.build_store(cp.into_pointer_value(), val)?;
+                        // Serialize each payload element at byte offset
+                        // i*8 in the data buffer — mirrors the positional
+                        // binding of match-arm params (all Aion values are
+                        // 8 bytes: ptr or i64). Previously only arguments[0]
+                        // was stored, so multi-element variants lost their
+                        // extra payloads. #161.
+                        for (i, arg) in arguments.iter().enumerate() {
+                            let val = self.compile_expr(arg, variables, function)?;
+                            let data_gep = self.builder.build_struct_gep(et, pr, 1, "data")?;
+                            let cp = self.builder.build_bit_cast(data_gep, pt, "datacast")?;
+                            let elem_ptr = if i == 0 {
+                                cp.into_pointer_value()
+                            } else {
+                                unsafe {
+                                    self.builder.build_in_bounds_gep(
+                                        self.context.i8_type(),
+                                        cp.into_pointer_value(),
+                                        &[i64_t.const_int((i * 8) as u64, false)],
+                                        &format!("enum_data_off_{}", i),
+                                    )?
+                                }
+                            };
+                            self.builder.build_store(elem_ptr, val)?;
+                        }
                     }
                     Ok(pr.into())
                 } else {
