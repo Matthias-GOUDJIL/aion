@@ -578,6 +578,34 @@ impl Parser {
             token.TokenKind::False => {
                 return result.Result::Ok(ast.Expression::Boolean(false));
             },
+            token.TokenKind::Match => {
+                // Expression-position match: `return match x { ... }` /
+                // `let x = match e { ... }`. Mirrors
+                // `src/parser/mod.rs:1241-1440`. NOTE: parse_primary's
+                // leading advance() already consumed the 'match' token —
+                // do NOT advance again. When no `{` follows the
+                // condition, Rust emits an armless Match (mod.rs:1245-
+                // 1250); we mirror that instead of erroring.
+                let cond_res = self.parse_expression();
+                if cond_res.is_err() { return result.Result::Err(cond_res.unwrap_err()); }
+                let cond = cond_res.unwrap();
+                let lb_tk = self.peek();
+                let mut is_lbrace = false;
+                match lb_tk.kind {
+                    token.TokenKind::LBrace => { is_lbrace = true; },
+                    _ => { is_lbrace = false; },
+                }
+                let mut arms = vector.Vector<ast.MatchArm>.new();
+                if is_lbrace {
+                    let _ = self.advance();  // consume '{'
+                    let arms_res = self.parse_match_arms();
+                    if arms_res.is_err() { return result.Result::Err(arms_res.unwrap_err()); }
+                    arms = arms_res.unwrap();
+                }
+                let mut expr = ast.Expression::Match(cond, arms);
+                expr = self.parse_postfix(expr);
+                return result.Result::Ok(expr);
+            },
             token.TokenKind::Unsafe => {
                 // Expression-position `unsafe { ... }` — becomes
                 // `Expression::Block(stmts, is_unsafe=true)`. Mirrors
@@ -891,6 +919,398 @@ impl Parser {
         return result.Result::Ok(stmts);
     }
 
+    // Parse the arms of a `match` block, from the token AFTER `{` up to
+    // and including the closing `}`. Shared by statement-position match
+    // (parse_statement) and expression-position match (parse_primary) —
+    // the Rust parser duplicates this logic at `src/parser/mod.rs:825-1013`
+    // and `src/parser/mod.rs:1252-1440`; Aion factors it into one helper.
+    //
+    // Pattern forms handled (mirroring Rust exactly):
+    //   - `Identifier` (+ optional `::`/`.` path fold, + optional
+    //     struct pattern `Variant{field: var}` encoded as
+    //     `Variant_{field:var,...}`)
+    //   - `IntLiteral` (+ optional range `0..10`)
+    //   - `StringLiteral` (encoded with surrounding quotes)
+    //   - multi-patterns `A | B | C` via `|`
+    //   - binding params: single lowercase identifier pattern followed
+    //     by `if`/`->` becomes a binding (params), patterns cleared
+    //   - explicit params `(a, b)` after the pattern
+    //   - guard `pat if cond => ...` (has_guard + guard)
+    //   - body: `{ ... }` block or a single statement
+    pub fn parse_match_arms(mut self) -> result.Result<vector.Vector<ast.MatchArm>, String> {
+        let mut arms = vector.Vector<ast.MatchArm>.new();
+        let mut done = false;
+        while !done {
+            let tk = self.peek();
+            let mut stop = false;
+            match tk.kind {
+                token.TokenKind::RBrace => { stop = true; },
+                token.TokenKind::EOF => { stop = true; },
+                _ => { stop = false; },
+            }
+            if stop {
+                done = true;
+            } else {
+                let mut pattern = "";
+                let mut is_valid = false;
+                let p_tk = self.peek();
+                match p_tk.kind {
+                    token.TokenKind::Identifier(p) => {
+                        pattern = p;
+                        let _ = self.advance();
+                        // Optional struct pattern: `Variant{field: var, ...}`.
+                        let lb2_tk = self.peek();
+                        let mut is_struct_pat = false;
+                        match lb2_tk.kind {
+                            token.TokenKind::LBrace => { is_struct_pat = true; },
+                            _ => { is_struct_pat = false; },
+                        }
+                        if is_struct_pat {
+                            let _ = self.advance();  // consume '{'
+                            let mut fields_str = "";
+                            let mut first = true;
+                            let mut fdone = false;
+                            while !fdone {
+                                let ft_tk = self.peek();
+                                let mut fstop = false;
+                                match ft_tk.kind {
+                                    token.TokenKind::RBrace => { fstop = true; },
+                                    token.TokenKind::EOF => { fstop = true; },
+                                    _ => { fstop = false; },
+                                }
+                                if fstop {
+                                    fdone = true;
+                                } else {
+                                    let fname_tk = self.peek();
+                                    let mut is_fident = false;
+                                    match fname_tk.kind {
+                                        token.TokenKind::Identifier(_) => { is_fident = true; },
+                                        _ => { is_fident = false; },
+                                    }
+                                    if is_fident {
+                                        let f_tk2 = self.advance();
+                                        let mut f_name = "";
+                                        match f_tk2.kind {
+                                            token.TokenKind::Identifier(fn2) => { f_name = fn2; },
+                                            _ => { f_name = ""; },
+                                        }
+                                        let c_tk2 = self.peek();
+                                        let mut is_colon = false;
+                                        match c_tk2.kind {
+                                            token.TokenKind::Colon => { is_colon = true; },
+                                            _ => { is_colon = false; },
+                                        }
+                                        if is_colon {
+                                            let _ = self.advance();  // consume ':'
+                                            let v_tk2 = self.advance();
+                                            let mut v_name = "";
+                                            match v_tk2.kind {
+                                                token.TokenKind::Identifier(vn) => { v_name = vn; },
+                                                _ => { v_name = ""; },
+                                            }
+                                            if !first {
+                                                fields_str = std.string.concat(fields_str, ",");
+                                            }
+                                            fields_str = std.string.concat(fields_str, f_name);
+                                            fields_str = std.string.concat(fields_str, ":");
+                                            fields_str = std.string.concat(fields_str, v_name);
+                                            first = false;
+                                        }
+                                    }
+                                    let cm_tk = self.peek();
+                                    let mut is_comma = false;
+                                    match cm_tk.kind {
+                                        token.TokenKind::Comma => { is_comma = true; },
+                                        _ => { is_comma = false; },
+                                    }
+                                    if is_comma { let _ = self.advance(); }
+                                }
+                            }
+                            let rb2_tk = self.peek();
+                            let mut is_rbrace = false;
+                            match rb2_tk.kind {
+                                token.TokenKind::RBrace => { is_rbrace = true; },
+                                _ => { is_rbrace = false; },
+                            }
+                            if is_rbrace { let _ = self.advance(); }
+                            pattern = std.string.concat(pattern, "_{");
+                            pattern = std.string.concat(pattern, fields_str);
+                            pattern = std.string.concat(pattern, "}");
+                        }
+                        // Optional path fold: `Option::Some`, `Color.Red`.
+                        let mut keep_path = true;
+                        while keep_path {
+                            let sep_tk = self.peek();
+                            let mut sep_kind = 0;  // 0 = none, 1 = '::', 2 = '.'
+                            match sep_tk.kind {
+                                token.TokenKind::DoubleColon => { sep_kind = 1; },
+                                token.TokenKind::Dot => { sep_kind = 2; },
+                                _ => { sep_kind = 0; },
+                            }
+                            if sep_kind == 0 {
+                                keep_path = false;
+                            } else {
+                                let _ = self.advance();  // consume separator
+                                let sub_tk = self.advance();
+                                match sub_tk.kind {
+                                    token.TokenKind::Identifier(sub) => {
+                                        if sep_kind == 1 {
+                                            pattern = std.string.concat(pattern, "::");
+                                        } else {
+                                            pattern = std.string.concat(pattern, ".");
+                                        }
+                                        pattern = std.string.concat(pattern, sub);
+                                    },
+                                    _ => { keep_path = false; },
+                                }
+                            }
+                        }
+                        is_valid = true;
+                    },
+                    token.TokenKind::IntLiteral(n) => {
+                        pattern = std.string.from_int(n);
+                        let _ = self.advance();
+                        let r_tk = self.peek();
+                        let mut is_range = false;
+                        match r_tk.kind {
+                            token.TokenKind::Range => { is_range = true; },
+                            _ => { is_range = false; },
+                        }
+                        if is_range {
+                            let _ = self.advance();  // consume '..'
+                            let e_tk = self.peek();
+                            let mut got_end = false;
+                            let mut end_val: i64 = 0;
+                            match e_tk.kind {
+                                token.TokenKind::IntLiteral(en) => {
+                                    end_val = en;
+                                    got_end = true;
+                                },
+                                _ => { got_end = false; },
+                            }
+                            if got_end {
+                                let _ = self.advance();
+                                pattern = std.string.concat(pattern, "..");
+                                pattern = std.string.concat(pattern, std.string.from_int(end_val));
+                            }
+                        }
+                        is_valid = true;
+                    },
+                    token.TokenKind::StringLiteral(s) => {
+                        // Encode with surrounding quotes — the Rust codegen
+                        // string-match path strips them back off.
+                        pattern = std.string.concat("\"", s);
+                        pattern = std.string.concat(pattern, "\"");
+                        let _ = self.advance();
+                        is_valid = true;
+                    },
+                    _ => {
+                        // Unrecognized token — skip (mirrors Rust's
+                        // tolerance for stray tokens between arms).
+                        let _ = self.advance();
+                    },
+                }
+                if is_valid {
+                    // Multi-pattern arms: `A | B | C => ...`.
+                    let mut patterns = vector.Vector<String>.new();
+                    patterns.push(pattern);
+                    let mut keep_pipe = true;
+                    while keep_pipe {
+                        let pi_tk = self.peek();
+                        let mut is_pipe = false;
+                        match pi_tk.kind {
+                            token.TokenKind::Pipe => { is_pipe = true; },
+                            _ => { is_pipe = false; },
+                        }
+                        if !is_pipe {
+                            keep_pipe = false;
+                        } else {
+                            let _ = self.advance();  // consume '|'
+                            let np_tk = self.peek();
+                            let mut pushed = false;
+                            match np_tk.kind {
+                                token.TokenKind::Identifier(p2) => {
+                                    patterns.push(p2);
+                                    let _ = self.advance();
+                                    pushed = true;
+                                },
+                                token.TokenKind::IntLiteral(n2) => {
+                                    patterns.push(std.string.from_int(n2));
+                                    let _ = self.advance();
+                                    pushed = true;
+                                },
+                                token.TokenKind::StringLiteral(s2) => {
+                                    patterns.push(std.string.concat(std.string.concat("\"", s2), "\""));
+                                    let _ = self.advance();
+                                    pushed = true;
+                                },
+                                _ => { keep_pipe = false; },
+                            }
+                        }
+                    }
+                    // Binding detection: a single lowercase identifier
+                    // pattern followed by `if`/`->` is a binding, not a
+                    // pattern. Mirrors `src/parser/mod.rs:943-962`.
+                    let mut params = vector.Vector<String>.new();
+                    let plen = (patterns).len();
+                    if plen == 1 {
+                        let pat = (patterns).get(0).unwrap();
+                        let pat_len = std.string.len(pat);
+                        let mut is_lower = false;
+                        let mut is_identifier = true;
+                        let is_not_underscore = !std.string.equals(pat, "_");
+                        if pat_len > 0 {
+                            let c0 = std.string.at(pat, 0);
+                            is_lower = c0 >= 97 && c0 <= 122;
+                            let mut ci = 0;
+                            while ci < pat_len {
+                                let cc = std.string.at(pat, ci);
+                                let is_alnum = (cc >= 97 && cc <= 122) || (cc >= 65 && cc <= 90) || (cc >= 48 && cc <= 57) || cc == 95;
+                                if !is_alnum {
+                                    is_identifier = false;
+                                }
+                                ci = ci + 1;
+                            }
+                        }
+                        let nx_tk = self.peek();
+                        let mut followed = false;
+                        match nx_tk.kind {
+                            token.TokenKind::If => { followed = true; },
+                            token.TokenKind::Arrow => { followed = true; },
+                            _ => { followed = false; },
+                        }
+                        if is_lower && is_identifier && is_not_underscore && followed {
+                            params.push(pat);
+                            patterns.clear();
+                        }
+                    }
+                    // Explicit params: `Variant(a, b) => ...`.
+                    let pa_tk = self.peek();
+                    let mut is_lparen = false;
+                    match pa_tk.kind {
+                        token.TokenKind::LParen => { is_lparen = true; },
+                        _ => { is_lparen = false; },
+                    }
+                    if is_lparen {
+                        let _ = self.advance();  // consume '('
+                        let mut pdone = false;
+                        while !pdone {
+                            let tk2 = self.peek();
+                            let mut pstop = false;
+                            match tk2.kind {
+                                token.TokenKind::RParen => { pstop = true; },
+                                token.TokenKind::EOF => { pstop = true; },
+                                _ => { pstop = false; },
+                            }
+                            if pstop {
+                                pdone = true;
+                            } else {
+                                let pr_tk = self.peek();
+                                let mut is_pident = false;
+                                match pr_tk.kind {
+                                    token.TokenKind::Identifier(_) => { is_pident = true; },
+                                    _ => { is_pident = false; },
+                                }
+                                if is_pident {
+                                    let pc = self.advance();
+                                    match pc.kind {
+                                        token.TokenKind::Identifier(pn) => { params.push(pn); },
+                                        _ => {},
+                                    }
+                                } else {
+                                    let _ = self.advance();
+                                }
+                                let cm2_tk = self.peek();
+                                let mut is_comma2 = false;
+                                match cm2_tk.kind {
+                                    token.TokenKind::Comma => { is_comma2 = true; },
+                                    _ => { is_comma2 = false; },
+                                }
+                                if is_comma2 { let _ = self.advance(); }
+                            }
+                        }
+                        let rp_tk = self.peek();
+                        let mut is_rparen = false;
+                        match rp_tk.kind {
+                            token.TokenKind::RParen => { is_rparen = true; },
+                            _ => { is_rparen = false; },
+                        }
+                        if is_rparen { let _ = self.advance(); }
+                    }
+                    // Guard: `pat if cond => ...`.
+                    let mut has_guard = false;
+                    let mut guard = ast.Expression::Integer(0);
+                    let g_tk = self.peek();
+                    let mut is_if = false;
+                    match g_tk.kind {
+                        token.TokenKind::If => { is_if = true; },
+                        _ => { is_if = false; },
+                    }
+                    if is_if {
+                        let _ = self.advance();  // consume 'if'
+                        let g_res = self.parse_expression();
+                        if g_res.is_err() { return result.Result::Err(g_res.unwrap_err()); }
+                        guard = g_res.unwrap();
+                        has_guard = true;
+                    }
+                    // Arrow + body.
+                    let ar_tk = self.peek();
+                    let mut is_arrow = false;
+                    match ar_tk.kind {
+                        token.TokenKind::Arrow => { is_arrow = true; },
+                        _ => { is_arrow = false; },
+                    }
+                    if is_arrow {
+                        let _ = self.advance();  // consume '->'
+                        let lb3_tk = self.peek();
+                        let mut is_body_brace = false;
+                        match lb3_tk.kind {
+                            token.TokenKind::LBrace => { is_body_brace = true; },
+                            _ => { is_body_brace = false; },
+                        }
+                        let mut body = vector.Vector<ast.Statement>.new();
+                        if is_body_brace {
+                            let b_res = self.parse_block();
+                            if b_res.is_err() { return result.Result::Err(b_res.unwrap_err()); }
+                            body = b_res.unwrap();
+                        } else {
+                            let s_res = self.parse_statement();
+                            if s_res.is_ok() {
+                                body.push(s_res.unwrap());
+                            }
+                        }
+                        let arm = ast.MatchArm {
+                            pattern: pattern,
+                            patterns: patterns,
+                            has_guard: has_guard,
+                            guard: guard,
+                            params: params,
+                            body: body,
+                        };
+                        arms.push(arm);
+                    }
+                }
+                // Optional trailing comma between arms.
+                let cm3_tk = self.peek();
+                let mut is_comma3 = false;
+                match cm3_tk.kind {
+                    token.TokenKind::Comma => { is_comma3 = true; },
+                    _ => { is_comma3 = false; },
+                }
+                if is_comma3 { let _ = self.advance(); }
+            }
+        }
+        // Consume the closing '}'.
+        let rb_tk = self.peek();
+        let mut is_rbrace = false;
+        match rb_tk.kind {
+            token.TokenKind::RBrace => { is_rbrace = true; },
+            _ => { is_rbrace = false; },
+        }
+        if is_rbrace { let _ = self.advance(); }
+        return result.Result::Ok(arms);
+    }
+
     pub fn parse_statement(mut self) -> result.Result<ast.Statement, String> {
         let tk = self.peek();
         
@@ -1090,6 +1510,28 @@ impl Parser {
                 let body_res = self.parse_block();
                 if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
                 return result.Result::Ok(ast.Statement::Spawn(body_res.unwrap()));
+            },
+            token.TokenKind::Match => {
+                // `match cond { arms }` — statement position. Mirrors
+                // `src/parser/mod.rs:817-1022` (arms logic factored into
+                // parse_match_arms).
+                let _ = self.advance();  // consume 'match'
+                let cond_res = self.parse_expression();
+                if cond_res.is_err() { return result.Result::Err(cond_res.unwrap_err()); }
+                let cond = cond_res.unwrap();
+                let lb_tk = self.peek();
+                let mut is_lbrace = false;
+                match lb_tk.kind {
+                    token.TokenKind::LBrace => { is_lbrace = true; },
+                    _ => { is_lbrace = false; },
+                }
+                if !is_lbrace {
+                    return result.Result::Err("Expected { after match condition");
+                }
+                let _ = self.advance();  // consume '{'
+                let arms_res = self.parse_match_arms();
+                if arms_res.is_err() { return result.Result::Err(arms_res.unwrap_err()); }
+                return result.Result::Ok(ast.Statement::Match(cond, arms_res.unwrap()));
             },
             _ => {
                 let expr_res = self.parse_expression();

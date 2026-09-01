@@ -541,6 +541,13 @@ fn test_self_parser_stmts() {
     assert_snapshot!(run_aion_test("compiler/self_parser_stmts"));
 }
 #[test]
+fn test_self_parser_match() {
+    // #156 Slice 4 — verifies match statements (path patterns, binding
+    // params, guards) and match expressions (int/range/multi-pattern)
+    // parse into the expected AST variants.
+    assert_snapshot!(run_aion_test("compiler/self_parser_match"));
+}
+#[test]
 fn test_optimization_check() {
     assert_snapshot!(run_aion_test("compiler/optimization_check"));
 }
