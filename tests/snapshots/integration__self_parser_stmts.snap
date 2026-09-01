@@ -1,0 +1,16 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/self_parser_stmts\")"
+---
+tokens: 63
+parse ok
+declarations: 1
+function: main
+statements: 7
+[0] Let
+[1] While
+[2] UnsafeBlock
+[3] Spawn
+[4] Let
+[5] ExpressionStmt
+[6] Return
