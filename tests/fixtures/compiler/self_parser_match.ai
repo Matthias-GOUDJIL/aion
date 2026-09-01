@@ -1,0 +1,148 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.parser
+use compiler.ast
+use compiler.token
+
+// #156 Slice 4 — `match` parsing: statement + expression positions,
+// pattern forms (identifier/path, int, int range, string, wildcard,
+// multi-pattern `|`, binding params, guard).
+//
+// Checker-limitation note: this fixture verifies that match statements
+// and match EXPRESSIONS parse into the expected Statement/Expression
+// variants (via boolean helpers). It cannot introspect the arms
+// Vector: the type checker fails to type match bindings carrying a
+// Vector whose element type comes from another module
+// (`Statement::Match(c, arms)` -> `arms.len()` = "method call on
+// unknown"). Tracked separately; the parse succeeding is itself the
+// assertion — any malformed arm would surface as "parser error".
+
+fn stmt_kind(s: compiler.ast.Statement) -> String {
+    match s {
+        compiler.ast.Statement::Match(_c, _a) => {
+            return "Match"
+        },
+        compiler.ast.Statement::Return(_v, _i) => {
+            return "Return"
+        },
+        compiler.ast.Statement::Let(_n, _v, _t, _m) => {
+            return "Let"
+        },
+        compiler.ast.Statement::ExpressionStmt(_e) => {
+            return "ExpressionStmt"
+        },
+        _ => {
+            return "Other"
+        },
+    }
+}
+
+fn is_match_expr_return(s: compiler.ast.Statement) -> bool {
+    match s {
+        compiler.ast.Statement::Return(v, _i) => {
+            match v {
+                compiler.ast.Expression::Match(_c, _a) => {
+                    return true
+                },
+                _ => {
+                    return false
+                },
+            }
+        },
+        _ => {
+            return false
+        },
+    }
+}
+
+fn main() {
+    let source = "fn classify(x: i64) -> String {
+    return match x {
+        0 => \"zero\",
+        1 | 2 => \"small\",
+        3..10 => \"range\",
+        _ => \"large\",
+    }
+}
+
+fn describe(c: Color) -> String {
+    match c {
+        Color.Red => io.println(\"red\"),
+        Color.Green => io.println(\"green\"),
+        _ => io.println(\"other\"),
+    }
+    return \"done\"
+}
+
+fn unwrap2(o: Option<i64>) -> i64 {
+    match o {
+        Some(v) => v,
+        None => 0,
+    }
+}
+
+fn grade(score: i64) -> String {
+    match score {
+        n if n > 90 => \"A\",
+        _ => \"F\",
+    }
+}"
+
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut tokens = vector.Vector<token.Token>.new()
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        }
+        tokens.push(tok)
+        if is_eof { done = true }
+    }
+    io.print("tokens: ")
+    io.println(string.from_int(tokens.len()))
+
+    let mut p = compiler.parser.Parser.new(tokens)
+    let prog_res = p.parse_program()
+    if prog_res.is_err() {
+        io.print("parser error: ")
+        io.println(prog_res.unwrap_err() as String)
+        return
+    }
+    io.println("parse ok")
+    let prog = prog_res.unwrap() as compiler.ast.Program
+    let decls = prog.declarations
+    io.print("declarations: ")
+    io.println(string.from_int((decls).len()))
+
+    let mut i = 0
+    let n = (decls).len()
+    while i < n {
+        let d = (decls).get(i).unwrap() as compiler.ast.Declaration
+        match d {
+            compiler.ast.Declaration::Function(f) => {
+                io.print("== fn ")
+                io.println(f.name)
+                let body = f.body
+                let nb = (body).len()
+                let mut si = 0
+                while si < nb {
+                    let s = (body).get(si).unwrap() as compiler.ast.Statement
+                    io.print("  [")
+                    io.print(string.from_int(si))
+                    io.print("] ")
+                    io.println(stmt_kind(s))
+                    if is_match_expr_return(s) {
+                        io.println("      ^ return value is a match expression")
+                    }
+                    si = si + 1
+                }
+            },
+            _ => io.println("non-function decl"),
+        }
+        i = i + 1
+    }
+}

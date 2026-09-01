@@ -84,6 +84,9 @@ pub struct EnumVariant {
 
 pub struct MatchArm {
     pattern: String,
+    patterns: vector.Vector<String>, // multi-pattern arms: `A | B => ...`. Empty = single pattern (use `pattern`)
+    has_guard: bool, // true iff `guard` holds a guard expression (`pat if cond => ...`)
+    guard: Expression, // placeholder Integer(0) when has_guard is false
     params: vector.Vector<String>,
     body: vector.Vector<Statement>,
 }
@@ -129,5 +132,6 @@ pub enum Expression {
     EnumInst(String, String, vector.Vector<String>, vector.Vector<Expression>), // name, variant, generic_args, arguments
     MemberAccess(Expression, String), // receiver, member
     MethodCall(Expression, String, vector.Vector<String>, vector.Vector<Expression>), // receiver, method, generic_args, arguments
+    Match(Expression, vector.Vector<MatchArm>), // expression-position match: `let x = match e { ... }` (#156 Slice 4)
     TypeRef(String, vector.Vector<String>) // name, generic_args
 }

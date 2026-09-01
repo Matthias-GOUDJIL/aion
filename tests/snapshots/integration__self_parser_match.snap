@@ -1,0 +1,17 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/self_parser_match\")"
+---
+tokens: 141
+parse ok
+declarations: 4
+== fn classify
+  [0] Return
+      ^ return value is a match expression
+== fn describe
+  [0] Match
+  [1] Return
+== fn unwrap2
+  [0] Match
+== fn grade
+  [0] Match
