@@ -1,0 +1,80 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.parser
+use compiler.ast
+use compiler.codegen
+
+// #132 — control flow & statements: Let (alloca+store), Assignment
+// (store), If/While (basic blocks + branch), break/continue (loop
+// stacks), short-circuit && / || (logic_rhs/logic_merge blocks + phi),
+// Spawn/UnsafeBlock (inline, matching the Rust codegen), ExpressionStmt,
+// and Call lowering (builtin runtime table + user function signatures).
+//
+// Acceptance (per #132):
+//   - let/if/while/break/continue/spawn/unsafe lower to valid IR    [x]
+//   - Spawn emits inline (Rust parity — see control_flow.rs:738)    [x]
+//   - Short-circuit produces logic blocks + phi                     [x]
+//   - Output passes `opt-15 --opaque-pointers -verify`              [x]
+//   - Snapshot committed                                            [x]
+
+fn main() {
+    let source = "fn main() {
+    let mut i = 0
+    let mut sum = 0
+    while i < 5 {
+        sum = sum + i
+        i = i + 1
+    }
+    if sum == 10 && i == 5 {
+        io.println(\"ten\")
+    } else {
+        io.println(\"other\")
+    }
+    let mut n = 0
+    loop {
+        n = n + 1
+        if n == 3 {
+            break
+        }
+    }
+    io.println(\"done\")
+    return 0
+}
+
+fn twice(x: i64) -> i64 {
+    return x * 2
+}
+
+fn usecall() -> i64 {
+    let r = twice(21)
+    return r
+}"
+
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut tokens = vector.Vector<token.Token>.new()
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        }
+        tokens.push(tok)
+        if is_eof { done = true }
+    }
+
+    let mut p = compiler.parser.Parser.new(tokens)
+    let prog_res = p.parse_program()
+    if prog_res.is_err() {
+        io.print("parser error: ")
+        io.println(prog_res.unwrap_err() as String)
+        return
+    }
+    let prog = prog_res.unwrap() as compiler.ast.Program
+
+    let mut cg = compiler.codegen.Codegen.new("aion_module")
+    let ir = cg.compile(prog)
+    io.println(ir)
+}

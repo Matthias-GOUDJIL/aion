@@ -41,10 +41,16 @@ pub struct Codegen {
     module_name: String,
     output: vector.Vector<String>,
     ssa_counter: i64,
+    block_counter: i64,
+    block_terminated: bool,
+    current_block: String,
+    exit_stack: vector.Vector<String>,
+    cond_stack: vector.Vector<String>,
     struct_types: ordered_map.OrderedMap<String>,
     function_signatures: ordered_map.OrderedMap<String>,
     string_ids: ordered_map.OrderedMap<String>,
     locals: ordered_map.OrderedMap<String>,
+    local_kinds: ordered_map.OrderedMap<String>,
 }
 
 // A lowered expression value: the LLVM operand text (`"0"`, `"%t3"`,
@@ -114,10 +120,16 @@ impl Codegen {
             module_name: module_name,
             output: vector.Vector<String>.new(),
             ssa_counter: 0,
+            block_counter: 0,
+            block_terminated: false,
+            current_block: "",
+            exit_stack: vector.Vector<String>.new(),
+            cond_stack: vector.Vector<String>.new(),
             struct_types: ordered_map.OrderedMap<String>.new(),
             function_signatures: ordered_map.OrderedMap<String>.new(),
             string_ids: ordered_map.OrderedMap<String>.new(),
             locals: ordered_map.OrderedMap<String>.new(),
+            local_kinds: ordered_map.OrderedMap<String>.new(),
         }
     }
 
@@ -126,6 +138,35 @@ impl Codegen {
         let name = std.string.concat("%t", std.string.from_int(self.ssa_counter));
         self.ssa_counter = self.ssa_counter + 1;
         return name;
+    }
+
+    // Allocate the next block label suffix (`then.0`, `while.cond.1`, ...).
+    fn next_block_id(mut self) -> i64 {
+        let id = self.block_counter;
+        self.block_counter = self.block_counter + 1;
+        return id;
+    }
+
+    // Start a new basic block: emit the label line, mark the block as
+    // unterminated, and track the current block name (phi incoming edges
+    // reference it).
+    fn emit_label(mut self, name: String) -> String {
+        let mut buf = self.output;
+        let labeled = std.string.concat(name, ":");
+        buf.push(labeled);
+        self.output = buf;
+        self.current_block = name;
+        self.block_terminated = false;
+        return name;
+    }
+
+    // Emit an unconditional branch and mark the block terminated.
+    fn emit_br(mut self, target: String) {
+        let mut buf = self.output;
+        let mut line = std.string.concat("  br label %", target);
+        buf.push(line);
+        self.output = buf;
+        self.block_terminated = true;
     }
 
     // Emit the leading module header + runtime `declare` lines.
@@ -152,9 +193,30 @@ impl Codegen {
         buf.push("declare void @exit(i32)");
         buf.push("declare void @GC_init()");
         buf.push("declare ptr @aion_malloc(i64)");
+        buf.push("declare ptr @aion_realloc(i64, i64)");
+        buf.push("declare void @aion_free(ptr)");
+        buf.push("declare void @aion_memzero(ptr, i64)");
         buf.push("declare void @aion_io_println(ptr)");
         buf.push("declare void @aion_io_print(ptr)");
+        buf.push("declare ptr @aion_io_read_line()");
         buf.push("declare ptr @aion_int_to_str(i64)");
+        buf.push("declare ptr @aion_float_to_str(double)");
+        buf.push("declare double @aion_str_to_float(ptr)");
+        buf.push("declare i64 @aion_string_len(ptr)");
+        buf.push("declare i64 @aion_str_eq(ptr, ptr)");
+        buf.push("declare ptr @aion_str_concat(ptr, ptr)");
+        buf.push("declare i64 @aion_str_at(ptr, i64)");
+        buf.push("declare ptr @aion_str_substr(ptr, i64, i64)");
+        buf.push("declare ptr @aion_char_to_str(i64)");
+        buf.push("declare ptr @aion_read_file(ptr)");
+        buf.push("declare i64 @aion_write_file(ptr, ptr)");
+        buf.push("declare i64 @aion_append_file(ptr, ptr)");
+        buf.push("declare i64 @aion_fs_exists(ptr)");
+        buf.push("declare ptr @aion_getenv(ptr)");
+        buf.push("declare i64 @aion_get_argc()");
+        buf.push("declare ptr @aion_get_argv_index(i64)");
+        buf.push("declare void @aion_array_oob(i64, i64)");
+        buf.push("declare void @aion_spawn(ptr)");
         buf.push("@aion_argc = global i64 0");
         buf.push("@aion_argv = global ptr null");
         buf.push("");
@@ -211,7 +273,8 @@ impl Codegen {
         return joined;
     }
 
-    // Pass 1 — walk every function body and collect string literals in
+    // Pass 1 — pre-collect user function signatures (for Call lowering)
+    // and walk every function body collecting string literals in
     // declaration order (deterministic @.str.N numbering, #130).
     fn collect_strings_prog(mut self, prog: compiler.ast.Program) {
         let decls = prog.declarations;
@@ -221,6 +284,7 @@ impl Codegen {
             let d = (decls).get(i).unwrap() as compiler.ast.Declaration;
             match d {
                 compiler.ast.Declaration::Function(f) => {
+                    self.function_signatures.insert(f.name, f.return_type);
                     self.collect_strings_fn(f);
                 },
                 _ => {},
@@ -242,7 +306,7 @@ impl Codegen {
 
     fn collect_strings_stmt(mut self, s: compiler.ast.Statement) {
         match s {
-            compiler.ast.Statement::Let(_name, value, _ty, _m) => {
+            compiler.ast.Statement::Let(name, value, _intent, _is_mut) => {
                 self.collect_strings_expr(value);
             },
             compiler.ast.Statement::Return(value, _ty) => {
@@ -254,7 +318,33 @@ impl Codegen {
             compiler.ast.Statement::Assignment(_target, value) => {
                 self.collect_strings_expr(value);
             },
+            // Nested blocks — recurse so strings inside if branches,
+            // loop bodies, and spawn/unsafe blocks are registered in
+            // the same pass (before any @.str.N is emitted). #132.
+            compiler.ast.Statement::If(_cond, then_branch, else_branch) => {
+                self.collect_strings_stmts(then_branch);
+                self.collect_strings_stmts(else_branch);
+            },
+            compiler.ast.Statement::While(_cond, body) => {
+                self.collect_strings_stmts(body);
+            },
+            compiler.ast.Statement::Spawn(body) => {
+                self.collect_strings_stmts(body);
+            },
+            compiler.ast.Statement::UnsafeBlock(body) => {
+                self.collect_strings_stmts(body);
+            },
             _ => {},
+        }
+    }
+
+    fn collect_strings_stmts(mut self, body: vector.Vector<compiler.ast.Statement>) {
+        let n = (body).len();
+        let mut i = 0;
+        while i < n {
+            let s = (body).get(i).unwrap() as compiler.ast.Statement;
+            self.collect_strings_stmt(s);
+            i = i + 1;
         }
     }
 
@@ -271,6 +361,20 @@ impl Codegen {
             compiler.ast.Expression::Infix(l, _op, r) => {
                 self.collect_strings_expr(l);
                 self.collect_strings_expr(r);
+            },
+            // Recurse into call arguments — string literals passed to
+            // io.println(& co.) must be registered too. #132.
+            compiler.ast.Expression::Call(_name, _generics, args) => {
+                let na = (args).len();
+                let mut i = 0;
+                while i < na {
+                    let a = (args).get(i).unwrap() as compiler.ast.Expression;
+                    self.collect_strings_expr(a);
+                    i = i + 1;
+                }
+            },
+            compiler.ast.Expression::Cast(inner, _target) => {
+                self.collect_strings_expr(inner);
             },
             _ => {},
         }
@@ -375,6 +479,7 @@ impl Codegen {
                     let prm = (params).get(i).unwrap() as compiler.ast.Param;
                     let lt = aion_type_to_llvm(prm.type_name);
                     self.locals.insert(prm.name, lt);
+                    self.local_kinds.insert(prm.name, "param");
                     let mut sp = std.string.concat(lt, " %");
                     sp = std.string.concat(sp, prm.name);
                     sig_parts.push(sp);
@@ -388,8 +493,10 @@ impl Codegen {
         let mut buf = self.output;
         buf.push(sig);
         buf.push("entry:");
-        // Forward scan for the first `Return` statement. Other statements
-        // are silently skipped — full control-flow lowering is #132.
+        self.output = buf;
+        self.current_block = "entry";
+        self.block_terminated = false;
+        // Forward scan — full statement lowering. #132.
         let body = f.body;
         let n = (body).len();
         let mut i = 0;
@@ -421,8 +528,13 @@ impl Codegen {
     }
 
     // Lower a single statement. Returns `true` iff a terminator was
-    // emitted (so the caller knows not to add a default one).
+    // emitted (so the caller knows not to add a default one). Statements
+    // following a terminator in the same list are skipped (dead code).
+    // #132.
     fn compile_stmt(mut self, s: compiler.ast.Statement, ret_ty: String) -> bool {
+        if self.block_terminated {
+            return false;
+        }
         match s {
             compiler.ast.Statement::Return(expr, _ty) => {
                 let op = self.compile_expr(expr);
@@ -433,12 +545,195 @@ impl Codegen {
                 line = std.string.concat(line, final_op.value);
                 buf.push(line);
                 self.output = buf;
+                self.block_terminated = true;
                 return true;
             },
-            // Other statements lowered in later sub-issues (#132, #134).
-            _ => {},
+            compiler.ast.Statement::Let(name, value, _intent, _is_mut) => {
+                // alloca slot + store. The variable's LLVM type is the
+                // operand's type (no explicit type annotation reaches the
+                // Aion AST Let tuple). #132.
+                let op = self.compile_expr(value);
+                let addr = std.string.concat("%", std.string.concat(name, ".addr"));
+                let mut buf = self.output;
+                let mut line = std.string.concat("  ", addr);
+                line = std.string.concat(line, " = alloca ");
+                line = std.string.concat(line, op.ty);
+                buf.push(line);
+                let mut line2 = std.string.concat("  store ", "");
+                line2 = std.string.concat(line2, op.ty);
+                line2 = std.string.concat(line2, " ");
+                line2 = std.string.concat(line2, op.value);
+                line2 = std.string.concat(line2, ", ptr ");
+                line2 = std.string.concat(line2, addr);
+                buf.push(line2);
+                self.output = buf;
+                self.locals.insert(name, op.ty);
+                self.local_kinds.insert(name, "alloca");
+                return false;
+            },
+            compiler.ast.Statement::Assignment(target, value) => {
+                // Simple identifier targets — member/index targets are #134.
+                let op = self.compile_expr(value);
+                match target {
+                    compiler.ast.Expression::Identifier(name) => {
+                        if self.locals.contains_key(name) {
+                            let lt = self.locals.get(name).unwrap();
+                            let mut buf = self.output;
+                            let mut line = std.string.concat("  store ", "");
+                            line = std.string.concat(line, op.ty);
+                            line = std.string.concat(line, " ");
+                            line = std.string.concat(line, op.value);
+                            line = std.string.concat(line, ", ptr %");
+                            line = std.string.concat(line, name);
+                            line = std.string.concat(line, ".addr");
+                            buf.push(line);
+                            self.output = buf;
+                        }
+                    },
+                    _ => {},
+                }
+                return false;
+            },
+            compiler.ast.Statement::ExpressionStmt(e) => {
+                // Evaluate and discard — the emitted SSA (e.g. a call)
+                // stays in the buffer; unused values are valid LLVM.
+                let _ = self.compile_expr(e);
+                return false;
+            },
+            compiler.ast.Statement::If(condition, then_branch, else_branch) => {
+                let cond_op = self.compile_expr(condition);
+                // Comparisons zext their i1 to i64 (bool = i64) — truncate
+                // back for the branch. opt removes the round trip.
+                let c1 = self.bool_from(cond_op);
+                let bid = self.next_block_id();
+                let mut then_l = std.string.concat("then.", std.string.from_int(bid));
+                let mut else_l = std.string.concat("else.", std.string.from_int(bid));
+                let mut merge_l = std.string.concat("ifcont.", std.string.from_int(bid));
+                let mut buf = self.output;
+                let mut line = std.string.concat("  br i1 ", c1);
+                line = std.string.concat(line, ", label %");
+                line = std.string.concat(line, then_l);
+                line = std.string.concat(line, ", label %");
+                line = std.string.concat(line, else_l);
+                buf.push(line);
+                self.output = buf;
+                self.block_terminated = true;
+                // then branch
+                let _ = self.emit_label(then_l);
+                self.compile_block_stmts(then_branch, ret_ty);
+                if !self.block_terminated {
+                    self.emit_br(merge_l);
+                }
+                // else branch
+                let _ = self.emit_label(else_l);
+                self.compile_block_stmts(else_branch, ret_ty);
+                if !self.block_terminated {
+                    self.emit_br(merge_l);
+                }
+                // merge
+                let _ = self.emit_label(merge_l);
+                return false;
+            },
+            compiler.ast.Statement::While(condition, body) => {
+                let bid = self.next_block_id();
+                let mut cond_l = std.string.concat("while.cond.", std.string.from_int(bid));
+                let mut body_l = std.string.concat("while.body.", std.string.from_int(bid));
+                let mut exit_l = std.string.concat("while.exit.", std.string.from_int(bid));
+                self.emit_br(cond_l);
+                let _ = self.emit_label(cond_l);
+                let cond_op = self.compile_expr(condition);
+                let c1 = self.bool_from(cond_op);
+                let mut buf = self.output;
+                let mut line = std.string.concat("  br i1 ", c1);
+                line = std.string.concat(line, ", label %");
+                line = std.string.concat(line, body_l);
+                line = std.string.concat(line, ", label %");
+                line = std.string.concat(line, exit_l);
+                buf.push(line);
+                self.output = buf;
+                self.block_terminated = true;
+                let _ = self.emit_label(body_l);
+                self.exit_stack.push(exit_l);
+                self.cond_stack.push(cond_l);
+                self.compile_block_stmts(body, ret_ty);
+                let _ = self.exit_stack.pop();
+                let _ = self.cond_stack.pop();
+                if !self.block_terminated {
+                    self.emit_br(cond_l);
+                }
+                let _ = self.emit_label(exit_l);
+                return false;
+            },
+            compiler.ast.Statement::Break => {
+                let top = self.exit_stack.last();
+                if top.is_some() {
+                    let l = top.unwrap();
+                    self.emit_br(l);
+                }
+                return false;
+            },
+            compiler.ast.Statement::Continue => {
+                let top = self.cond_stack.last();
+                if top.is_some() {
+                    let l = top.unwrap();
+                    self.emit_br(l);
+                }
+                return false;
+            },
+            // Spawn and unsafe blocks compile inline — matching the Rust
+            // codegen (`src/codegen/control_flow.rs:738-740`), where Spawn
+            // does not create a thread and UnsafeBlock emits identical IR.
+            compiler.ast.Statement::Spawn(body) => {
+                self.compile_block_stmts(body, ret_ty);
+                return false;
+            },
+            compiler.ast.Statement::UnsafeBlock(body) => {
+                self.compile_block_stmts(body, ret_ty);
+                return false;
+            },
+            compiler.ast.Statement::NoOp => {
+                return false;
+            },
+            // Match lowering is #134.
+            _ => {
+                return false;
+            },
         }
-        return false;
+    }
+
+    // Lower a statement list into the current block, skipping dead
+    // statements after a terminator.
+    fn compile_block_stmts(mut self, body: vector.Vector<compiler.ast.Statement>, ret_ty: String) {
+        let n = (body).len();
+        let mut i = 0;
+        while i < n {
+            if self.block_terminated {
+                return;
+            }
+            let s = (body).get(i).unwrap() as compiler.ast.Statement;
+            let _ = self.compile_stmt(s, ret_ty);
+            i = i + 1;
+        }
+    }
+
+    // Truncate an i64 boolean operand to i1 for branching. All Aion
+    // bools are i64 (SPEC §2); comparisons zext on production and the
+    // branch site truncs back — opt removes the round trip. #132.
+    fn bool_from(mut self, src: Operand) -> String {
+        if std.string.equals(src.ty, "i1") {
+            return src.value;
+        }
+        let c = self.next_ssa();
+        let mut buf = self.output;
+        let mut line = std.string.concat("  ", c);
+        line = std.string.concat(line, " = trunc ");
+        line = std.string.concat(line, src.ty);
+        line = std.string.concat(line, " ");
+        line = std.string.concat(line, src.value);
+        line = std.string.concat(line, " to i1");
+        buf.push(line);
+        self.output = buf;
+        return c;
     }
 
     // Coerce an operand to the target LLVM type, emitting an explicit
@@ -587,22 +882,76 @@ impl Codegen {
             compiler.ast.Expression::Identifier(name) => {
                 if self.locals.contains_key(name) {
                     let lt = self.locals.get(name).unwrap();
-                    let op = Operand {
-                        value: std.string.concat("%", name),
-                        ty: lt,
-                    };
+                    let kind = self.local_kinds.get(name).unwrap();
+                    if std.string.equals(kind, "param") {
+                        // SSA parameter value — direct reference.
+                        let op = Operand {
+                            value: std.string.concat("%", name),
+                            ty: lt,
+                        };
+                        return op;
+                    }
+                    // Alloca slot — load on read. #132.
+                    let loaded = self.next_ssa();
+                    let mut buf = self.output;
+                    let mut line = std.string.concat("  ", loaded);
+                    line = std.string.concat(line, " = load ");
+                    line = std.string.concat(line, lt);
+                    line = std.string.concat(line, ", ptr %");
+                    line = std.string.concat(line, name);
+                    line = std.string.concat(line, ".addr");
+                    buf.push(line);
+                    self.output = buf;
+                    let op = Operand { value: loaded, ty: lt };
                     return op;
                 }
-                // Unknown identifier (globals like aion_argc come with
-                // #132) — safe i64 zero placeholder.
+                // Global args (#106): `argc`/`argv` read from the module
+                // globals the C runtime populates.
+                if std.string.equals(name, "argc") {
+                    let loaded = self.next_ssa();
+                    let mut buf = self.output;
+                    let mut line = std.string.concat("  ", loaded);
+                    line = std.string.concat(line, " = load i64, ptr @aion_argc");
+                    buf.push(line);
+                    self.output = buf;
+                    let op = Operand { value: loaded, ty: "i64" };
+                    return op;
+                }
+                if std.string.equals(name, "argv") {
+                    let loaded = self.next_ssa();
+                    let mut buf = self.output;
+                    let mut line = std.string.concat("  ", loaded);
+                    line = std.string.concat(line, " = load ptr, ptr @aion_argv");
+                    buf.push(line);
+                    self.output = buf;
+                    let op = Operand { value: loaded, ty: "ptr" };
+                    return op;
+                }
+                // Unknown identifier — safe i64 zero placeholder.
                 let op = Operand { value: "0", ty: "i64" };
                 return op;
             },
             compiler.ast.Expression::Infix(l, op_tok, r) => {
+                // Short-circuit && / || — the right side must not be
+                // evaluated unless the left side allows it. Mirrors
+                // `src/codegen/expressions.rs:290`. #132.
+                let mut is_short = false;
+                let mut is_and = false;
+                match op_tok.kind {
+                    token.TokenKind::And => { is_short = true; is_and = true; },
+                    token.TokenKind::Or => { is_short = true; },
+                    _ => {},
+                }
+                if is_short {
+                    return self.compile_short_circuit(l, is_and, r);
+                }
                 let lo = self.compile_expr(l);
                 let ro = self.compile_expr(r);
                 let kind = op_tok.kind;
                 return self.compile_infix(lo, kind, ro);
+            },
+            compiler.ast.Expression::Call(name, _generics, args) => {
+                return self.compile_call(name, args);
             },
             compiler.ast.Expression::Cast(e, target) => {
                 let src = self.compile_expr(e);
@@ -756,6 +1105,178 @@ impl Codegen {
             return self.compile_float_infix(l2, kind, r2);
         }
         return self.compile_int_infix(lo, kind, ro);
+    }
+
+    // Short-circuit `&&` / `||`: the right side is lowered into its own
+    // basic block, reached only when the left side permits, and the
+    // result is a phi over the two incoming i1 edges. Mirrors
+    // `src/codegen/expressions.rs:290-350`. #132.
+    fn compile_short_circuit(mut self, l: compiler.ast.Expression, is_and: bool, r: compiler.ast.Expression) -> Operand {
+        let lo = self.compile_expr(l);
+        let c_l = self.bool_from(lo);
+        let bid = self.next_block_id();
+        let mut rhs_l = std.string.concat("logic_rhs.", std.string.from_int(bid));
+        let mut merge_l = std.string.concat("logic_merge.", std.string.from_int(bid));
+        let entry_block = self.current_block;
+        let mut buf = self.output;
+        let mut line = std.string.concat("  br i1 ", c_l);
+        line = std.string.concat(line, ", label %");
+        if is_and {
+            line = std.string.concat(line, rhs_l);
+            line = std.string.concat(line, ", label %");
+            line = std.string.concat(line, merge_l);
+        } else {
+            line = std.string.concat(line, merge_l);
+            line = std.string.concat(line, ", label %");
+            line = std.string.concat(line, rhs_l);
+        }
+        buf.push(line);
+        self.output = buf;
+        self.block_terminated = true;
+        // rhs block — only reached when the short-circuit allows it.
+        let _ = self.emit_label(rhs_l);
+        let ro = self.compile_expr(r);
+        let c_r = self.bool_from(ro);
+        self.emit_br(merge_l);
+        // merge block — phi over the two incoming edges.
+        let _ = self.emit_label(merge_l);
+        let const_val = "0";
+        if !is_and {
+            const_val = "1";
+        }
+        let p1 = self.next_ssa();
+        let mut buf2 = self.output;
+        let mut line2 = std.string.concat("  ", p1);
+        line2 = std.string.concat(line2, " = phi i1 [ ");
+        line2 = std.string.concat(line2, const_val);
+        line2 = std.string.concat(line2, ", %");
+        line2 = std.string.concat(line2, entry_block);
+        line2 = std.string.concat(line2, " ], [ ");
+        line2 = std.string.concat(line2, c_r);
+        line2 = std.string.concat(line2, ", %");
+        line2 = std.string.concat(line2, rhs_l);
+        line2 = std.string.concat(line2, " ]");
+        buf2.push(line2);
+        let p2 = self.next_ssa();
+        let mut line3 = std.string.concat("  ", p2);
+        line3 = std.string.concat(line3, " = zext i1 ");
+        line3 = std.string.concat(line3, p1);
+        line3 = std.string.concat(line3, " to i64");
+        buf2.push(line3);
+        self.output = buf2;
+        let op = Operand { value: p2, ty: "i64" };
+        return op;
+    }
+
+    // Resolve a builtin call name to its C runtime symbol. Returns ""
+    // when the name is not a builtin (user functions resolve via
+    // function_signatures). Mirrors `src/codegen/intrinsics.rs:15-59`.
+    fn builtin_c_name(name: String) -> String {
+        if std.string.equals(name, "io.println") { return "aion_io_println"; }
+        if std.string.equals(name, "io.print") { return "aion_io_print"; }
+        if std.string.equals(name, "io.read_line") { return "aion_io_read_line"; }
+        if std.string.equals(name, "string.from_int") { return "aion_int_to_str"; }
+        if std.string.equals(name, "string.from_float") { return "aion_float_to_str"; }
+        if std.string.equals(name, "string.to_float") { return "aion_str_to_float"; }
+        if std.string.equals(name, "string.len") { return "aion_string_len"; }
+        if std.string.equals(name, "String.len") { return "aion_string_len"; }
+        if std.string.equals(name, "i64.abs") { return "aion_i64_abs"; }
+        if std.string.equals(name, "i64.max") { return "aion_i64_max"; }
+        if std.string.equals(name, "i64.min") { return "aion_i64_min"; }
+        if std.string.equals(name, "aion_exit") { return "exit"; }
+        if std.string.equals(name, "exit") { return "exit"; }
+        if std.string.equals(name, "aion_malloc") { return "aion_malloc"; }
+        if std.string.equals(name, "aion_realloc") { return "aion_realloc"; }
+        if std.string.equals(name, "aion_free") { return "aion_free"; }
+        return "";
+    }
+
+    // Resolve a builtin call's LLVM return type.
+    fn builtin_ret_type(name: String) -> String {
+        if std.string.equals(name, "io.println") { return "void"; }
+        if std.string.equals(name, "io.print") { return "void"; }
+        if std.string.equals(name, "io.read_line") { return "ptr"; }
+        if std.string.equals(name, "string.from_int") { return "ptr"; }
+        if std.string.equals(name, "string.from_float") { return "ptr"; }
+        if std.string.equals(name, "string.to_float") { return "double"; }
+        if std.string.equals(name, "string.len") { return "i64"; }
+        if std.string.equals(name, "String.len") { return "i64"; }
+        if std.string.equals(name, "i64.abs") { return "i64"; }
+        if std.string.equals(name, "i64.max") { return "i64"; }
+        if std.string.equals(name, "i64.min") { return "i64"; }
+        if std.string.equals(name, "aion_exit") { return "void"; }
+        if std.string.equals(name, "exit") { return "void"; }
+        if std.string.equals(name, "aion_malloc") { return "ptr"; }
+        if std.string.equals(name, "aion_realloc") { return "ptr"; }
+        if std.string.equals(name, "aion_free") { return "void"; }
+        return "i64";
+    }
+
+    // Lower a call: compile the args, resolve the callee (builtin table
+    // first, then user function signatures collected in pass 1), emit
+    // `call <ret> @<symbol>(<args>)`. #132.
+    fn compile_call(mut self, name: String, args: vector.Vector<compiler.ast.Expression>) -> Operand {
+        let mut arg_ops = vector.Vector<Operand>.new();
+        let na = (args).len();
+        let mut i = 0;
+        while i < na {
+            let a = (args).get(i).unwrap() as compiler.ast.Expression;
+            let op = self.compile_expr(a);
+            arg_ops.push(op);
+            i = i + 1;
+        }
+        let mut cname = Codegen::builtin_c_name(name);
+        let mut ret = "";
+        if std.string.len(cname) > 0 {
+            ret = Codegen::builtin_ret_type(name);
+        } else {
+            cname = name;
+            if self.function_signatures.contains_key(cname) {
+                let rt = self.function_signatures.get(cname).unwrap();
+                let lt = aion_type_to_llvm(rt);
+                ret = lt;
+            }
+        }
+        if std.string.len(ret) == 0 {
+            ret = "i64";
+        }
+        // Arg list text.
+        let mut parts = vector.Vector<String>.new();
+        let mut j = 0;
+        while j < na {
+            let op = (arg_ops).get(j).unwrap();
+            let mut part = std.string.concat(op.ty, " ");
+            part = std.string.concat(part, op.value);
+            parts.push(part);
+            j = j + 1;
+        }
+        let joined = std.string.join(parts, ", ");
+        let is_void = std.string.equals(ret, "void");
+        let mut buf = self.output;
+        if is_void {
+            let mut line = std.string.concat("  call void @", "");
+            line = std.string.concat(line, cname);
+            line = std.string.concat(line, "(");
+            line = std.string.concat(line, joined);
+            line = std.string.concat(line, ")");
+            buf.push(line);
+            self.output = buf;
+            let op = Operand { value: "", ty: "void" };
+            return op;
+        }
+        let res = self.next_ssa();
+        let mut line = std.string.concat("  ", res);
+        line = std.string.concat(line, " = call ");
+        line = std.string.concat(line, ret);
+        line = std.string.concat(line, " @");
+        line = std.string.concat(line, cname);
+        line = std.string.concat(line, "(");
+        line = std.string.concat(line, joined);
+        line = std.string.concat(line, ")");
+        buf.push(line);
+        self.output = buf;
+        let op = Operand { value: res, ty: ret };
+        return op;
     }
 }
 

@@ -532,6 +532,13 @@ fn test_codegen_expressions() {
     assert_snapshot!(run_aion_test("compiler/codegen_expressions"));
 }
 #[test]
+fn test_codegen_control_flow() {
+    // #132 — let/assignment (alloca+store), if/while (basic blocks),
+    // break/continue, short-circuit (logic blocks + phi), spawn/unsafe
+    // (inline), and call lowering (builtins + user signatures).
+    assert_snapshot!(run_aion_test("compiler/codegen_control_flow"));
+}
+#[test]
 fn test_self_parser_call() {
     // #156 Slice 1 — verifies the parser's postfix dispatch loop produces
     // a Call AST node for `io.println("hello")` (vs the pre-#156 fold-only
