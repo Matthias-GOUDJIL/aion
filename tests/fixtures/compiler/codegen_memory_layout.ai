@@ -1,0 +1,69 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.parser
+use compiler.ast
+use compiler.codegen
+
+// #130 — memory layout & runtime ABI: struct/enum type definitions and
+// string literal globals emitted by `compiler/codegen.ai`.
+//
+// Parses a source containing a struct (exact field order), an enum
+// (tagged-union layout), and a string literal in main, feeds the AST
+// to the codegen, and prints the emitted `.ll` to stdout.
+//
+// Acceptance (per #130):
+//   - Struct types emitted with exact AST field order        [x]
+//   - String literals lowered as @.str.N globals w/ length   [x]
+//   - Enums emit %Name = type { i64, [64 x i8] }             [x]
+//   - Output passes `opt-15 --opaque-pointers -verify`
+//     (verified separately — the integration runner does not
+//     invoke opt-15 today)
+//   - Snapshot committed                                     [x]
+
+fn main() {
+    let source = "struct Point {
+    x: i64,
+    label: String,
+    y: i64,
+}
+
+struct Empty {
+}
+
+enum Maybe {
+    Some(i64),
+    None,
+}
+
+fn main() {
+    let s = \"hello, aion\"
+    return 0
+}"
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut tokens = vector.Vector<token.Token>.new()
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        }
+        tokens.push(tok)
+        if is_eof { done = true }
+    }
+
+    let mut p = compiler.parser.Parser.new(tokens)
+    let prog_res = p.parse_program()
+    if prog_res.is_err() {
+        io.print("parser error: ")
+        io.println(prog_res.unwrap_err() as String)
+        return
+    }
+    let prog = prog_res.unwrap() as compiler.ast.Program
+
+    let mut cg = compiler.codegen.Codegen.new("aion_module")
+    let ir = cg.compile(prog)
+    io.println(ir)
+}
