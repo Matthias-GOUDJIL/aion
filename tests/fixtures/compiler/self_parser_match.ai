@@ -6,37 +6,37 @@ use compiler.parser
 use compiler.ast
 use compiler.token
 
-// #156 Slice 4 — `match` parsing: statement + expression positions,
-// pattern forms (identifier/path, int, int range, string, wildcard,
-// multi-pattern `|`, binding params, guard).
+// #156 Slice 4 + #161 — `match` parsing: statement + expression
+// positions, all pattern forms (identifier/path, int, int range,
+// string, wildcard, multi-pattern `|`, binding params, guard).
 //
-// Checker-limitation note: this fixture verifies that match statements
-// and match EXPRESSIONS parse into the expected Statement/Expression
-// variants (via boolean helpers). It cannot introspect the arms
-// Vector: the type checker fails to type match bindings carrying a
-// Vector whose element type comes from another module
-// (`Statement::Match(c, arms)` -> `arms.len()` = "method call on
-// unknown"). Tracked separately; the parse succeeding is itself the
-// assertion — any malformed arm would surface as "parser error".
+// Introspects the parsed match arms (patterns, params, guards) — made
+// possible by #161 (cross-module Vector bindings now typed at both
+// checker and codegen level).
 
-fn stmt_kind(s: compiler.ast.Statement) -> String {
-    match s {
-        compiler.ast.Statement::Match(_c, _a) => {
-            return "Match"
-        },
-        compiler.ast.Statement::Return(_v, _i) => {
-            return "Return"
-        },
-        compiler.ast.Statement::Let(_n, _v, _t, _m) => {
-            return "Let"
-        },
-        compiler.ast.Statement::ExpressionStmt(_e) => {
-            return "ExpressionStmt"
-        },
-        _ => {
-            return "Other"
-        },
+fn arm_pattern(arms: vector.Vector<compiler.ast.MatchArm>, i: i64) -> String {
+    let a = (arms).get(i).unwrap() as compiler.ast.MatchArm
+    let p = a.pattern
+    return p
+}
+
+fn arm_param(arms: vector.Vector<compiler.ast.MatchArm>, i: i64) -> String {
+    let a = (arms).get(i).unwrap() as compiler.ast.MatchArm
+    let params = a.params
+    let n = (params).len()
+    if n == 0 {
+        return "-"
     }
+    let p = (params).get(0).unwrap()
+    return p
+}
+
+fn arm_has_guard(arms: vector.Vector<compiler.ast.MatchArm>, i: i64) -> String {
+    let a = (arms).get(i).unwrap() as compiler.ast.MatchArm
+    if a.has_guard {
+        return "guard"
+    }
+    return "-"
 }
 
 fn is_match_expr_return(s: compiler.ast.Statement) -> bool {
@@ -54,6 +54,25 @@ fn is_match_expr_return(s: compiler.ast.Statement) -> bool {
         _ => {
             return false
         },
+    }
+}
+
+fn dump_match_arms(label: String, arms: vector.Vector<compiler.ast.MatchArm>) {
+    let n = (arms).len()
+    io.print(label)
+    io.print(" arms: ")
+    io.println(string.from_int(n))
+    let mut i = 0
+    while i < n {
+        io.print("  [")
+        io.print(string.from_int(i))
+        io.print("] ")
+        io.print(arm_pattern(arms, i))
+        io.print(" bind=")
+        io.print(arm_param(arms, i))
+        io.print(" ")
+        io.println(arm_has_guard(arms, i))
+        i = i + 1
     }
 }
 
@@ -131,12 +150,15 @@ fn grade(score: i64) -> String {
                 let mut si = 0
                 while si < nb {
                     let s = (body).get(si).unwrap() as compiler.ast.Statement
-                    io.print("  [")
-                    io.print(string.from_int(si))
-                    io.print("] ")
-                    io.println(stmt_kind(s))
-                    if is_match_expr_return(s) {
-                        io.println("      ^ return value is a match expression")
+                    match s {
+                        compiler.ast.Statement::Match(_c, arms) => {
+                            dump_match_arms("stmt-match", arms)
+                        },
+                        _ => {
+                            if is_match_expr_return(s) {
+                                io.println("  return-value: match expression")
+                            }
+                        },
                     }
                     si = si + 1
                 }

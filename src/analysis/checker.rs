@@ -111,6 +111,66 @@ impl TypeChecker {
         Type::parse(trimmed)
     }
 
+    /// Bind the pattern params of a match arm to their corresponding
+    /// variant element types. Multi-element variants (e.g.
+    /// `Match(Expression, Vector<MatchArm>)` in the self-hosted AST)
+    /// bind each param positionally — previously only `params[0]` was
+    /// bound, leaving `params[1..]` untyped so any use errored as
+    /// "method call on unknown". #161.
+    fn bind_match_params(&mut self, cond_name: &str, all_patterns: &[String], params: &[String]) {
+        if params.is_empty() {
+            return;
+        }
+        let mut data_types: Vec<String> = Vec::new();
+        let mut matched_struct: Option<String> = None;
+
+        if let Some(Declaration::Enum(e)) = self.decls.get(cond_name) {
+            for pat in all_patterns {
+                let mut found = false;
+                for v in &e.variants {
+                    if pat == &v.name
+                        || pat.ends_with(&format!(".{}", v.name))
+                        || pat.ends_with(&format!("::{}", v.name))
+                    {
+                        data_types = v.data_types.clone();
+                        found = true;
+                        break;
+                    }
+                }
+                if found {
+                    break;
+                }
+            }
+        } else if cond_name == "i64" {
+            data_types = vec!["i64".to_string()];
+        } else if cond_name == "String" {
+            data_types = vec!["String".to_string()];
+        } else if let Some(Declaration::Struct(_)) = self.decls.get(cond_name) {
+            matched_struct = Some(cond_name.to_string());
+        }
+
+        if let Some(sname) = matched_struct {
+            if let Some(Declaration::Struct(s)) = self.decls.get(&sname) {
+                // Add struct fields to environment
+                for (field_name, field_type_str) in &s.fields {
+                    let field_type = self.resolve_type(field_type_str);
+                    self.env
+                        .set(format!("{}.{}", params[0], field_name), field_type);
+                }
+            }
+            self.env
+                .set(params[0].clone(), Type::Struct { name: sname });
+        } else {
+            for (i, param) in params.iter().enumerate() {
+                let payload = match data_types.get(i) {
+                    Some(dt) => self.resolve_type(dt),
+                    None => Type::i64(),
+                };
+                self.env.set(param.clone(), payload);
+            }
+        }
+    }
+
     fn register_builtins(&mut self) {
         self.env.set(
             "aion_read_file".to_string(),
@@ -585,40 +645,7 @@ impl TypeChecker {
 
                     if !arm.params.is_empty() {
                         self.env = Environment::new_enclosed(old_env.clone());
-                        let mut payload = Type::i64();
-
-                        // Check patterns for enum type
-                        if let Some(Declaration::Enum(e)) = self.decls.get(&cond_name) {
-                            for pat in &all_patterns {
-                                for v in &e.variants {
-                                    if pat == &v.name
-                                        || pat.ends_with(&format!(".{}", v.name))
-                                        || pat.ends_with(&format!("::{}", v.name))
-                                    {
-                                        if !v.data_types.is_empty() {
-                                            payload = self.resolve_type(&v.data_types[0]);
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                        } else if cond_name == "i64" {
-                            payload = Type::i64();
-                        } else if cond_name == "String" {
-                            payload = Type::String;
-                        } else if let Some(Declaration::Struct(s)) = self.decls.get(&cond_name) {
-                            payload = Type::Struct {
-                                name: cond_name.clone(),
-                            };
-                            // Add struct fields to environment
-                            for (field_name, field_type_str) in &s.fields {
-                                let field_type = self.resolve_type(field_type_str);
-                                self.env
-                                    .set(format!("{}.{}", arm.params[0], field_name), field_type);
-                            }
-                        }
-
-                        self.env.set(arm.params[0].clone(), payload);
+                        self.bind_match_params(&cond_name, &all_patterns, &arm.params);
                     }
 
                     // Evaluate guard if present
@@ -1062,38 +1089,7 @@ impl TypeChecker {
 
                     if !arm.params.is_empty() {
                         self.env = Environment::new_enclosed(old_env.clone());
-                        let mut payload = Type::i64();
-
-                        if let Some(Declaration::Enum(e)) = self.decls.get(&cond_name) {
-                            for pat in &all_patterns {
-                                for v in &e.variants {
-                                    if pat == &v.name
-                                        || pat.ends_with(&format!(".{}", v.name))
-                                        || pat.ends_with(&format!("::{}", v.name))
-                                    {
-                                        if !v.data_types.is_empty() {
-                                            payload = self.resolve_type(&v.data_types[0]);
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                        } else if cond_name == "i64" {
-                            payload = Type::i64();
-                        } else if cond_name == "String" {
-                            payload = Type::String;
-                        } else if let Some(Declaration::Struct(s)) = self.decls.get(&cond_name) {
-                            payload = Type::Struct {
-                                name: cond_name.clone(),
-                            };
-                            for (field_name, field_type_str) in &s.fields {
-                                let field_type = self.resolve_type(field_type_str);
-                                self.env
-                                    .set(format!("{}.{}", arm.params[0], field_name), field_type);
-                            }
-                        }
-
-                        self.env.set(arm.params[0].clone(), payload);
+                        self.bind_match_params(&cond_name, &all_patterns, &arm.params);
                     }
 
                     if let Some(guard_expr) = &arm.guard {

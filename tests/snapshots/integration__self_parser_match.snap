@@ -6,12 +6,17 @@ tokens: 141
 parse ok
 declarations: 4
 == fn classify
-  [0] Return
-      ^ return value is a match expression
+  return-value: match expression
 == fn describe
-  [0] Match
-  [1] Return
+stmt-match arms: 3
+  [0] Color.Red bind=- -
+  [1] Color.Green bind=- -
+  [2] _ bind=- -
 == fn unwrap2
-  [0] Match
+stmt-match arms: 2
+  [0] Some bind=v -
+  [1] None bind=- -
 == fn grade
-  [0] Match
+stmt-match arms: 2
+  [0] n bind=n guard
+  [1] _ bind=- -
