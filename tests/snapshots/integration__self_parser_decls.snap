@@ -1,0 +1,20 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/self_parser_decls\")"
+---
+tokens: 105
+parse ok
+module: stress.test
+imports: 1
+declarations: 7
+Enum Option
+  variants: 2
+Enum Color
+  variants: 3
+Struct Pair
+Interface Shape
+Impl Circle
+  methods: 1
+Impl Circle
+  methods: 1
+Fn main

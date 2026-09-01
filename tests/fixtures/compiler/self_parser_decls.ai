@@ -1,0 +1,123 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.parser
+use compiler.ast
+use compiler.token
+
+// #156 Slice 2 — declarations: `::intent` skip, `enum`, `impl`,
+// `interface`, generic params, dotted import paths, `module` name.
+//
+// Parses a stress source covering every new declaration form and
+// dumps the resulting Program structure. Mirrors the Rust parser's
+// handling (`src/parser/mod.rs:60-368`).
+
+fn main() {
+    let source = "::intent \"module-level doc\"
+module stress.test
+use std.collections.vector
+
+enum Option<T> {
+    Some(T),
+    None,
+}
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+struct Pair<T> {
+    first: T,
+    second: T,
+}
+
+interface Shape {
+    fn area(self) -> i64;
+}
+
+impl Shape for Circle {
+    fn area(self) -> i64 {
+        return 0
+    }
+}
+
+impl Circle {
+    fn describe(self) -> String {
+        return \"circle\"
+    }
+}
+
+fn main() {
+    return 0
+}"
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut tokens = vector.Vector<token.Token>.new()
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        }
+        tokens.push(tok)
+        if is_eof { done = true }
+    }
+    io.print("tokens: ")
+    io.println(string.from_int(tokens.len()))
+
+    let mut p = compiler.parser.Parser.new(tokens)
+    let prog_res = p.parse_program()
+    if prog_res.is_err() {
+        io.print("parser error: ")
+        io.println(prog_res.unwrap_err() as String)
+        return
+    }
+    io.println("parse ok")
+    let prog = prog_res.unwrap() as compiler.ast.Program
+    io.print("module: ")
+    io.println(prog.module_name)
+    let imports = prog.imports
+    io.print("imports: ")
+    io.println(string.from_int((imports).len()))
+    let decls = prog.declarations
+    io.print("declarations: ")
+    io.println(string.from_int((decls).len()))
+
+    let mut i = 0
+    let n = (decls).len()
+    while i < n {
+        let d = (decls).get(i).unwrap() as compiler.ast.Declaration
+        match d {
+            compiler.ast.Declaration::Function(f) => {
+                io.print("Fn ")
+                io.println(f.name)
+            },
+            compiler.ast.Declaration::Struct(s) => {
+                io.print("Struct ")
+                io.println(s.name)
+            },
+            compiler.ast.Declaration::Enum(e) => {
+                io.print("Enum ")
+                io.println(e.name)
+                let variants = e.variants
+                io.print("  variants: ")
+                io.println(string.from_int((variants).len()))
+            },
+            compiler.ast.Declaration::Interface(it) => {
+                io.print("Interface ")
+                io.println(it.name)
+            },
+            compiler.ast.Declaration::Impl(b) => {
+                io.print("Impl ")
+                io.println(b.target_name)
+                let funcs = b.functions
+                io.print("  methods: ")
+                io.println(string.from_int((funcs).len()))
+            },
+        }
+        i = i + 1
+    }
+}

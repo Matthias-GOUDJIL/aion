@@ -90,12 +90,359 @@ impl Parser {
         return 0;
     }
 
+    // Parse a type name into its canonical string form. Mirrors
+    // `src/parser/mod.rs:415-537` (#156 Slice 2):
+    //   - tuple types `(T, U)`          -> "(T, U)"
+    //   - array types  `[T; N]`         -> "[T; N]"
+    //   - pointer types `*T`            -> "*T"
+    //   - fn types     `fn(P) -> R`     -> "fn(P) -> R"
+    //   - dotted paths `a.b.c`          -> "a.b.c" (also folds `::`)
+    //   - generic args `Vector<String>` -> "Vector<String>" (recursive)
+    //   - optional `?` suffix           -> "T?"
     pub fn parse_type_name(mut self) -> String {
-        let tk = self.advance();
-        match tk.kind {
-            token.TokenKind::Identifier(val) => { return val; },
-            _ => { return "UnknownType"; }
+        // Tuple type: `(T, U, ...)`. #53.
+        let lp_tk = self.peek();
+        let mut is_lparen = false;
+        match lp_tk.kind {
+            token.TokenKind::LParen => { is_lparen = true; },
+            _ => { is_lparen = false; },
         }
+        if is_lparen {
+            let _ = self.advance();  // consume '('
+            let mut parts = vector.Vector<String>.new();
+            let mut done = false;
+            while !done {
+                let tk = self.peek();
+                let mut stop = false;
+                match tk.kind {
+                    token.TokenKind::RParen => { stop = true; },
+                    token.TokenKind::EOF => { stop = true; },
+                    _ => { stop = false; },
+                }
+                if stop {
+                    done = true;
+                } else {
+                    let part = self.parse_type_name();
+                    parts.push(part);
+                    let c_tk = self.peek();
+                    let mut is_comma = false;
+                    match c_tk.kind {
+                        token.TokenKind::Comma => { is_comma = true; },
+                        _ => { is_comma = false; },
+                    }
+                    if is_comma { let _ = self.advance(); }
+                }
+            }
+            let rp_tk = self.peek();
+            let mut is_rparen = false;
+            match rp_tk.kind {
+                token.TokenKind::RParen => { is_rparen = true; },
+                _ => { is_rparen = false; },
+            }
+            if is_rparen { let _ = self.advance(); }
+            let inner = std.string.join(parts, ", ");
+            let out = std.string.concat("(", std.string.concat(inner, ")"));
+            return self.parse_type_suffix(out);
+        }
+        // Array type: `[T; N]`. #54.
+        let lb_tk = self.peek();
+        let mut is_lbracket = false;
+        match lb_tk.kind {
+            token.TokenKind::LBracket => { is_lbracket = true; },
+            _ => { is_lbracket = false; },
+        }
+        if is_lbracket {
+            let _ = self.advance();  // consume '['
+            let elem = self.parse_type_name();
+            let mut size = "0";
+            let s_tk = self.peek();
+            let mut is_semi = false;
+            match s_tk.kind {
+                token.TokenKind::Semicolon => { is_semi = true; },
+                _ => { is_semi = false; },
+            }
+            if is_semi {
+                let _ = self.advance();  // consume ';'
+                let n_tk = self.peek();
+                let mut got_num = false;
+                let mut n_str = "";
+                match n_tk.kind {
+                    token.TokenKind::IntLiteral(n) => {
+                        n_str = std.string.from_int(n);
+                        got_num = true;
+                    },
+                    _ => { got_num = false; },
+                }
+                if got_num {
+                    size = n_str;
+                    let _ = self.advance();
+                }
+            }
+            let rb_tk = self.peek();
+            let mut is_rbracket = false;
+            match rb_tk.kind {
+                token.TokenKind::RBracket => { is_rbracket = true; },
+                _ => { is_rbracket = false; },
+            }
+            if is_rbracket { let _ = self.advance(); }
+            let out = std.string.concat(
+                std.string.concat("[", std.string.concat(elem, "; ")),
+                std.string.concat(size, "]"),
+            );
+            return self.parse_type_suffix(out);
+        }
+        // Pointer type: `*T`.
+        let st_tk = self.peek();
+        let mut is_star = false;
+        match st_tk.kind {
+            token.TokenKind::Star => { is_star = true; },
+            _ => { is_star = false; },
+        }
+        if is_star {
+            let _ = self.advance();  // consume '*'
+            let inner = self.parse_type_name();
+            let out = std.string.concat("*", inner);
+            return self.parse_type_suffix(out);
+        }
+        // Function type: `fn(P1, P2) -> Ret`. #84.
+        let fn_tk = self.peek();
+        let mut is_fn = false;
+        match fn_tk.kind {
+            token.TokenKind::Fn => { is_fn = true; },
+            _ => { is_fn = false; },
+        }
+        if is_fn {
+            let _ = self.advance();  // consume 'fn'
+            let mut full = "fn";
+            let p_tk = self.peek();
+            let mut is_lparen2 = false;
+            match p_tk.kind {
+                token.TokenKind::LParen => { is_lparen2 = true; },
+                _ => { is_lparen2 = false; },
+            }
+            if is_lparen2 {
+                let _ = self.advance();  // consume '('
+                let mut parts = vector.Vector<String>.new();
+                let mut done = false;
+                while !done {
+                    let tk = self.peek();
+                    let mut stop = false;
+                    match tk.kind {
+                        token.TokenKind::RParen => { stop = true; },
+                        token.TokenKind::EOF => { stop = true; },
+                        _ => { stop = false; },
+                    }
+                    if stop {
+                        done = true;
+                    } else {
+                        let part = self.parse_type_name();
+                        parts.push(part);
+                        let c_tk = self.peek();
+                        let mut is_comma = false;
+                        match c_tk.kind {
+                            token.TokenKind::Comma => { is_comma = true; },
+                            _ => { is_comma = false; },
+                        }
+                        if is_comma { let _ = self.advance(); }
+                    }
+                }
+                let rp_tk = self.peek();
+                let mut is_rparen2 = false;
+                match rp_tk.kind {
+                    token.TokenKind::RParen => { is_rparen2 = true; },
+                    _ => { is_rparen2 = false; },
+                }
+                if is_rparen2 { let _ = self.advance(); }
+                let inner = std.string.join(parts, ", ");
+                full = std.string.concat("fn(", std.string.concat(inner, ")"));
+                let a_tk = self.peek();
+                let mut is_arrow = false;
+                match a_tk.kind {
+                    token.TokenKind::Arrow => { is_arrow = true; },
+                    _ => { is_arrow = false; },
+                }
+                if is_arrow {
+                    let _ = self.advance();  // consume '->'
+                    let ret = self.parse_type_name();
+                    full = std.string.concat(full, " -> ");
+                    full = std.string.concat(full, ret);
+                }
+            }
+            return self.parse_type_suffix(full);
+        }
+        // Identifier path with optional dotted segments and generic args.
+        let id_tk = self.advance();
+        let mut full_type = "";
+        match id_tk.kind {
+            token.TokenKind::Identifier(val) => { full_type = val; },
+            _ => {
+                // Mirrors Rust's `invalid_type_{tok}` placeholder.
+                return "invalid_type";
+            },
+        }
+        // Fold `.` and `::` path segments: `std.collections.vector`.
+        let mut keep_path = true;
+        while keep_path {
+            let p_tk = self.peek();
+            let mut is_sep = false;
+            match p_tk.kind {
+                token.TokenKind::Dot => { is_sep = true; },
+                token.TokenKind::DoubleColon => { is_sep = true; },
+                _ => { is_sep = false; },
+            }
+            if is_sep {
+                let n_tk = self.peek_at(1);
+                let mut next_is_ident = false;
+                match n_tk.kind {
+                    token.TokenKind::Identifier(_) => { next_is_ident = true; },
+                    _ => { next_is_ident = false; },
+                }
+                if next_is_ident {
+                    let _ = self.advance();  // consume separator
+                    let sub_tk = self.advance();
+                    match sub_tk.kind {
+                        token.TokenKind::Identifier(sub) => {
+                            full_type = std.string.concat(full_type, ".");
+                            full_type = std.string.concat(full_type, sub);
+                        },
+                        _ => { keep_path = false; },
+                    }
+                } else {
+                    keep_path = false;
+                }
+            } else {
+                keep_path = false;
+            }
+        }
+        // Generic args: `Vector<String>`, `HashMap<K, V>`. Recursive —
+        // nested generics (`Vector<HashMap<K, V>>`) work because each
+        // `<` opens a fresh recursion level.
+        let lt_tk = self.peek();
+        let mut is_lt = false;
+        match lt_tk.kind {
+            token.TokenKind::Lt => { is_lt = true; },
+            _ => { is_lt = false; },
+        }
+        if is_lt {
+            full_type = std.string.concat(full_type, "<");
+            let _ = self.advance();  // consume '<'
+            let mut done = false;
+            while !done {
+                let tk = self.peek();
+                let mut stop = false;
+                match tk.kind {
+                    token.TokenKind::Gt => { stop = true; },
+                    token.TokenKind::EOF => { stop = true; },
+                    _ => { stop = false; },
+                }
+                if stop {
+                    done = true;
+                } else {
+                    let sub = self.parse_type_name();
+                    full_type = std.string.concat(full_type, sub);
+                    let c_tk = self.peek();
+                    let mut is_comma = false;
+                    match c_tk.kind {
+                        token.TokenKind::Comma => { is_comma = true; },
+                        _ => { is_comma = false; },
+                    }
+                    if is_comma {
+                        full_type = std.string.concat(full_type, ", ");
+                        let _ = self.advance();
+                    }
+                }
+            }
+            let g_tk = self.peek();
+            let mut is_gt = false;
+            match g_tk.kind {
+                token.TokenKind::Gt => { is_gt = true; },
+                _ => { is_gt = false; },
+            }
+            if is_gt {
+                full_type = std.string.concat(full_type, ">");
+                let _ = self.advance();
+            }
+        }
+        return self.parse_type_suffix(full_type);
+    }
+
+    // Consume an optional `?` suffix after a type (used by optional-type
+    // sugar). Mirrors `src/parser/mod.rs:532-535`.
+    pub fn parse_type_suffix(mut self, ty: String) -> String {
+        let q_tk = self.peek();
+        let mut is_q = false;
+        match q_tk.kind {
+            token.TokenKind::Question => { is_q = true; },
+            _ => { is_q = false; },
+        }
+        if is_q {
+            let _ = self.advance();
+            return std.string.concat(ty, "?");
+        }
+        return ty;
+    }
+
+    // Parse generic parameter declarations `<T, U>` after a declaration
+    // name (fn/struct/enum/impl). Mirrors `src/parser/mod.rs:253-273`.
+    // Returns an empty Vector when no `<` is present.
+    pub fn parse_generic_params(mut self) -> vector.Vector<String> {
+        let mut params = vector.Vector<String>.new();
+        let lt_tk = self.peek();
+        let mut is_lt = false;
+        match lt_tk.kind {
+            token.TokenKind::Lt => { is_lt = true; },
+            _ => { is_lt = false; },
+        }
+        if !is_lt {
+            return params;
+        }
+        let _ = self.advance();  // consume '<'
+        let mut done = false;
+        while !done {
+            let tk = self.peek();
+            let mut stop = false;
+            match tk.kind {
+                token.TokenKind::Gt => { stop = true; },
+                token.TokenKind::EOF => { stop = true; },
+                _ => { stop = false; },
+            }
+            if stop {
+                done = true;
+            } else {
+                let id_tk = self.peek();
+                let mut is_ident = false;
+                match id_tk.kind {
+                    token.TokenKind::Identifier(_) => { is_ident = true; },
+                    _ => { is_ident = false; },
+                }
+                if is_ident {
+                    let consumed = self.advance();
+                    match consumed.kind {
+                        token.TokenKind::Identifier(n) => { params.push(n); },
+                        _ => {},
+                    }
+                } else {
+                    // Skip unrecognized tokens inside the param list
+                    // (mirrors Rust's tolerance).
+                    let _ = self.advance();
+                }
+                let c_tk = self.peek();
+                let mut is_comma = false;
+                match c_tk.kind {
+                    token.TokenKind::Comma => { is_comma = true; },
+                    _ => { is_comma = false; },
+                }
+                if is_comma { let _ = self.advance(); }
+            }
+        }
+        let g_tk = self.peek();
+        let mut is_gt = false;
+        match g_tk.kind {
+            token.TokenKind::Gt => { is_gt = true; },
+            _ => { is_gt = false; },
+        }
+        if is_gt { let _ = self.advance(); }
+        return params;
     }
 
     pub fn parse_infix(mut self, precedence: i64) -> result.Result<ast.Expression, String> {
@@ -707,7 +1054,7 @@ impl Parser {
             }
         }
     }
-pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
+pub fn parse_function(mut self, attributes: vector.Vector<ast.Attribute>, modifiers: vector.Vector<token.Token>) -> result.Result<ast.Function, String> {
     self.advance(); // consume fn
 
     let name_tk = self.advance();
@@ -716,6 +1063,10 @@ pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
             token.TokenKind::Identifier(val) => { name = val; },
             _ => { return result.Result::Err("Expected identifier after fn"); },
         }
+        // Generic params after the fn name: `fn foo<T, U>(...)`.
+        // Mirrors `src/parser/mod.rs:551`.
+        let generic_params = self.parse_generic_params();
+
         let mut params = vector.Vector<ast.Param>.new();
         let lparen_tk = self.advance();
         let mut is_lparen = false;
@@ -724,7 +1075,7 @@ pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
             _ => { is_lparen = false; },
         }
         if !is_lparen { return result.Result::Err("Expected ( after fn name"); }
-        
+
         let mut loop_condition = true;
         while loop_condition {
             let next_tk = self.peek();
@@ -737,29 +1088,65 @@ pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
             if is_rparen {
                 loop_condition = false;
             } else {
-                let p_name_tk = self.advance();
-                let mut p_name = "";
-                match p_name_tk.kind {
-                    token.TokenKind::Identifier(val) => { p_name = val; },
-                    _ => { return result.Result::Err("Expected parameter name"); },
+                // `self` / `mut self` receiver params. Mirrors
+                // `src/parser/mod.rs:559-566`.
+                let first_tk = self.peek();
+                let mut is_self = false;
+                match first_tk.kind {
+                    token.TokenKind::SelfToken => { is_self = true; },
+                    _ => { is_self = false; },
                 }
-                
-                let colon_tk = self.advance();
-                let mut is_colon = false;
-                match colon_tk.kind {
-                    token.TokenKind::Colon => { is_colon = true; },
-                    _ => { is_colon = false; },
+                let mut is_mut_self = false;
+                match first_tk.kind {
+                    token.TokenKind::Mut => {
+                        let n_tk = self.peek_at(1);
+                        match n_tk.kind {
+                            token.TokenKind::SelfToken => { is_mut_self = true; },
+                            _ => { is_mut_self = false; },
+                        }
+                    },
+                    _ => { is_mut_self = false; },
                 }
-                if !is_colon { return result.Result::Err("Expected : after parameter name"); }
-                
-                let p_type = self.parse_type_name();
-                
-                let p = ast.Param {
-                    name: p_name,
-                    type_name: p_type,
-                };
-                params.push(p);
-                
+                if is_self {
+                    let _ = self.advance();  // consume 'self'
+                    let p = ast.Param {
+                        name: "self",
+                        type_name: "Self",
+                    };
+                    params.push(p);
+                } else if is_mut_self {
+                    let _ = self.advance();  // consume 'mut'
+                    let _ = self.advance();  // consume 'self'
+                    let p = ast.Param {
+                        name: "self",
+                        type_name: "Self",
+                    };
+                    params.push(p);
+                } else {
+                    let p_name_tk = self.advance();
+                    let mut p_name = "";
+                    match p_name_tk.kind {
+                        token.TokenKind::Identifier(val) => { p_name = val; },
+                        _ => { return result.Result::Err("Expected parameter name"); },
+                    }
+
+                    let colon_tk = self.advance();
+                    let mut is_colon = false;
+                    match colon_tk.kind {
+                        token.TokenKind::Colon => { is_colon = true; },
+                        _ => { is_colon = false; },
+                    }
+                    if !is_colon { return result.Result::Err("Expected : after parameter name"); }
+
+                    let p_type = self.parse_type_name();
+
+                    let p = ast.Param {
+                        name: p_name,
+                        type_name: p_type,
+                    };
+                    params.push(p);
+                }
+
                 let check_comma = self.peek();
                 let mut is_comma = false;
                 match check_comma.kind {
@@ -769,9 +1156,9 @@ pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
                 if is_comma { self.advance(); }
             }
         }
-        
+
         let rparen_tk = self.advance(); // consume )
-        
+
         let mut return_type = "void";
         let check_arrow = self.peek();
         let mut is_arrow = false;
@@ -783,35 +1170,61 @@ pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
             self.advance();
             return_type = self.parse_type_name();
         }
-        
-        let body_res = self.parse_block();
-        if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
-        let body = body_res.unwrap();
-        
+
+        // Body is optional — interface signatures and extern/intrinsic
+        // declarations have no `{ ... }` block. Mirrors
+        // `src/parser/mod.rs:610-619`.
+        let lb_tk = self.peek();
+        let mut is_lbrace = false;
+        match lb_tk.kind {
+            token.TokenKind::LBrace => { is_lbrace = true; },
+            _ => { is_lbrace = false; },
+        }
+        let mut has_body = false;
+        let mut body = vector.Vector<ast.Statement>.new();
+        if is_lbrace {
+            let body_res = self.parse_block();
+            if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
+            body = body_res.unwrap();
+            has_body = true;
+        } else {
+            // Optional trailing `;` for extern/intrinsic signatures.
+            let s_tk = self.peek();
+            let mut is_semi = false;
+            match s_tk.kind {
+                token.TokenKind::Semicolon => { is_semi = true; },
+                _ => { is_semi = false; },
+            }
+            if is_semi { let _ = self.advance(); }
+            has_body = false;
+        }
+
         let f = ast.Function {
             name: name,
-            generic_params: vector.Vector<String>.new(),
+            generic_params: generic_params,
             params: params,
             return_type: return_type,
-            has_body: true,
+            has_body: has_body,
             body: body,
-            modifiers: vector.Vector<token.Token>.new(),
-            attributes: vector.Vector<ast.Attribute>.new(),
+            modifiers: modifiers,
+            attributes: attributes,
         };
-        
+
         return result.Result::Ok(f);
     }
 
-    pub fn parse_struct(mut self) -> result.Result<ast.Struct, String> {
+pub fn parse_struct(mut self, attributes: vector.Vector<ast.Attribute>) -> result.Result<ast.Struct, String> {
         self.advance(); // consume struct
-        
+
         let name_tk = self.advance();
         let mut name = "";
         match name_tk.kind {
             token.TokenKind::Identifier(val) => { name = val; },
             _ => { return result.Result::Err("Expected identifier after struct"); },
         }
-        
+        // Generic params after the struct name: `struct Foo<T> { ... }`.
+        let generic_params = self.parse_generic_params();
+
         let lbrace_tk = self.advance();
         let mut is_lbrace = false;
         match lbrace_tk.kind {
@@ -869,28 +1282,157 @@ pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
         
         self.advance(); // consume }
         
+        // Attributes — the Struct AST stores names only (mirrors
+        // `src/parser/mod.rs:405`). The `as ast.Attribute` cast gives
+        // the checker the concrete element type (same workaround as
+        // `self_parser_call.ai` for match/Option bindings).
+        let mut attr_names = vector.Vector<String>.new();
+        let mut ai = 0;
+        let attrs_len = (attributes).len();
+        while ai < attrs_len {
+            let a = (attributes).get(ai).unwrap() as ast.Attribute;
+            attr_names.push(a.name);
+            ai = ai + 1;
+        }
+
         let s = ast.Struct {
             name: name,
-            generic_params: vector.Vector<String>.new(),
+            generic_params: generic_params,
             fields: fields,
-            attributes: vector.Vector<String>.new(),
+            attributes: attr_names,
         };
         
         return result.Result::Ok(s);
     }
 
     pub fn parse_declaration(mut self) -> result.Result<ast.Declaration, String> {
+        // Skip doc comments (`/// ...`). Mirrors
+        // `src/parser/mod.rs:132-138`.
+        let mut skip_docs = true;
+        while skip_docs {
+            let d_tk = self.peek();
+            let mut is_doc = false;
+            match d_tk.kind {
+                token.TokenKind::DocComment(_) => { is_doc = true; },
+                _ => { is_doc = false; },
+            }
+            if is_doc {
+                let _ = self.advance();
+            } else {
+                skip_docs = false;
+            }
+        }
+        // Collect `@name("value")` attributes. Mirrors
+        // `src/parser/mod.rs:140-161`.
+        let mut attributes = vector.Vector<ast.Attribute>.new();
+        let mut keep_attrs = true;
+        while keep_attrs {
+            let a_tk = self.peek();
+            let mut is_at = false;
+            match a_tk.kind {
+                token.TokenKind::At => { is_at = true; },
+                _ => { is_at = false; },
+            }
+            if is_at {
+                let _ = self.advance();  // consume '@'
+                let name_tk = self.advance();
+                let mut attr_name = "";
+                let mut got_name = false;
+                match name_tk.kind {
+                    token.TokenKind::Identifier(n) => {
+                        attr_name = n;
+                        got_name = true;
+                    },
+                    _ => { got_name = false; },
+                }
+                if got_name {
+                    let mut attr_val = "";
+                    let p_tk = self.peek();
+                    let mut is_lparen = false;
+                    match p_tk.kind {
+                        token.TokenKind::LParen => { is_lparen = true; },
+                        _ => { is_lparen = false; },
+                    }
+                    if is_lparen {
+                        let _ = self.advance();  // consume '('
+                        let s_tk = self.peek();
+                        let mut got_val = false;
+                        match s_tk.kind {
+                            token.TokenKind::StringLiteral(v) => {
+                                attr_val = v;
+                                got_val = true;
+                            },
+                            _ => { got_val = false; },
+                        }
+                        if got_val { let _ = self.advance(); }
+                        let r_tk = self.peek();
+                        let mut is_rparen = false;
+                        match r_tk.kind {
+                            token.TokenKind::RParen => { is_rparen = true; },
+                            _ => { is_rparen = false; },
+                        }
+                        if is_rparen { let _ = self.advance(); }
+                    }
+                    let attr = ast.Attribute {
+                        name: attr_name,
+                        value: attr_val,
+                    };
+                    attributes.push(attr);
+                } else {
+                    keep_attrs = false;
+                }
+            } else {
+                keep_attrs = false;
+            }
+        }
+        // Collect modifiers (pub / async / unsafe / extern). Mirrors
+        // `src/parser/mod.rs:162-169`. Passed to parse_function; other
+        // declaration kinds discard them (same as Rust).
+        let mut modifiers = vector.Vector<token.Token>.new();
+        let mut keep_mods = true;
+        while keep_mods {
+            let m_tk = self.peek();
+            let mut is_mod = false;
+            match m_tk.kind {
+                token.TokenKind::Pub => { is_mod = true; },
+                token.TokenKind::Async => { is_mod = true; },
+                token.TokenKind::Unsafe => { is_mod = true; },
+                token.TokenKind::Extern => { is_mod = true; },
+                _ => { is_mod = false; },
+            }
+            if is_mod {
+                let m = self.advance();
+                modifiers.push(m);
+            } else {
+                keep_mods = false;
+            }
+        }
         let tk = self.peek();
         match tk.kind {
             token.TokenKind::Fn => {
-                let f_res = self.parse_function();
+                let f_res = self.parse_function(attributes, modifiers);
                 if f_res.is_err() { return result.Result::Err(f_res.unwrap_err()); }
                 return result.Result::Ok(ast.Declaration::Function(f_res.unwrap()));
             },
             token.TokenKind::Struct => {
-                let s_res = self.parse_struct();
+                let s_res = self.parse_struct(attributes);
                 if s_res.is_err() { return result.Result::Err(s_res.unwrap_err()); }
                 return result.Result::Ok(ast.Declaration::Struct(s_res.unwrap()));
+            },
+            token.TokenKind::Enum => {
+                let e_res = self.parse_enum();
+                if e_res.is_err() { return result.Result::Err(e_res.unwrap_err()); }
+                return result.Result::Ok(ast.Declaration::Enum(e_res.unwrap()));
+            },
+            token.TokenKind::Interface => {
+                let i_res = self.parse_interface();
+                if i_res.is_err() { return result.Result::Err(i_res.unwrap_err()); }
+                return result.Result::Ok(ast.Declaration::Interface(i_res.unwrap()));
+            },
+            token.TokenKind::Impl => {
+                let b_res = self.parse_impl();
+                if b_res.is_err() { return result.Result::Err(b_res.unwrap_err()); }
+                return result.Result::Ok(ast.Declaration::Impl(b_res.unwrap()));
             },
             _ => {
                 return result.Result::Err("Expected declaration");
@@ -898,32 +1440,481 @@ pub fn parse_function(mut self) -> result.Result<ast.Function, String> {
         }
     }
 
+    // Parse an enum declaration: `enum Name<T> { Variant, Variant(T), ... }`.
+    // Mirrors `src/parser/mod.rs:275-329`. #156 Slice 2.
+    pub fn parse_enum(mut self) -> result.Result<ast.Enum, String> {
+        let _ = self.advance();  // consume 'enum'
+        let name_tk = self.advance();
+        let mut name = "";
+        match name_tk.kind {
+            token.TokenKind::Identifier(val) => { name = val; },
+            _ => { return result.Result::Err("Expected identifier after enum"); },
+        }
+        let generic_params = self.parse_generic_params();
+        let lb_tk = self.peek();
+        let mut is_lbrace = false;
+        match lb_tk.kind {
+            token.TokenKind::LBrace => { is_lbrace = true; },
+            _ => { is_lbrace = false; },
+        }
+        if !is_lbrace { return result.Result::Err("Expected { after enum name"); }
+        let _ = self.advance();  // consume '{'
+
+        let mut variants = vector.Vector<ast.EnumVariant>.new();
+        let mut done = false;
+        while !done {
+            let tk = self.peek();
+            let mut stop = false;
+            match tk.kind {
+                token.TokenKind::RBrace => { stop = true; },
+                token.TokenKind::EOF => { stop = true; },
+                _ => { stop = false; },
+            }
+            if stop {
+                done = true;
+            } else {
+                let v_tk = self.peek();
+                let mut is_ident = false;
+                match v_tk.kind {
+                    token.TokenKind::Identifier(_) => { is_ident = true; },
+                    _ => { is_ident = false; },
+                }
+                if is_ident {
+                    let consumed = self.advance();
+                    let mut v_name = "";
+                    match consumed.kind {
+                        token.TokenKind::Identifier(v) => { v_name = v; },
+                        _ => { v_name = ""; },
+                    }
+                    let mut data_types = vector.Vector<String>.new();
+                    let p_tk = self.peek();
+                    let mut is_lparen = false;
+                    match p_tk.kind {
+                        token.TokenKind::LParen => { is_lparen = true; },
+                        _ => { is_lparen = false; },
+                    }
+                    if is_lparen {
+                        let _ = self.advance();  // consume '('
+                        let mut pdone = false;
+                        while !pdone {
+                            let tk2 = self.peek();
+                            let mut pstop = false;
+                            match tk2.kind {
+                                token.TokenKind::RParen => { pstop = true; },
+                                token.TokenKind::EOF => { pstop = true; },
+                                _ => { pstop = false; },
+                            }
+                            if pstop {
+                                pdone = true;
+                            } else {
+                                let tn = self.parse_type_name();
+                                data_types.push(tn);
+                                let c_tk = self.peek();
+                                let mut is_comma = false;
+                                match c_tk.kind {
+                                    token.TokenKind::Comma => { is_comma = true; },
+                                    _ => { is_comma = false; },
+                                }
+                                if is_comma { let _ = self.advance(); }
+                            }
+                        }
+                        let rp_tk = self.peek();
+                        let mut is_rparen = false;
+                        match rp_tk.kind {
+                            token.TokenKind::RParen => { is_rparen = true; },
+                            _ => { is_rparen = false; },
+                        }
+                        if is_rparen { let _ = self.advance(); }
+                    }
+                    let ev = ast.EnumVariant {
+                        name: v_name,
+                        data_types: data_types,
+                    };
+                    variants.push(ev);
+                } else {
+                    // Non-identifier token inside the variant list — skip
+                    // (mirrors Rust's tolerance).
+                    let _ = self.advance();
+                }
+                // Optional comma separator between variants.
+                let c_tk = self.peek();
+                let mut is_comma = false;
+                match c_tk.kind {
+                    token.TokenKind::Comma => { is_comma = true; },
+                    _ => { is_comma = false; },
+                }
+                if is_comma { let _ = self.advance(); }
+            }
+        }
+        let rb_tk = self.peek();
+        let mut is_rbrace = false;
+        match rb_tk.kind {
+            token.TokenKind::RBrace => { is_rbrace = true; },
+            _ => { is_rbrace = false; },
+        }
+        if is_rbrace { let _ = self.advance(); }
+
+        let e = ast.Enum {
+            name: name,
+            generic_params: generic_params,
+            variants: variants,
+        };
+        return result.Result::Ok(e);
+    }
+
+    // Parse an impl block: `impl Target<T> { fn ... }` or
+    // `impl Interface for Target { fn ... }`. Mirrors
+    // `src/parser/mod.rs:186-251`. #156 Slice 2.
+    pub fn parse_impl(mut self) -> result.Result<ast.ImplBlock, String> {
+        let _ = self.advance();  // consume 'impl'
+        let name_tk = self.advance();
+        let mut name1 = "";
+        match name_tk.kind {
+            token.TokenKind::Identifier(val) => { name1 = val; },
+            _ => { return result.Result::Err("Expected identifier after impl"); },
+        }
+        let generic_params = self.parse_generic_params();
+
+        // `impl Interface for Target { ... }` — the first name is the
+        // interface, the token after `for` is the target.
+        let mut interface_name = "";
+        let mut target_name = name1;
+        let f_tk = self.peek();
+        let mut is_for = false;
+        match f_tk.kind {
+            token.TokenKind::For => { is_for = true; },
+            _ => { is_for = false; },
+        }
+        if is_for {
+            let _ = self.advance();  // consume 'for'
+            let target_tk = self.advance();
+            match target_tk.kind {
+                token.TokenKind::Identifier(val) => { target_name = val; },
+                _ => { return result.Result::Err("Expected target after impl ... for"); },
+            }
+            interface_name = name1;
+        }
+
+        let lb_tk = self.peek();
+        let mut is_lbrace = false;
+        match lb_tk.kind {
+            token.TokenKind::LBrace => { is_lbrace = true; },
+            _ => { is_lbrace = false; },
+        }
+        if !is_lbrace { return result.Result::Err("Expected { after impl target"); }
+        let _ = self.advance();  // consume '{'
+
+        let mut functions = vector.Vector<ast.Function>.new();
+        let mut done = false;
+        while !done {
+            let tk = self.peek();
+            let mut stop = false;
+            match tk.kind {
+                token.TokenKind::RBrace => { stop = true; },
+                token.TokenKind::EOF => { stop = true; },
+                _ => { stop = false; },
+            }
+            if stop {
+                done = true;
+            } else {
+                // Skip doc comments on methods.
+                let mut skip_docs = true;
+                while skip_docs {
+                    let d_tk = self.peek();
+                    let mut is_doc = false;
+                    match d_tk.kind {
+                        token.TokenKind::DocComment(_) => { is_doc = true; },
+                        _ => { is_doc = false; },
+                    }
+                    if is_doc {
+                        let _ = self.advance();
+                    } else {
+                        skip_docs = false;
+                    }
+                }
+                // Skip method modifiers (pub / async / unsafe).
+                let mut skip_mods = true;
+                while skip_mods {
+                    let m_tk = self.peek();
+                    let mut is_mod = false;
+                    match m_tk.kind {
+                        token.TokenKind::Pub => { is_mod = true; },
+                        token.TokenKind::Async => { is_mod = true; },
+                        token.TokenKind::Unsafe => { is_mod = true; },
+                        _ => { is_mod = false; },
+                    }
+                    if is_mod {
+                        let _ = self.advance();
+                    } else {
+                        skip_mods = false;
+                    }
+                }
+                let fn_tk = self.peek();
+                let mut is_fn = false;
+                match fn_tk.kind {
+                    token.TokenKind::Fn => { is_fn = true; },
+                    _ => { is_fn = false; },
+                }
+                if is_fn {
+                    let f_res = self.parse_function(
+                        vector.Vector<ast.Attribute>.new(),
+                        vector.Vector<token.Token>.new(),
+                    );
+                    if f_res.is_ok() {
+                        functions.push(f_res.unwrap());
+                    }
+                } else {
+                    // Unknown token inside impl body — skip.
+                    let _ = self.advance();
+                }
+            }
+        }
+        let rb_tk = self.peek();
+        let mut is_rbrace = false;
+        match rb_tk.kind {
+            token.TokenKind::RBrace => { is_rbrace = true; },
+            _ => { is_rbrace = false; },
+        }
+        if is_rbrace { let _ = self.advance(); }
+
+        let b = ast.ImplBlock {
+            target_name: target_name,
+            generic_params: generic_params,
+            interface_name: interface_name,
+            functions: functions,
+        };
+        return result.Result::Ok(b);
+    }
+
+    // Parse an interface declaration: `interface Name { fn sig(); ... }`.
+    // Mirrors `src/parser/mod.rs:331-368`. #156 Slice 2. Methods may be
+    // signatures without bodies (parse_function tolerates a missing `{`).
+    pub fn parse_interface(mut self) -> result.Result<ast.Interface, String> {
+        let _ = self.advance();  // consume 'interface'
+        let name_tk = self.advance();
+        let mut name = "";
+        match name_tk.kind {
+            token.TokenKind::Identifier(val) => { name = val; },
+            _ => { return result.Result::Err("Expected identifier after interface"); },
+        }
+        let lb_tk = self.peek();
+        let mut is_lbrace = false;
+        match lb_tk.kind {
+            token.TokenKind::LBrace => { is_lbrace = true; },
+            _ => { is_lbrace = false; },
+        }
+        if !is_lbrace { return result.Result::Err("Expected { after interface name"); }
+        let _ = self.advance();  // consume '{'
+
+        let mut methods = vector.Vector<ast.Function>.new();
+        let mut done = false;
+        while !done {
+            let tk = self.peek();
+            let mut stop = false;
+            match tk.kind {
+                token.TokenKind::RBrace => { stop = true; },
+                token.TokenKind::EOF => { stop = true; },
+                _ => { stop = false; },
+            }
+            if stop {
+                done = true;
+            } else {
+                // Skip doc comments on methods.
+                let mut skip_docs = true;
+                while skip_docs {
+                    let d_tk = self.peek();
+                    let mut is_doc = false;
+                    match d_tk.kind {
+                        token.TokenKind::DocComment(_) => { is_doc = true; },
+                        _ => { is_doc = false; },
+                    }
+                    if is_doc {
+                        let _ = self.advance();
+                    } else {
+                        skip_docs = false;
+                    }
+                }
+                // parse_function tolerates a missing body (interface
+                // signatures). Errors are silently skipped — mirrors
+                // Rust's `if let Some(f) = ...` tolerance.
+                let f_res = self.parse_function(
+                    vector.Vector<ast.Attribute>.new(),
+                    vector.Vector<token.Token>.new(),
+                );
+                if f_res.is_ok() {
+                    methods.push(f_res.unwrap());
+                }
+                let s_tk = self.peek();
+                let mut is_semi = false;
+                match s_tk.kind {
+                    token.TokenKind::Semicolon => { is_semi = true; },
+                    _ => { is_semi = false; },
+                }
+                if is_semi { let _ = self.advance(); }
+            }
+        }
+        let rb_tk = self.peek();
+        let mut is_rbrace = false;
+        match rb_tk.kind {
+            token.TokenKind::RBrace => { is_rbrace = true; },
+            _ => { is_rbrace = false; },
+        }
+        if is_rbrace { let _ = self.advance(); }
+
+        let i = ast.Interface {
+            name: name,
+            methods: methods,
+        };
+        return result.Result::Ok(i);
+    }
+
+    // Parse a dotted identifier path (`std.collections.vector`).
+    // Mirrors `src/parser/mod.rs:104-120`. Returns the raw segments —
+    // callers decide whether to join with `.` for a module name or keep
+    // the Vector for an `Import`. #156 Slice 2.
+    pub fn parse_path(mut self) -> vector.Vector<String> {
+        let mut path = vector.Vector<String>.new();
+        let first_tk = self.peek();
+        let mut is_ident = false;
+        match first_tk.kind {
+            token.TokenKind::Identifier(_) => { is_ident = true; },
+            _ => { is_ident = false; },
+        }
+        if !is_ident {
+            return path;
+        }
+        let consumed = self.advance();
+        match consumed.kind {
+            token.TokenKind::Identifier(id) => { path.push(id); },
+            _ => {},
+        }
+        let mut keep = true;
+        while keep {
+            let p_tk = self.peek();
+            let mut is_dot = false;
+            match p_tk.kind {
+                token.TokenKind::Dot => { is_dot = true; },
+                _ => { is_dot = false; },
+            }
+            if is_dot {
+                let n_tk = self.peek_at(1);
+                let mut next_is_ident = false;
+                match n_tk.kind {
+                    token.TokenKind::Identifier(_) => { next_is_ident = true; },
+                    _ => { next_is_ident = false; },
+                }
+                if next_is_ident {
+                    let _ = self.advance();  // consume '.'
+                    let sub_tk = self.advance();
+                    match sub_tk.kind {
+                        token.TokenKind::Identifier(sub) => { path.push(sub); },
+                        _ => { keep = false; },
+                    }
+                } else {
+                    keep = false;
+                }
+            } else {
+                keep = false;
+            }
+        }
+        return path;
+    }
+
+    // Parse a `use path.to.module` import. Mirrors
+    // `src/parser/mod.rs:122-129`. #156 Slice 2.
+    pub fn parse_import(mut self) -> ast.Import {
+        let _ = self.advance();  // consume 'use'
+        let path = self.parse_path();
+        let s_tk = self.peek();
+        let mut is_semi = false;
+        match s_tk.kind {
+            token.TokenKind::Semicolon => { is_semi = true; },
+            _ => { is_semi = false; },
+        }
+        if is_semi { let _ = self.advance(); }
+        let imp = ast.Import {
+            path: path,
+            alias: "",
+        };
+        return imp;
+    }
+
     pub fn parse_program(mut self) -> result.Result<ast.Program, String> {
         let mut decls = vector.Vector<ast.Declaration>.new();
-        
+        let mut imports = vector.Vector<ast.Import>.new();
+        let mut module_name = "main";
+
         let mut loop_condition = true;
         while loop_condition {
             let tk = self.peek();
-            let mut is_eof = false;
             match tk.kind {
-                token.TokenKind::EOF => { is_eof = true; },
-                _ => { is_eof = false; },
-            }
-            if is_eof {
-                loop_condition = false;
-            } else {
-                let decl_res = self.parse_declaration();
-                if decl_res.is_err() { return result.Result::Err(decl_res.unwrap_err()); }
-                decls.push(decl_res.unwrap());
+                token.TokenKind::EOF => {
+                    loop_condition = false;
+                },
+                // Top-level `::intent "doc"` — consumed and discarded,
+                // exactly like `src/parser/mod.rs:71-82`. The attribute
+                // value is not attached to the AST. #156 Slice 2.
+                token.TokenKind::DoubleColon => {
+                    let n_tk = self.peek_at(1);
+                    let mut is_intent = false;
+                    match n_tk.kind {
+                        token.TokenKind::Intent => { is_intent = true; },
+                        _ => { is_intent = false; },
+                    }
+                    if is_intent {
+                        let _ = self.advance();  // consume '::'
+                        let _ = self.advance();  // consume 'intent'
+                        let v_tk = self.peek();
+                        let mut is_str = false;
+                        match v_tk.kind {
+                            token.TokenKind::StringLiteral(_) => { is_str = true; },
+                            _ => { is_str = false; },
+                        }
+                        if is_str { let _ = self.advance(); }
+                    } else {
+                        return result.Result::Err("Unexpected :: at top level");
+                    }
+                },
+                token.TokenKind::Use => {
+                    let imp = self.parse_import();
+                    imports.push(imp);
+                },
+                token.TokenKind::Identifier(val) => {
+                    if std.string.equals(val, "module") {
+                        // `module a.b.c;` — dotted path joined with '.'.
+                        let _ = self.advance();  // consume 'module'
+                        let path = self.parse_path();
+                        let joined = std.string.join(path, ".");
+                        if std.string.len(joined) > 0 {
+                            module_name = joined;
+                        }
+                        let s_tk = self.peek();
+                        let mut is_semi = false;
+                        match s_tk.kind {
+                            token.TokenKind::Semicolon => { is_semi = true; },
+                            _ => { is_semi = false; },
+                        }
+                        if is_semi { let _ = self.advance(); }
+                    } else {
+                        let decl_res = self.parse_declaration();
+                        if decl_res.is_err() { return result.Result::Err(decl_res.unwrap_err()); }
+                        decls.push(decl_res.unwrap());
+                    }
+                },
+                _ => {
+                    let decl_res = self.parse_declaration();
+                    if decl_res.is_err() { return result.Result::Err(decl_res.unwrap_err()); }
+                    decls.push(decl_res.unwrap());
+                },
             }
         }
-        
+
         let p = ast.Program {
-            module_name: "main",
-            imports: vector.Vector<ast.Import>.new(),
+            module_name: module_name,
+            imports: imports,
             declarations: decls,
         };
-        
+
         return result.Result::Ok(p);
     }
 }
