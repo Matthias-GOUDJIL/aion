@@ -527,6 +527,13 @@ fn test_self_parser_call() {
     assert_snapshot!(run_aion_test("compiler/self_parser_call"));
 }
 #[test]
+fn test_self_parser_decls() {
+    // #156 Slice 2 — verifies ::intent skip, module name, use imports,
+    // enum (with generics + variants), struct (with generics),
+    // interface, and both impl forms parse into the expected AST.
+    assert_snapshot!(run_aion_test("compiler/self_parser_decls"));
+}
+#[test]
 fn test_optimization_check() {
     assert_snapshot!(run_aion_test("compiler/optimization_check"));
 }
