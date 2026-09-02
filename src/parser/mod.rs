@@ -1196,12 +1196,16 @@ impl<'a> Parser<'a> {
             while self.current_token.kind != TokenKind::Gt
                 && self.current_token.kind != TokenKind::EOF
             {
-                if let TokenKind::Identifier(id) = &self.current_token.kind {
-                    args.push(id.clone());
-                    self.next_token();
-                } else {
-                    self.next_token();
-                }
+                // Full type-name parse (not bare identifiers): nested
+                // generics (`Vector<HashMap<K, V>>`) and dotted paths
+                // (`compiler.ast.Function`) are consumed correctly, and
+                // the closing `>` of an inner generic is consumed by the
+                // recursive call — leaving exactly one `>` per nesting
+                // level for the outer loop. Previously bare identifiers
+                // were pushed and inner `<`/`>` tokens were skipped,
+                // leaking one `>` per nesting level into the infix loop
+                // where it parsed as a comparison operator. #133.
+                args.push(self.parse_type_name());
                 if self.current_token.kind == TokenKind::Comma {
                     self.next_token();
                 }
