@@ -679,8 +679,53 @@ impl Parser {
     // `trans` (transformer expression) — Aion mode: takes the current
     // `expr` and returns the dispatch-updated expression after one
     // postfix token. Loops until no postfix token matches.
-    pub fn parse_postfix(mut self, expr: ast.Expression) -> ast.Expression {
-        let mut current = expr;
+    // Decide whether a `<` at the current position opens a generic
+    // argument list or is a less-than comparison. Scan forward counting
+    // angle depth; tokens that cannot appear inside a generic list
+    // (LBrace, RParen, Eq, Or, And, Plus, Minus, Semicolon, EOF) abort.
+    // Comma is allowed — `foo<A, B>(...)` needs it. Faithful port of
+    // `src/parser/mod.rs:1155-1190`. #133.
+    pub fn is_generic_args_ahead(self) -> bool {
+        let c0 = self.peek();
+        let mut is_lt = false;
+        match c0.kind {
+            token.TokenKind::Lt => { is_lt = true; },
+            _ => { is_lt = false; },
+        }
+        if !is_lt {
+            return false;
+        }
+        let mut i = 1;
+        let mut angle = 1;
+        while angle > 0 {
+            let tok = self.peek_at(i);
+            let mut abort = false;
+            match tok.kind {
+                token.TokenKind::EOF => { abort = true; },
+                token.TokenKind::LBrace => { abort = true; },
+                token.TokenKind::Semicolon => { abort = true; },
+                token.TokenKind::Eq => { abort = true; },
+                token.TokenKind::Or => { abort = true; },
+                token.TokenKind::And => { abort = true; },
+                token.TokenKind::Plus => { abort = true; },
+                token.TokenKind::Minus => { abort = true; },
+                token.TokenKind::RParen => { abort = true; },
+                token.TokenKind::Lt => { angle = angle + 1; },
+                token.TokenKind::Gt => { angle = angle - 1; },
+                _ => {},
+            }
+            if abort {
+                return false;
+            }
+            i = i + 1;
+            if i > 50 {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    pub fn parse_postfix(mut self, expr: ast.Expression) -> ast.Expression {        let mut current = expr;
         let mut keep_going = true;
         while keep_going {
             let p = self.peek();
@@ -688,6 +733,9 @@ impl Parser {
             match p.kind {
                 token.TokenKind::LParen => { dispatch = true; },
                 token.TokenKind::Dot => { dispatch = true; },
+                token.TokenKind::Lt => { dispatch = true; },
+                token.TokenKind::DoubleColon => { dispatch = true; },
+                token.TokenKind::LBrace => { dispatch = true; },
                 _ => { dispatch = false; },
             }
             if !dispatch {
@@ -695,6 +743,327 @@ impl Parser {
             } else {
                 let p_kind = p.kind;
                 match p_kind {
+                    token.TokenKind::Lt => {
+                        // Generic type arguments: `Vector<String>`,
+                        // `HashMap<K, V>`, `id<i64>(5)`. If `(` follows,
+                        // this is a generic Call; otherwise a TypeRef
+                        // (whose Dot-chained methods still parse).
+                        // Mirrors `src/parser/mod.rs:1926` +
+                        // `is_generic_args_ahead` — a `<` that cannot
+                        // balance before a statement boundary (LBrace,
+                        // RParen, Eq, ...) is a COMPARISON, not generics.
+                        // #156 Slice 5 / #133.
+                        if !self.is_generic_args_ahead() {
+                            keep_going = false;
+                        } else {
+                        let _ = self.advance();  // consume '<'
+                        let mut generics = vector.Vector<String>.new();
+                        let mut gdone = false;
+                        while !gdone {
+                            let tk = self.peek();
+                            let mut stop = false;
+                            match tk.kind {
+                                token.TokenKind::Gt => { stop = true; },
+                                token.TokenKind::EOF => { stop = true; },
+                                _ => { stop = false; },
+                            }
+                            if stop {
+                                gdone = true;
+                            } else {
+                                let t = self.parse_type_name();
+                                generics.push(t);
+                                let c_tk = self.peek();
+                                let mut is_comma = false;
+                                match c_tk.kind {
+                                    token.TokenKind::Comma => { is_comma = true; },
+                                    _ => { is_comma = false; },
+                                }
+                                if is_comma { let _ = self.advance(); }
+                            }
+                        }
+                        let g_tk = self.peek();
+                        let mut is_gt = false;
+                        match g_tk.kind {
+                            token.TokenKind::Gt => { is_gt = true; },
+                            _ => { is_gt = false; },
+                        }
+                        if is_gt { let _ = self.advance(); }
+                        // Does a Call follow?
+                        let c_tk = self.peek();
+                        let mut is_lparen = false;
+                        match c_tk.kind {
+                            token.TokenKind::LParen => { is_lparen = true; },
+                            _ => { is_lparen = false; },
+                        }
+                        if is_lparen {
+                            // Generic call — rewrite current to a bare
+                            // Identifier so the LParen arm below binds
+                            // the name, stashing the generics by
+                            // re-entering the call build directly.
+                            let mut base = "";
+                            match current {
+                                ast.Expression::Identifier(n) => { base = n; },
+                                ast.Expression::TypeRef(n, _g) => { base = n; },
+                                _ => { base = ""; },
+                            }
+                            let _ = self.advance();  // consume '('
+                            let mut args = vector.Vector<ast.Expression>.new();
+                            let mut loop_args = true;
+                            while loop_args {
+                                let ntk = self.peek();
+                                let mut stop = false;
+                                match ntk.kind {
+                                    token.TokenKind::RParen => { stop = true; },
+                                    token.TokenKind::EOF => { stop = true; },
+                                    _ => { stop = false; },
+                                }
+                                if stop {
+                                    loop_args = false;
+                                } else {
+                                    let a_res = self.parse_expression();
+                                    if a_res.is_err() {
+                                        return current;
+                                    }
+                                    args.push(a_res.unwrap());
+                                    let ctk = self.peek();
+                                    let mut is_comma = false;
+                                    match ctk.kind {
+                                        token.TokenKind::Comma => { is_comma = true; },
+                                        _ => { is_comma = false; },
+                                    }
+                                    if is_comma { let _ = self.advance(); }
+                                }
+                            }
+                            let ctk = self.peek();
+                            let mut is_rparen = false;
+                            match ctk.kind {
+                                token.TokenKind::RParen => { is_rparen = true; },
+                                _ => { is_rparen = false; },
+                            }
+                            if is_rparen { let _ = self.advance(); }
+                            current = ast.Expression::Call(base, generics, args);
+                        } else {
+                            current = ast.Expression::TypeRef(base_name_of(current), generics);
+                        }
+                        }
+                    },
+                    token.TokenKind::DoubleColon => {
+                        // Enum instantiation: `Option::Some(x)`,
+                        // `Color::Red`. Mirrors
+                        // `src/parser/mod.rs:1765-1810`. #156 Slice 5 /
+                        // #133.
+                        let _ = self.advance();  // consume '::'
+                        let v_tk = self.advance();
+                        let mut variant = "";
+                        match v_tk.kind {
+                            token.TokenKind::Identifier(v) => { variant = v; },
+                            _ => {
+                                keep_going = false;
+                            },
+                        }
+                        if keep_going {
+                            let mut base = "";
+                            match current {
+                                ast.Expression::Identifier(n) => { base = n; },
+                                ast.Expression::TypeRef(n, _g) => { base = n; },
+                                _ => { base = ""; },
+                            }
+                            // Optional generic args on the enum type.
+                            let mut generics = vector.Vector<String>.new();
+                            let lt_tk = self.peek();
+                            let mut is_lt = false;
+                            match lt_tk.kind {
+                                token.TokenKind::Lt => { is_lt = true; },
+                                _ => { is_lt = false; },
+                            }
+                            if is_lt {
+                                let _ = self.advance();
+                                let mut gdone = false;
+                                while !gdone {
+                                    let tk = self.peek();
+                                    let mut stop = false;
+                                    match tk.kind {
+                                        token.TokenKind::Gt => { stop = true; },
+                                        token.TokenKind::EOF => { stop = true; },
+                                        _ => { stop = false; },
+                                    }
+                                    if stop {
+                                        gdone = true;
+                                    } else {
+                                        let t = self.parse_type_name();
+                                        generics.push(t);
+                                        let c_tk = self.peek();
+                                        let mut is_comma = false;
+                                        match c_tk.kind {
+                                            token.TokenKind::Comma => { is_comma = true; },
+                                            _ => { is_comma = false; },
+                                        }
+                                        if is_comma { let _ = self.advance(); }
+                                    }
+                                }
+                                let g_tk = self.peek();
+                                let mut is_gt = false;
+                                match g_tk.kind {
+                                    token.TokenKind::Gt => { is_gt = true; },
+                                    _ => { is_gt = false; },
+                                }
+                                if is_gt { let _ = self.advance(); }
+                            }
+                            // Optional payload args.
+                            let mut args = vector.Vector<ast.Expression>.new();
+                            let lp_tk = self.peek();
+                            let mut is_lparen = false;
+                            match lp_tk.kind {
+                                token.TokenKind::LParen => { is_lparen = true; },
+                                _ => { is_lparen = false; },
+                            }
+                            if is_lparen {
+                                let _ = self.advance();  // consume '('
+                                let mut loop_args = true;
+                                while loop_args {
+                                    let ntk = self.peek();
+                                    let mut stop = false;
+                                    match ntk.kind {
+                                        token.TokenKind::RParen => { stop = true; },
+                                        token.TokenKind::EOF => { stop = true; },
+                                        _ => { stop = false; },
+                                    }
+                                    if stop {
+                                        loop_args = false;
+                                    } else {
+                                        let a_res = self.parse_expression();
+                                        if a_res.is_err() {
+                                            return current;
+                                        }
+                                        args.push(a_res.unwrap());
+                                        let ctk = self.peek();
+                                        let mut is_comma = false;
+                                        match ctk.kind {
+                                            token.TokenKind::Comma => { is_comma = true; },
+                                            _ => { is_comma = false; },
+                                        }
+                                        if is_comma { let _ = self.advance(); }
+                                    }
+                                }
+                                let ctk = self.peek();
+                                let mut is_rparen = false;
+                                match ctk.kind {
+                                    token.TokenKind::RParen => { is_rparen = true; },
+                                    _ => { is_rparen = false; },
+                                }
+                                if is_rparen { let _ = self.advance(); }
+                            }
+                            current = ast.Expression::EnumInst(base, variant, generics, args);
+                        }
+                    },
+                    token.TokenKind::LBrace => {
+                        // Struct instantiation: `Point { x: 3, y: 4 }`.
+                        // Only fires when the receiver is a type-like
+                        // name (Identifier/TypeRef) and the block looks
+                        // like field initializers (`ident:` or empty).
+                        // Mirrors `src/parser/mod.rs:1861-1925`. #133.
+                        let mut is_type_like = false;
+                        match current {
+                            ast.Expression::Identifier(_n) => { is_type_like = true; },
+                            ast.Expression::TypeRef(_n, _g) => { is_type_like = true; },
+                            _ => { is_type_like = false; },
+                        }
+                        if !is_type_like {
+                            keep_going = false;
+                        } else {
+                            let next_tok = self.peek_at(1);
+                            let mut is_struct = false;
+                            match next_tok.kind {
+                                token.TokenKind::RBrace => { is_struct = true; },
+                                token.TokenKind::Identifier(_) => {
+                                    let nn = self.peek_at(2);
+                                    match nn.kind {
+                                        token.TokenKind::Colon => { is_struct = true; },
+                                        _ => { is_struct = false; },
+                                    }
+                                },
+                                _ => { is_struct = false; },
+                            }
+                            if !is_struct {
+                                keep_going = false;
+                            } else {
+                                let _ = self.advance();  // consume '{'
+                                let mut fields = vector.Vector<ast.FieldInit>.new();
+                                let mut fdone = false;
+                                while !fdone {
+                                    let ftk = self.peek();
+                                    let mut stop = false;
+                                    match ftk.kind {
+                                        token.TokenKind::RBrace => { stop = true; },
+                                        token.TokenKind::EOF => { stop = true; },
+                                        _ => { stop = false; },
+                                    }
+                                    if stop {
+                                        fdone = true;
+                                    } else {
+                                        let fname_tk = self.advance();
+                                        let mut f_name = "";
+                                        match fname_tk.kind {
+                                            token.TokenKind::Identifier(v) => { f_name = v; },
+                                            _ => { f_name = ""; },
+                                        }
+                                        let ctk = self.peek();
+                                        let mut is_colon = false;
+                                        match ctk.kind {
+                                            token.TokenKind::Colon => { is_colon = true; },
+                                            _ => { is_colon = false; },
+                                        }
+                                        if is_colon {
+                                            let _ = self.advance();  // consume ':'
+                                            let v_res = self.parse_expression();
+                                            if v_res.is_err() {
+                                                return current;
+                                            }
+                                            let fi = ast.FieldInit {
+                                                name: f_name,
+                                                value: v_res.unwrap(),
+                                            };
+                                            fields.push(fi);
+                                        }
+                                        let ctk2 = self.peek();
+                                        let mut is_comma = false;
+                                        match ctk2.kind {
+                                            token.TokenKind::Comma => { is_comma = true; },
+                                            _ => { is_comma = false; },
+                                        }
+                                        if is_comma {
+                                            let _ = self.advance();
+                                        } else {
+                                            let e_tk = self.peek();
+                                            let mut at_end = false;
+                                            match e_tk.kind {
+                                                token.TokenKind::RBrace => { at_end = true; },
+                                                token.TokenKind::EOF => { at_end = true; },
+                                                _ => { at_end = false; },
+                                            }
+                                            if !at_end {
+                                                fdone = true;
+                                            }
+                                        }
+                                    }
+                                }
+                                let rb_tk = self.peek();
+                                let mut is_rbrace = false;
+                                match rb_tk.kind {
+                                    token.TokenKind::RBrace => { is_rbrace = true; },
+                                    _ => { is_rbrace = false; },
+                                }
+                                if is_rbrace { let _ = self.advance(); }
+                                let mut base = "";
+                                match current {
+                                    ast.Expression::Identifier(n) => { base = n; },
+                                    ast.Expression::TypeRef(n, _g) => { base = n; },
+                                    _ => { base = ""; },
+                                }
+                                current = ast.Expression::StructInst(base, vector.Vector<String>.new(), fields);
+                            }
+                        }
+                    },
                     token.TokenKind::LParen => {
                         let _ = self.advance();  // consume '('
                         let mut args = vector.Vector<ast.Expression>.new();
@@ -2449,5 +2818,17 @@ pub fn parse_struct(mut self, attributes: vector.Vector<ast.Attribute>) -> resul
         };
 
         return result.Result::Ok(p);
+    }
+}
+
+// Extract the dotted base name of an identifier-shaped expression —
+// used by the generic-args and enum-instantiation postfix arms to
+// rebuild Call/TypeRef/EnumInst nodes. Returns "" for non-name
+// receivers.
+pub fn base_name_of(e: ast.Expression) -> String {
+    match e {
+        ast.Expression::Identifier(n) => { return n; },
+        ast.Expression::TypeRef(n, _g) => { return n; },
+        _ => { return ""; },
     }
 }

@@ -51,6 +51,27 @@ pub struct Codegen {
     string_ids: ordered_map.OrderedMap<String>,
     locals: ordered_map.OrderedMap<String>,
     local_kinds: ordered_map.OrderedMap<String>,
+    // Aion type name per local (infer_type on identifiers). #133.
+    locals_aion: ordered_map.OrderedMap<String>,
+    // Aion return-type names per function (infer_type on calls). #133.
+    signatures_aion: ordered_map.OrderedMap<String>,
+    // Struct layouts (flattened vectors — nested-generic map fields lose
+    // their type in the checker, see min6 repro). #133.
+    struct_layouts: vector.Vector<StructLayout>,
+    // Impl methods (flattened vector). #133.
+    impl_methods: vector.Vector<MethodEntry>,
+    // Generic (non-impl) function templates (flattened vector). #133.
+    templates: vector.Vector<FnEntry>,
+    // Enum variant order per enum name (tag values). #133.
+    enum_variants: vector.Vector<EnumEntry>,
+    // Monomorphization worklist + memo. #133.
+    pending_instances: vector.Vector<Instance>,
+    done_instances: ordered_map.OrderedMap<String>,
+    // Active generic substitution context (instance compilation). #133.
+    sub_params: vector.Vector<String>,
+    sub_args: vector.Vector<String>,
+    // Symbol-name override for monomorphized instances. #133.
+    name_override: String,
 }
 
 // A lowered expression value: the LLVM operand text (`"0"`, `"%t3"`,
@@ -71,6 +92,125 @@ fn int_width(ty: String) -> i64 {
     if std.string.equals(ty, "i64") { return 64; }
     if std.string.equals(ty, "u64") { return 64; }
     return -1;
+}
+
+// Struct field layout entry: index within the struct + Aion type name.
+pub struct FieldInfo {
+    name: String,
+    idx: i64,
+    ty: String,
+}
+
+// A queued generic instantiation: mangled symbol, base (unsubstituted)
+// function name, and the concrete type arguments. #133.
+pub struct Instance {
+    mangled: String,
+    base: String,
+    args: vector.Vector<String>,
+}
+
+// Result of resolving a method call: the full flattened impl-method key,
+// the template's generic params, and the type args that satisfy them.
+pub struct MethodResolution {
+    key: String,
+    template_params: vector.Vector<String>,
+    type_args: vector.Vector<String>,
+    ret_aion: String,
+}
+
+// Struct layout entry set: the struct's (flattened) name + its fields
+// in declaration order (index = position). Local structs keep the
+// checker happy where nested-generic maps lose their types. #133.
+pub struct StructLayout {
+    name: String,
+    fields: vector.Vector<FieldInfo>,
+}
+
+// Impl-method entry: flattened "Target.method" key + the Function AST.
+pub struct MethodEntry {
+    key: String,
+    f: compiler.ast.Function,
+}
+
+// Generic (non-impl) function template entry.
+pub struct FnEntry {
+    name: String,
+    f: compiler.ast.Function,
+}
+
+// Enum variant-order entry: enum (flattened) name + variant names in
+// declaration order (index = tag value). #133.
+pub struct EnumEntry {
+    name: String,
+    variants: vector.Vector<String>,
+}
+
+// Count dot-separated segments in a folded identifier path. #133.
+fn count_segments(s: String) -> i64 {
+    let n = std.string.len(s);
+    let mut count = 1;
+    let mut i = 0;
+    while i < n {
+        let c = std.string.at(s, i);
+        if c == 46 {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    return count;
+}
+
+// Extract the i-th dot-separated segment of a folded identifier path.
+// #133.
+fn segment_at(s: String, target: i64) -> String {
+    let n = std.string.len(s);
+    let mut seg = 0;
+    let mut start = 0;
+    let mut i = 0;
+    while i < n {
+        let c = std.string.at(s, i);
+        if c == 46 {
+            if seg == target {
+                return std.string.substr(s, start, i - start);
+            }
+            seg = seg + 1;
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    if seg == target {
+        return std.string.substr(s, start, n - start);
+    }
+    return "";
+}
+
+// Depth-aware top-level comma split (nested generics respected). #133.
+fn split_top_commas(s: String) -> vector.Vector<String> {
+    let mut parts = vector.Vector<String>.new();
+    let n = std.string.len(s);
+    let mut depth = 0;
+    let mut cur = "";
+    let mut i = 0;
+    while i < n {
+        let c = std.string.at(s, i);
+        if c == 60 || c == 40 || c == 91 {
+            depth = depth + 1;
+            cur = std.string.concat(cur, std.string.substr(s, i, 1));
+        } else if c == 62 || c == 41 || c == 93 {
+            depth = depth - 1;
+            cur = std.string.concat(cur, std.string.substr(s, i, 1));
+        } else if c == 44 && depth == 0 {
+            parts.push(cur);
+            cur = "";
+        } else {
+            cur = std.string.concat(cur, std.string.substr(s, i, 1));
+        }
+        i = i + 1;
+    }
+    if std.string.len(cur) > 0 {
+        parts.push(cur);
+    }
+    return parts;
 }
 
 // LLVM type lowering for every primitive in `docs/SPEC.md` §2.
@@ -130,7 +270,766 @@ impl Codegen {
             string_ids: ordered_map.OrderedMap<String>.new(),
             locals: ordered_map.OrderedMap<String>.new(),
             local_kinds: ordered_map.OrderedMap<String>.new(),
+            locals_aion: ordered_map.OrderedMap<String>.new(),
+            signatures_aion: ordered_map.OrderedMap<String>.new(),
+            struct_layouts: vector.Vector<StructLayout>.new(),
+            impl_methods: vector.Vector<MethodEntry>.new(),
+            templates: vector.Vector<FnEntry>.new(),
+            enum_variants: vector.Vector<EnumEntry>.new(),
+            pending_instances: vector.Vector<Instance>.new(),
+            done_instances: ordered_map.OrderedMap<String>.new(),
+            sub_params: vector.Vector<String>.new(),
+            sub_args: vector.Vector<String>.new(),
+            name_override: "",
         }
+    }
+
+    // Token-aware generic substitution: replaces whole identifiers in
+    // `s` (generic params are bare names, never dotted paths) with the
+    // concrete argument. Faithful port of `substitute_type_string`
+    // (`src/codegen/intrinsics.rs:85-121`, the #67 fix — NOT naive
+    // string replace). Active only inside an instance context. #133.
+    fn substitute(self, s: String) -> String {
+        let np = (self.sub_params).len();
+        if np == 0 {
+            return s;
+        }
+        let n = std.string.len(s);
+        let mut out = "";
+        let mut tok = "";
+        let mut i = 0;
+        while i < n {
+            let c = std.string.at(s, i);
+            let is_tok = (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95 || c == 46;
+            if is_tok {
+                tok = std.string.concat(tok, std.string.substr(s, i, 1));
+            } else {
+                if std.string.len(tok) > 0 {
+                    tok = self.sub_tok(tok);
+                    out = std.string.concat(out, tok);
+                    tok = "";
+                }
+                out = std.string.concat(out, std.string.substr(s, i, 1));
+            }
+            i = i + 1;
+        }
+        if std.string.len(tok) > 0 {
+            tok = self.sub_tok(tok);
+            out = std.string.concat(out, tok);
+        }
+        return out;
+    }
+
+    // Substitute one whole token if it matches an active generic param.
+    fn sub_tok(self, tok: String) -> String {
+        let np = (self.sub_params).len();
+        let mut i = 0;
+        while i < np {
+            let p = (self.sub_params).get(i).unwrap();
+            if std.string.equals(tok, p) {
+                let a = (self.sub_args).get(i).unwrap();
+                return a;
+            }
+            i = i + 1;
+        }
+        return tok;
+    }
+
+    // Fuzzy key resolution over an OrderedMap's keys: exact match first,
+    // then suffix match (`Vector` matches `std.collections.vector.Vector`
+    // — flattened import paths). Mirrors the Rust `resolve_fuzzy_name`
+    // (`src/codegen/compiler.rs:63-85`) but iterates the OrderedMap in
+    // deterministic order. Returns "" when not found. #133.
+    fn fuzzy_lookup_key(self, keys: vector.Vector<String>, name: String) -> String {
+        let n = (keys).len();
+        let mut i = 0;
+        while i < n {
+            let k = (keys).get(i).unwrap();
+            if std.string.equals(k, name) {
+                return k;
+            }
+            i = i + 1;
+        }
+        let suffix = std.string.concat(".", name);
+        i = 0;
+        while i < n {
+            let k = (keys).get(i).unwrap();
+            if std.string.ends_with(k, suffix) {
+                return k;
+            }
+            i = i + 1;
+        }
+        return "";
+    }
+
+    // Strip generic args from a type name: `Vector<String>` -> `Vector`.
+    fn struct_base(name: String) -> String {
+        let n = std.string.len(name);
+        let mut i = 0;
+        while i < n {
+            let c = std.string.at(name, i);
+            if c == 60 {
+                return std.string.substr(name, 0, i);
+            }
+            i = i + 1;
+        }
+        return name;
+    }
+
+    // Extract the generic argument list from a type name:
+    // `Vector<String>` -> `String`. Empty when no `<...>` present. #133.
+    fn generic_args_of(name: String) -> vector.Vector<String> {
+        let mut out = vector.Vector<String>.new();
+        let n = std.string.len(name);
+        let mut depth = 0;
+        let mut start = -1;
+        let mut i = 0;
+        while i < n {
+            let c = std.string.at(name, i);
+            if c == 60 {
+                depth = depth + 1;
+                if depth == 1 {
+                    start = i + 1;
+                }
+            } else if c == 62 {
+                depth = depth - 1;
+                if depth == 0 {
+                    let inner = std.string.substr(name, start, i - start);
+                    out = split_top_commas(inner);
+                    return out;
+                }
+            }
+            i = i + 1;
+        }
+        return out;
+    }
+
+    // Look up a struct layout by (possibly flattened) struct name.
+    // Linear scan over the (small) layout vector — deterministic and
+    // checker-friendly (no nested-generic map bindings). #133.
+    fn struct_layout(self, name: String) -> StructLayout {
+        let empty = StructLayout {
+            name: "",
+            fields: vector.Vector<FieldInfo>.new(),
+        };
+        let base = Codegen::struct_base(name);
+        let n = (self.struct_layouts).len();
+        let mut i = 0;
+        while i < n {
+            let sl = (self.struct_layouts).get(i).unwrap() as StructLayout;
+            if std.string.ends_with(sl.name, base) {
+                return sl;
+            }
+            i = i + 1;
+        }
+        return empty;
+    }
+
+    // Look up an impl method by (possibly flattened) "Target.method"
+    // key. Linear scan, deterministic. #133.
+    fn find_method(self, key_candidate: String) -> compiler.ast.Function {
+        let n = (self.impl_methods).len();
+        let mut i = 0;
+        while i < n {
+            let me = (self.impl_methods).get(i).unwrap() as MethodEntry;
+            if std.string.equals(me.key, key_candidate) {
+                return me.f;
+            }
+            i = i + 1;
+        }
+        // Fuzzy: key ends with ".candidate".
+        let suffix = std.string.concat(".", key_candidate);
+        i = 0;
+        while i < n {
+            let me = (self.impl_methods).get(i).unwrap() as MethodEntry;
+            if std.string.ends_with(me.key, suffix) {
+                return me.f;
+            }
+            i = i + 1;
+        }
+        // Fall back to the empty function (has_body=false, return "void").
+        let empty = compiler.ast.Function {
+            name: "",
+            generic_params: vector.Vector<String>.new(),
+            params: vector.Vector<compiler.ast.Param>.new(),
+            return_type: "",
+            has_body: false,
+            body: vector.Vector<compiler.ast.Statement>.new(),
+            modifiers: vector.Vector<compiler.token.Token>.new(),
+            attributes: vector.Vector<compiler.ast.Attribute>.new(),
+        };
+        return empty;
+    }
+
+    // True iff find_method would resolve (the empty fallback has an
+    // empty name). #133.
+    fn has_method(self, key_candidate: String) -> bool {
+        let n = (self.impl_methods).len();
+        let mut i = 0;
+        while i < n {
+            let me = (self.impl_methods).get(i).unwrap() as MethodEntry;
+            if std.string.equals(me.key, key_candidate) {
+                return true;
+            }
+            i = i + 1;
+        }
+        let suffix = std.string.concat(".", key_candidate);
+        i = 0;
+        while i < n {
+            let me = (self.impl_methods).get(i).unwrap() as MethodEntry;
+            if std.string.ends_with(me.key, suffix) {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    // Look up a generic function template by base name (exact, then
+    // suffix match). Returns an empty-named Function when absent. #133.
+    fn find_template(self, base: String) -> compiler.ast.Function {
+        let n = (self.templates).len();
+        let mut i = 0;
+        while i < n {
+            let fe = (self.templates).get(i).unwrap() as FnEntry;
+            if std.string.equals(fe.name, base) {
+                return fe.f;
+            }
+            i = i + 1;
+        }
+        let suffix = std.string.concat(".", base);
+        i = 0;
+        while i < n {
+            let fe = (self.templates).get(i).unwrap() as FnEntry;
+            if std.string.ends_with(fe.name, suffix) {
+                return fe.f;
+            }
+            i = i + 1;
+        }
+        let empty = compiler.ast.Function {
+            name: "",
+            generic_params: vector.Vector<String>.new(),
+            params: vector.Vector<compiler.ast.Param>.new(),
+            return_type: "",
+            has_body: false,
+            body: vector.Vector<compiler.ast.Statement>.new(),
+            modifiers: vector.Vector<compiler.token.Token>.new(),
+            attributes: vector.Vector<compiler.ast.Attribute>.new(),
+        };
+        return empty;
+    }
+
+    fn has_template(self, base: String) -> bool {
+        let n = (self.templates).len();
+        let mut i = 0;
+        while i < n {
+            let fe = (self.templates).get(i).unwrap() as FnEntry;
+            if std.string.equals(fe.name, base) {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    // Variant index lookup for enum instantiation (tag value). #133.
+    fn variant_index(self, base: String, variant: String) -> i64 {
+        let n = (self.enum_variants).len();
+        let mut i = 0;
+        while i < n {
+            let ee = (self.enum_variants).get(i).unwrap() as EnumEntry;
+            if std.string.ends_with(ee.name, base) {
+                let names = ee.variants;
+                let m = (names).len();
+                let mut j = 0;
+                while j < m {
+                    let v = (names).get(j).unwrap();
+                    if std.string.equals(v, variant) {
+                        return j;
+                    }
+                    j = j + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+
+    // Infer the Aion type name of an expression, recursively. Canonical
+    // names ("i64", "f64", "String", "Vector<String>", ...) feed method
+    // resolution, field lookup, and monomorphization. The active
+    // substitution context applies to every inferred name. #133.
+    fn infer_type(mut self, e: compiler.ast.Expression) -> String {
+        match e {
+            compiler.ast.Expression::Integer(_n) => { return "i64"; },
+            compiler.ast.Expression::Boolean(_b) => { return "i64"; },
+            compiler.ast.Expression::DurationLit(_s, _ns) => { return "Duration"; },
+            compiler.ast.Expression::DateLit(_ts) => { return "Date"; },
+            compiler.ast.Expression::Float(_f) => { return "f64"; },
+            compiler.ast.Expression::StringLit(_s) => { return "String"; },
+            compiler.ast.Expression::Cast(_inner, target) => {
+                return self.substitute(target);
+            },
+            compiler.ast.Expression::Identifier(name) => {
+                if self.locals_aion.contains_key(name) {
+                    let t = self.locals_aion.get(name).unwrap();
+                    return t;
+                }
+                return "unknown";
+            },
+            compiler.ast.Expression::Infix(l, _op, _r) => {
+                let lt = self.infer_type(l);
+                if std.string.equals(lt, "f64") {
+                    return "f64";
+                }
+                return "i64";
+            },
+            compiler.ast.Expression::TypeRef(name, generics) => {
+                let ng = (generics).len();
+                if ng == 0 {
+                    return self.substitute(name);
+                }
+                let joined = std.string.join(generics, ", ");
+                let out = std.string.concat(self.substitute(name), "<");
+                out = std.string.concat(out, joined);
+                out = std.string.concat(out, ">");
+                return out;
+            },
+            compiler.ast.Expression::StructInst(name, generics, _fields) => {
+                let ng = (generics).len();
+                if ng == 0 {
+                    return self.substitute(name);
+                }
+                let joined = std.string.join(generics, ", ");
+                let out = std.string.concat(self.substitute(name), "<");
+                out = std.string.concat(out, joined);
+                out = std.string.concat(out, ">");
+                return out;
+            },
+            compiler.ast.Expression::EnumInst(name, _variant, generics, _args) => {
+                let ng = (generics).len();
+                if ng == 0 {
+                    return self.substitute(name);
+                }
+                let joined = std.string.join(generics, ", ");
+                let out = std.string.concat(self.substitute(name), "<");
+                out = std.string.concat(out, joined);
+                out = std.string.concat(out, ">");
+                return out;
+            },
+            compiler.ast.Expression::Deref(inner) => {
+                let it = self.infer_type(inner);
+                if std.string.starts_with(it, "*") {
+                    return std.string.substr(it, 1, std.string.len(it) - 1);
+                }
+                return "unknown";
+            },
+            compiler.ast.Expression::MemberAccess(receiver, member) => {
+                let rt = self.infer_type(receiver);
+                let layout = self.struct_layout(rt);
+                let nf = (layout.fields).len();
+                let mut i = 0;
+                while i < nf {
+                    let info = (layout.fields).get(i).unwrap() as FieldInfo;
+                    if std.string.equals(info.name, member) {
+                        return self.substitute(info.ty);
+                    }
+                    i = i + 1;
+                }
+                return "unknown";
+            },
+            compiler.ast.Expression::MethodCall(receiver, method, generics, _args) => {
+                let rt = self.infer_type(receiver);
+                let resolved = self.resolve_method(rt, method, generics);
+                return resolved.ret_aion;
+            },
+            _ => {
+                return "unknown";
+            },
+        }
+    }
+
+    // Resolve a method call to its impl-method declaration. The receiver
+    // type (e.g. `Vector<String>`) provides the type args that satisfy
+    // the impl's generic params; the method key fuzzy-matches the
+    // flattened import path (`Vector.push` ->
+    // `std.collections.vector.Vector.push`). #133.
+    fn resolve_method(mut self, rt: String, method: String, explicit_generics: vector.Vector<String>) -> MethodResolution {
+        let unresolved = MethodResolution {
+            key: "",
+            template_params: vector.Vector<String>.new(),
+            type_args: vector.Vector<String>.new(),
+            ret_aion: "unknown",
+        };
+        let base = Codegen::struct_base(rt);
+        if std.string.equals(base, "unknown") || std.string.len(base) == 0 {
+            return unresolved;
+        }
+        let mut key_candidate = std.string.concat(base, ".");
+        key_candidate = std.string.concat(key_candidate, method);
+        if !self.has_method(key_candidate) {
+            return unresolved;
+        }
+        let key = key_candidate;
+        let f = self.find_method(key_candidate);
+        // Type args: explicit generics win; otherwise the receiver's own
+        // generic args bind the template params positionally.
+        let mut type_args = explicit_generics;
+        if (type_args).len() == 0 {
+            type_args = Codegen::generic_args_of(rt);
+        }
+        // Return type: substitute template params with type args, then
+        // the outer instance context (nested generics).
+        let saved_params = self.sub_params;
+        let saved_args = self.sub_args;
+        self.sub_params = f.generic_params;
+        self.sub_args = type_args;
+        let mut ret_aion = self.substitute(f.return_type);
+        if std.string.equals(ret_aion, "Self") {
+            ret_aion = rt;
+        }
+        self.sub_params = saved_params;
+        self.sub_args = saved_args;
+        let res = MethodResolution {
+            key: key,
+            template_params: f.generic_params,
+            type_args: type_args,
+            ret_aion: ret_aion,
+        };
+        return res;
+    }
+
+    // Lower a struct instantiation: allocate (size computed with natural
+    // alignment), store each field at its GEP index (layout from pass 1),
+    // return the pointer. #133.
+    fn compile_struct_inst(mut self, name: String, generics: vector.Vector<String>, fields: vector.Vector<ast.FieldInit>) -> Operand {
+        let ng = (generics).len();
+        let mut full = self.substitute(name);
+        if ng > 0 {
+            let joined = std.string.join(generics, ", ");
+            full = std.string.concat(full, "<");
+            full = std.string.concat(full, joined);
+            full = std.string.concat(full, ">");
+        }
+        let base = Codegen::struct_base(full);
+        let layout = self.struct_layout(full);
+        let size = self.struct_size(base);
+        let mut buf = self.output;
+        let ptr = self.next_ssa();
+        let mut line = std.string.concat("  ", ptr);
+        line = std.string.concat(line, " = call ptr @aion_malloc(i64 ");
+        line = std.string.concat(line, std.string.from_int(size));
+        line = std.string.concat(line, ")");
+        buf.push(line);
+        // Named struct type for GEPs (opaque i8 fallback when unknown).
+        let st_keys = (self.struct_layouts).len();
+        let mut gep_ty = std.string.concat("%", base);
+        if st_keys == 0 {
+            gep_ty = "i8";
+        }
+        self.output = buf;
+        let nf = (fields).len();
+        let mut i = 0;
+        while i < nf {
+            let fi = (fields).get(i).unwrap() as ast.FieldInit;
+            let found = self.layout_field_index(base, fi.name);
+            if found >= 0 {
+                let vop = self.compile_expr(fi.value);
+                let ft = self.substitute(self.layout_field_type(base, fi.name));
+                let lt = aion_type_to_llvm(ft);
+                let coerced = self.coerce_operand(vop, lt);
+                let fptr = self.next_ssa();
+                let mut buf2 = self.output;
+                let mut line2 = std.string.concat("  ", fptr);
+                line2 = std.string.concat(line2, " = getelementptr ");
+                line2 = std.string.concat(line2, gep_ty);
+                line2 = std.string.concat(line2, ", ptr ");
+                line2 = std.string.concat(line2, ptr);
+                line2 = std.string.concat(line2, ", i32 0, i32 ");
+                line2 = std.string.concat(line2, std.string.from_int(found));
+                buf2.push(line2);
+                let mut line3 = std.string.concat("  store ", "");
+                line3 = std.string.concat(line3, coerced.ty);
+                line3 = std.string.concat(line3, " ");
+                line3 = std.string.concat(line3, coerced.value);
+                line3 = std.string.concat(line3, ", ptr ");
+                line3 = std.string.concat(line3, fptr);
+                buf2.push(line3);
+                self.output = buf2;
+            }
+            i = i + 1;
+        }
+        let op = Operand { value: ptr, ty: "ptr" };
+        return op;
+    }
+
+    // Field index lookup by struct base name (linear scan). -1 when the
+    // struct or field is unknown. #133.
+    fn layout_field_index(self, base: String, field: String) -> i64 {
+        let n = (self.struct_layouts).len();
+        let mut i = 0;
+        while i < n {
+            let sl = (self.struct_layouts).get(i).unwrap() as StructLayout;
+            if std.string.ends_with(sl.name, base) {
+                let m = (sl.fields).len();
+                let mut j = 0;
+                while j < m {
+                    let info = (sl.fields).get(j).unwrap() as FieldInfo;
+                    if std.string.equals(info.name, field) {
+                        return info.idx;
+                    }
+                    j = j + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    // Field type lookup by struct base name (linear scan). "" when
+    // unknown. #133.
+    fn layout_field_type(self, base: String, field: String) -> String {
+        let n = (self.struct_layouts).len();
+        let mut i = 0;
+        while i < n {
+            let sl = (self.struct_layouts).get(i).unwrap() as StructLayout;
+            if std.string.ends_with(sl.name, base) {
+                let m = (sl.fields).len();
+                let mut j = 0;
+                while j < m {
+                    let info = (sl.fields).get(j).unwrap() as FieldInfo;
+                    if std.string.equals(info.name, field) {
+                        return info.ty;
+                    }
+                    j = j + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return "";
+    }
+
+    // Lower a member access: GEP into the receiver struct + load. #133.
+    fn compile_member_access(mut self, receiver: compiler.ast.Expression, member: String) -> Operand {
+        let rt = self.infer_type(receiver);
+        let base = Codegen::struct_base(rt);
+        let rop = self.compile_expr(receiver);
+        let idx = self.layout_field_index(base, member);
+        if idx >= 0 {
+            let ft = self.substitute(self.layout_field_type(base, member));
+            let lt = aion_type_to_llvm(ft);
+            let fptr = self.next_ssa();
+            let mut buf = self.output;
+            let mut line = std.string.concat("  ", fptr);
+            line = std.string.concat(line, " = getelementptr %");
+            line = std.string.concat(line, base);
+            line = std.string.concat(line, ", ptr ");
+            line = std.string.concat(line, rop.value);
+            line = std.string.concat(line, ", i32 0, i32 ");
+            line = std.string.concat(line, std.string.from_int(idx));
+            buf.push(line);
+            let loaded = self.next_ssa();
+            let mut line2 = std.string.concat("  ", loaded);
+            line2 = std.string.concat(line2, " = load ");
+            line2 = std.string.concat(line2, lt);
+            line2 = std.string.concat(line2, ", ptr ");
+            line2 = std.string.concat(line2, fptr);
+            buf.push(line2);
+            self.output = buf;
+            let op = Operand { value: loaded, ty: lt };
+            return op;
+        }
+        let op = Operand { value: "0", ty: "i64" };
+        return op;
+    }
+
+    // Lower an enum instantiation: allocate the tagged union (8-byte tag
+    // + 64-byte payload), store the variant tag, serialize payload
+    // elements at byte offset 8 + i*8 (the #161 layout contract). #133.
+    fn compile_enum_inst(mut self, name: String, variant: String, generics: vector.Vector<String>, args: vector.Vector<compiler.ast.Expression>) -> Operand {
+        let ng = (generics).len();
+        let mut full = self.substitute(name);
+        if ng > 0 {
+            let joined = std.string.join(generics, ", ");
+            full = std.string.concat(full, "<");
+            full = std.string.concat(full, joined);
+            full = std.string.concat(full, ">");
+        }
+        let base = Codegen::struct_base(full);
+        let tv = self.variant_index(base, variant);
+        let mut buf = self.output;
+        let ptr = self.next_ssa();
+        let mut line = std.string.concat("  ", ptr);
+        line = std.string.concat(line, " = call ptr @aion_malloc(i64 72)");
+        buf.push(line);
+        let tagptr = self.next_ssa();
+        let mut line2 = std.string.concat("  ", tagptr);
+        line2 = std.string.concat(line2, " = getelementptr %");
+        line2 = std.string.concat(line2, base);
+        line2 = std.string.concat(line2, ", ptr ");
+        line2 = std.string.concat(line2, ptr);
+        line2 = std.string.concat(line2, ", i32 0, i32 0");
+        buf.push(line2);
+        let mut line3 = std.string.concat("  store i64 ", "");
+        line3 = std.string.concat(line3, std.string.from_int(tv));
+        line3 = std.string.concat(line3, ", ptr ");
+        line3 = std.string.concat(line3, tagptr);
+        buf.push(line3);
+        self.output = buf;
+        let na = (args).len();
+        let mut i = 0;
+        while i < na {
+            let a = (args).get(i).unwrap() as compiler.ast.Expression;
+            let vop = self.compile_expr(a);
+            let dptr = self.next_ssa();
+            let mut buf2 = self.output;
+            let mut lp = std.string.concat("  ", dptr);
+            lp = std.string.concat(lp, " = getelementptr i8, ptr ");
+            lp = std.string.concat(lp, ptr);
+            lp = std.string.concat(lp, ", i64 ");
+            lp = std.string.concat(lp, std.string.from_int(8 + i * 8));
+            buf2.push(lp);
+            let mut sp = std.string.concat("  store ", "");
+            sp = std.string.concat(sp, vop.ty);
+            sp = std.string.concat(sp, " ");
+            sp = std.string.concat(sp, vop.value);
+            sp = std.string.concat(sp, ", ptr ");
+            sp = std.string.concat(sp, dptr);
+            buf2.push(sp);
+            self.output = buf2;
+            i = i + 1;
+        }
+        let op = Operand { value: ptr, ty: "ptr" };
+        return op;
+    }
+
+    // Lower a method call: resolve the method, monomorphize when
+    // generic, and emit a direct call with the receiver as first arg
+    // (Self). #133.
+    fn compile_method_call(mut self, receiver: compiler.ast.Expression, method: String, generics: vector.Vector<String>, args: vector.Vector<compiler.ast.Expression>) -> Operand {
+        let rt = self.infer_type(receiver);
+        let rop = self.compile_expr(receiver);
+        let resolved = self.resolve_method(rt, method, generics);
+        if std.string.len(resolved.key) == 0 {
+            let op = Operand { value: "0", ty: "i64" };
+            return op;
+        }
+        let tmpl = self.find_method(resolved.key);
+        // Mangle + queue the instance (or reuse the memoized one).
+        let saved_p = self.sub_params;
+        let saved_a = self.sub_args;
+        self.sub_params = resolved.template_params;
+        self.sub_args = resolved.type_args;
+        let skey = self.substitute(resolved.key);
+        self.sub_params = saved_p;
+        self.sub_args = saved_a;
+        let joined_args = std.string.join(resolved.type_args, "_");
+        let mangled = std.string.concat(skey, "_");
+        mangled = std.string.concat(mangled, joined_args);
+        if !self.done_instances.contains_key(mangled) {
+            self.done_instances.insert(mangled, resolved.key);
+            let inst = Instance {
+                mangled: mangled,
+                base: resolved.key,
+                args: resolved.type_args,
+            };
+            self.pending_instances.push(inst);
+        }
+        // Args: receiver first (Self), then the call args.
+        let na = (args).len();
+        let mut arg_ops = vector.Vector<Operand>.new();
+        arg_ops.push(rop);
+        let mut i = 0;
+        while i < na {
+            let a = (args).get(i).unwrap() as compiler.ast.Expression;
+            let op = self.compile_expr(a);
+            arg_ops.push(op);
+            i = i + 1;
+        }
+        // Return type under the instance's substitution context.
+        self.sub_params = tmpl.generic_params;
+        self.sub_args = resolved.type_args;
+        let ret_aion = self.substitute(tmpl.return_type);
+        self.sub_params = saved_p;
+        self.sub_args = saved_a;
+        let ret = aion_type_to_llvm(ret_aion);
+        let mut parts = vector.Vector<String>.new();
+        let nj = (arg_ops).len();
+        let mut j = 0;
+        while j < nj {
+            let op = (arg_ops).get(j).unwrap();
+            let mut part = std.string.concat(op.ty, " ");
+            part = std.string.concat(part, op.value);
+            parts.push(part);
+            j = j + 1;
+        }
+        let joined = std.string.join(parts, ", ");
+        let is_void = std.string.equals(ret, "void");
+        if is_void {
+            let mut buf = self.output;
+            let mut line = std.string.concat("  call void @", "");
+            line = std.string.concat(line, mangled);
+            line = std.string.concat(line, "(");
+            line = std.string.concat(line, joined);
+            line = std.string.concat(line, ")");
+            buf.push(line);
+            self.output = buf;
+            let op = Operand { value: "", ty: "void" };
+            return op;
+        }
+        let res = self.next_ssa();
+        let mut buf = self.output;
+        let mut line = std.string.concat("  ", res);
+        line = std.string.concat(line, " = call ");
+        line = std.string.concat(line, ret);
+        line = std.string.concat(line, " @");
+        line = std.string.concat(line, mangled);
+        line = std.string.concat(line, "(");
+        line = std.string.concat(line, joined);
+        line = std.string.concat(line, ")");
+        buf.push(line);
+        self.output = buf;
+        let op = Operand { value: res, ty: ret };
+        return op;
+    }
+
+    // Compute a struct's allocation size with natural alignment (each
+    // field aligned to its own size). All composite types are pointers
+    // (8 bytes); integers use their LLVM width. #133.
+    fn struct_size(self, base: String) -> i64 {
+        let n = (self.struct_layouts).len();
+        let mut offset = 0;
+        let mut i = 0;
+        while i < n {
+            let sl = (self.struct_layouts).get(i).unwrap() as StructLayout;
+            if std.string.ends_with(sl.name, base) {
+                let m = (sl.fields).len();
+                let mut j = 0;
+                while j < m {
+                    let info = (sl.fields).get(j).unwrap() as FieldInfo;
+                    let w = int_width(info.ty);
+                    let mut sz = 8;
+                    if w > 0 {
+                        sz = w / 8;
+                    }
+                    let rem = offset % sz;
+                    if rem != 0 {
+                        offset = offset + (sz - rem);
+                    }
+                    offset = offset + sz;
+                    j = j + 1;
+                }
+            }
+            i = i + 1;
+        }
+        let rem = offset % 8;
+        if rem != 0 {
+            offset = offset + (8 - rem);
+        }
+        if offset == 0 {
+            return 8;
+        }
+        return offset;
     }
 
     // Allocate the next SSA temporary name (`%t0`, `%t1`, ...).
@@ -269,6 +1168,9 @@ impl Codegen {
             }
             i = i + 1;
         }
+        // Monomorphized instances — drain the worklist (instances may
+        // enqueue further instances; loop until empty). #133.
+        self.drain_instances();
         let joined = std.string.join(self.output, "\n");
         return joined;
     }
@@ -285,12 +1187,131 @@ impl Codegen {
             match d {
                 compiler.ast.Declaration::Function(f) => {
                     self.function_signatures.insert(f.name, f.return_type);
+                    self.signatures_aion.insert(f.name, f.return_type);
+                    let fe = FnEntry { name: f.name, f: f };
+                    self.templates.push(fe);
                     self.collect_strings_fn(f);
+                },
+                compiler.ast.Declaration::Struct(s) => {
+                    self.collect_struct_layout(s);
+                },
+                compiler.ast.Declaration::Enum(e) => {
+                    // Variant order for tag values at EnumInst lowering.
+                    let mut names = vector.Vector<String>.new();
+                    let vs = e.variants;
+                    let nv = (vs).len();
+                    let mut vi = 0;
+                    while vi < nv {
+                        let v = (vs).get(vi).unwrap() as compiler.ast.EnumVariant;
+                        names.push(v.name);
+                        vi = vi + 1;
+                    }
+                    let ee = EnumEntry { name: e.name, variants: names };
+                    self.enum_variants.push(ee);
+                },
+                compiler.ast.Declaration::Impl(imp) => {
+                    // Register each method under "Target.method" (flattened
+                    // target name, mirroring the Rust compile()
+                    // pre-processing at `src/codegen/compiler.rs:238-267`).
+                    let target = imp.target_name;
+                    let fns = imp.functions;
+                    let nf = (fns).len();
+                    let mut fi = 0;
+                    while fi < nf {
+                        let f = (fns).get(fi).unwrap() as compiler.ast.Function;
+                        let key = std.string.concat(target, ".");
+                        let key = std.string.concat(key, f.name);
+                        let me = MethodEntry { key: key, f: f };
+                        self.impl_methods.push(me);
+                        fi = fi + 1;
+                    }
                 },
                 _ => {},
             }
             i = i + 1;
         }
+    }
+
+    // Record a struct's field order + Aion types for MemberAccess GEP
+    // lowering and StructInst stores. #133.
+    fn collect_struct_layout(mut self, s: compiler.ast.Struct) {
+        let fields = s.fields;
+        let nf = (fields).len();
+        let mut finfos = vector.Vector<FieldInfo>.new();
+        let mut i = 0;
+        while i < nf {
+            let f = (fields).get(i).unwrap() as compiler.ast.Field;
+            let info = FieldInfo { name: f.name, idx: i, ty: f.type_name };
+            finfos.push(info);
+            i = i + 1;
+        }
+        let sl = StructLayout { name: s.name, fields: finfos };
+        self.struct_layouts.push(sl);
+    }
+
+    // Queue a generic instantiation (dedup via done_instances — memoized
+    // like the Rust `compiled_instances` set, but deterministic via the
+    // OrderedMap/Vector pair, #136). Mangling mirrors the Rust:
+    // `{base}_{arg1}_{arg2}` (`src/codegen/generics.rs:184`). #133.
+    fn queue_instance(mut self, base: String, type_args: vector.Vector<String>) -> Instance {
+        let joined = std.string.join(type_args, "_");
+        let mut mangled = std.string.concat(base, "_");
+        mangled = std.string.concat(mangled, joined);
+        if !self.done_instances.contains_key(mangled) {
+            self.done_instances.insert(mangled, base);
+            let inst = Instance {
+                mangled: mangled,
+                base: base,
+                args: type_args,
+            };
+            self.pending_instances.push(inst);
+        }
+        let res = Instance {
+            mangled: mangled,
+            base: base,
+            args: type_args,
+        };
+        return res;
+    }
+
+    // Drain the monomorphization worklist: compile each queued instance
+    // with its substitution context active. Instances instantiated from
+    // inside other instances extend the queue — loop until empty. #133.
+    fn drain_instances(mut self) {
+        let mut guard = true;
+        while guard {
+            let n = (self.pending_instances).len();
+            if n == 0 {
+                guard = false;
+            } else {
+                let inst = (self.pending_instances).remove(0).unwrap() as Instance;
+                let mangled_key = inst.mangled;
+                let tmpl = self.find_method(mangled_key);
+                if std.string.len(tmpl.name) > 0 {
+                    self.compile_function_sub(tmpl, inst.args, inst.mangled);
+                } else if self.has_template(inst.base) {
+                    let tmpl2 = self.find_template(inst.base);
+                    self.compile_function_sub(tmpl2, inst.args, inst.mangled);
+                }
+            }
+        }
+    }
+
+    // Compile a function with a generic substitution context active
+    // (params/return/body type names go through `substitute`), emitting
+    // under the mangled instance name via `name_override` (no AST
+    // mutation — cross-module structs cannot be safely modified). #133.
+    fn compile_function_sub(mut self, f: compiler.ast.Function, type_args: vector.Vector<String>, mangled: String) {
+        let saved_p = self.sub_params;
+        let saved_a = self.sub_args;
+        let saved_n = self.name_override;
+        self.sub_params = f.generic_params;
+        self.sub_args = type_args;
+        self.name_override = mangled;
+        self.compile_function(f);
+        self.sub_params = saved_p;
+        self.sub_args = saved_a;
+        self.name_override = saved_n;
     }
 
     fn collect_strings_fn(mut self, f: compiler.ast.Function) {
@@ -455,7 +1476,16 @@ impl Codegen {
     fn compile_function(mut self, f: compiler.ast.Function) {
         // Fresh local scope per function.
         self.locals = ordered_map.OrderedMap<String>.new();
-        let ret_ty_str = aion_type_to_llvm(f.return_type);
+        self.local_kinds = ordered_map.OrderedMap<String>.new();
+        self.locals_aion = ordered_map.OrderedMap<String>.new();
+        // Symbol name — monomorphized instances override it (#133).
+        let mut fname = f.name;
+        if std.string.len(self.name_override) > 0 {
+            fname = self.name_override;
+        }
+        // Types go through the active substitution context (#133).
+        let ret_aion = self.substitute(f.return_type);
+        let ret_ty_str = aion_type_to_llvm(ret_aion);
         // `main` has the C signature `i32 @main()` per
         // `src/codegen/compiler.rs:100-108`. Aion's parser defaults
         // `return_type` to "void" when no `-> T` is present, but `main`
@@ -467,7 +1497,7 @@ impl Codegen {
         }
         let mut sig = std.string.concat("define ", ret_ty);
         sig = std.string.concat(sig, " @");
-        sig = std.string.concat(sig, f.name);
+        sig = std.string.concat(sig, fname);
         sig = std.string.concat(sig, "(");
         if !is_main {
             let params = f.params;
@@ -477,9 +1507,11 @@ impl Codegen {
                 let mut i = 0;
                 while i < np {
                     let prm = (params).get(i).unwrap() as compiler.ast.Param;
-                    let lt = aion_type_to_llvm(prm.type_name);
+                    let pt = self.substitute(prm.type_name);
+                    let lt = aion_type_to_llvm(pt);
                     self.locals.insert(prm.name, lt);
                     self.local_kinds.insert(prm.name, "param");
+                    self.locals_aion.insert(prm.name, pt);
                     let mut sp = std.string.concat(lt, " %");
                     sp = std.string.concat(sp, prm.name);
                     sig_parts.push(sp);
@@ -569,6 +1601,9 @@ impl Codegen {
                 self.output = buf;
                 self.locals.insert(name, op.ty);
                 self.local_kinds.insert(name, "alloca");
+                // Aion type name for infer_type (method/field resolution).
+                let aion_ty = self.infer_type(value);
+                self.locals_aion.insert(name, aion_ty);
                 return false;
             },
             compiler.ast.Statement::Assignment(target, value) => {
@@ -905,6 +1940,25 @@ impl Codegen {
                     let op = Operand { value: loaded, ty: lt };
                     return op;
                 }
+                // Dotted identifier: `p.x` (the parser folds `a.b.c`
+                // chains into a single Identifier). If the first segment
+                // is a known local, lower as a member-access chain. #133.
+                let dot = std.string.find(name, ".");
+                if dot > 0 {
+                    let first = std.string.substr(name, 0, dot);
+                    if self.locals.contains_key(first) {
+                        let seg_str = std.string.substr(name, dot + 1, std.string.len(name) - dot - 1);
+                        let seg_count = count_segments(seg_str);
+                        let mut cur_expr = compiler.ast.Expression::Identifier(first);
+                        let mut si = 0;
+                        while si < seg_count {
+                            let seg = segment_at(seg_str, si);
+                            cur_expr = self.compile_member_access(cur_expr, seg);
+                            si = si + 1;
+                        }
+                        return cur_expr;
+                    }
+                }
                 // Global args (#106): `argc`/`argv` read from the module
                 // globals the C runtime populates.
                 if std.string.equals(name, "argc") {
@@ -950,13 +2004,27 @@ impl Codegen {
                 let kind = op_tok.kind;
                 return self.compile_infix(lo, kind, ro);
             },
-            compiler.ast.Expression::Call(name, _generics, args) => {
-                return self.compile_call(name, args);
+            compiler.ast.Expression::Call(name, generics, args) => {
+                return self.compile_call(name, generics, args);
+            },
+            compiler.ast.Expression::StructInst(name, generics, fields) => {
+                return self.compile_struct_inst(name, generics, fields);
+            },
+            compiler.ast.Expression::EnumInst(name, variant, generics, args) => {
+                return self.compile_enum_inst(name, variant, generics, args);
+            },
+            compiler.ast.Expression::MemberAccess(receiver, member) => {
+                return self.compile_member_access(receiver, member);
+            },
+            compiler.ast.Expression::MethodCall(receiver, method, generics, args) => {
+                return self.compile_method_call(receiver, method, generics, args);
             },
             compiler.ast.Expression::Cast(e, target) => {
                 let src = self.compile_expr(e);
-                return self.coerce_operand(src, target);
+                let t2 = self.substitute(target);
+                return self.coerce_operand(src, t2);
             },
+
             // Remaining variants lowered in later sub-issues (#132/#133/
             // #134) — safe i64 zero placeholder keeps the `.ll` valid.
             _ => {
@@ -1215,7 +2283,7 @@ impl Codegen {
     // Lower a call: compile the args, resolve the callee (builtin table
     // first, then user function signatures collected in pass 1), emit
     // `call <ret> @<symbol>(<args>)`. #132.
-    fn compile_call(mut self, name: String, args: vector.Vector<compiler.ast.Expression>) -> Operand {
+    fn compile_call(mut self, name: String, generics: vector.Vector<String>, args: vector.Vector<compiler.ast.Expression>) -> Operand {
         let mut arg_ops = vector.Vector<Operand>.new();
         let na = (args).len();
         let mut i = 0;
@@ -1230,11 +2298,35 @@ impl Codegen {
         if std.string.len(cname) > 0 {
             ret = Codegen::builtin_ret_type(name);
         } else {
-            cname = name;
-            if self.function_signatures.contains_key(cname) {
-                let rt = self.function_signatures.get(cname).unwrap();
-                let lt = aion_type_to_llvm(rt);
-                ret = lt;
+            // Substitute the active instance context into the callee name.
+            let sname = self.substitute(name);
+            let ng = (generics).len();
+            if ng > 0 {
+                // Explicit generic instantiation: queue the instance
+                // (memoized) and resolve the return type by substituting
+                // the template return type with the concrete type args.
+                let resolved = self.queue_instance(sname, generics);
+                cname = resolved.mangled;
+                let tmpl = self.find_template(sname);
+                if std.string.len(tmpl.name) == 0 {
+                    ret = "i64";
+                } else {
+                    let saved_p = self.sub_params;
+                    let saved_a = self.sub_args;
+                    self.sub_params = tmpl.generic_params;
+                    self.sub_args = resolved.args;
+                    let concrete = self.substitute(tmpl.return_type);
+                    self.sub_params = saved_p;
+                    self.sub_args = saved_a;
+                    ret = aion_type_to_llvm(concrete);
+                }
+            } else {
+                cname = sname;
+                if self.function_signatures.contains_key(cname) {
+                    let rt = self.function_signatures.get(cname).unwrap();
+                    let lt = aion_type_to_llvm(rt);
+                    ret = lt;
+                }
             }
         }
         if std.string.len(ret) == 0 {

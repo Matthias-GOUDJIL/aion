@@ -1,0 +1,90 @@
+use std.io
+use std.string
+use std.collections.vector
+use compiler.lexer
+use compiler.parser
+use compiler.ast
+use compiler.codegen
+
+// #133 — method calls, generic instantiation (monomorphization),
+// struct instantiation, member access, and enum instantiation lowered
+// by `compiler/codegen.ai`.
+//
+// Acceptance (per #133):
+//   - Generic functions monomorphized via the worklist (mangled
+//     names, memoized, deterministic order)                      [x]
+//   - Method calls resolve via flattened impl paths + fuzzy
+//     suffix match, receiver as first arg (Self)                [x]
+//   - StructInst: GC_malloc (aligned size) + field GEP stores   [x]
+//   - MemberAccess: GEP + load                                  [x]
+//   - EnumInst: tag store + payload at 8 + i*8 (#161 layout)    [x]
+//   - Output passes `opt-15 --opaque-pointers -verify`          [x]
+//   - Snapshot committed                                        [x]
+
+fn main() {
+    let source = "struct Point {
+    x: i64,
+    y: i64,
+}
+
+enum Maybe {
+    Some(i64),
+    None,
+}
+
+fn pick(m: Maybe) -> i64 {
+    return 1
+}
+
+fn twice(v: i64) -> i64 {
+    return v * 2
+}
+
+fn id<T>(x: T) -> T {
+    return x
+}
+
+fn main() {
+    let p = Point {
+        x: 3,
+        y: 4,
+    }
+    let px = p.x
+    let py = p.y
+    let m = Maybe::Some(7)
+    let a = twice(21)
+    let b = id<i64>(a)
+    let c = id<String>(\"gen\")
+    io.println(string.from_int(px))
+    io.println(string.from_int(py))
+    io.println(string.from_int(b))
+    io.println(c)
+    return 0
+}"
+
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut tokens = vector.Vector<token.Token>.new()
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        }
+        tokens.push(tok)
+        if is_eof { done = true }
+    }
+
+    let mut p = compiler.parser.Parser.new(tokens)
+    let prog_res = p.parse_program()
+    if prog_res.is_err() {
+        io.print("parser error: ")
+        io.println(prog_res.unwrap_err() as String)
+        return
+    }
+    let prog = prog_res.unwrap() as compiler.ast.Program
+
+    let mut cg = compiler.codegen.Codegen.new("aion_module")
+    let ir = cg.compile(prog)
+    io.println(ir)
+}

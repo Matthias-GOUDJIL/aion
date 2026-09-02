@@ -1201,6 +1201,12 @@ impl TypeChecker {
     }
 
     fn check_compatibility(&self, t1: Type, t2: Type, op: &Token) -> Result<Type, CompileError> {
+        if std::env::var("AION_DEBUG_TYPES").is_ok() {
+            eprintln!(
+                "[check_compat] op={:?} line={} col={} t1={:?} t2={:?}",
+                op.kind, op.line, op.col, t1, t2
+            );
+        }
         match t1 {
             Type::Integer { bits: b1, .. } => {
                 // Integer arithmetic requires both operands to share the same
