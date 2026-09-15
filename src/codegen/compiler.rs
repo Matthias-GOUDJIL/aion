@@ -21,6 +21,7 @@ pub struct Compiler<'ctx> {
     pub enum_types: HashMap<String, StructType<'ctx>>,
     pub decls: HashMap<String, Declaration>,
     pub compiled_instances: HashSet<String>,
+    pub(in crate::codegen) spawn_counter: u64,
     source: String,
     pub(in crate::codegen) loop_exit_blocks: Vec<BasicBlock<'ctx>>,
     pub(in crate::codegen) loop_cond_blocks: Vec<BasicBlock<'ctx>>,
@@ -43,6 +44,7 @@ impl<'ctx> Compiler<'ctx> {
             enum_types: HashMap::new(),
             decls: HashMap::new(),
             compiled_instances: HashSet::new(),
+            spawn_counter: 0,
             source: source.to_string(),
             loop_exit_blocks: Vec::new(),
             loop_cond_blocks: Vec::new(),
@@ -120,6 +122,17 @@ impl<'ctx> Compiler<'ctx> {
                 let i64_t = self.context.i64_type();
 
                 if f.name == "main" {
+                    // Register the exit-time spark join AND enable explicit
+                    // GC thread registration — must run BEFORE GC_init
+                    // (GC_allow_register_threads). #176.
+                    let rt_init =
+                        self.module
+                            .get_function("aion_runtime_init")
+                            .ok_or_else(|| {
+                                CompileError::internal("aion_runtime_init not found".to_string())
+                            })?;
+                    self.builder.build_call(rt_init, &[], "")?;
+
                     let gc_init = self.module.get_function("GC_init").ok_or_else(|| {
                         CompileError::internal("GC_init function not found".to_string())
                     })?;
@@ -405,6 +418,16 @@ impl<'ctx> Compiler<'ctx> {
             self.context
                 .void_type()
                 .fn_type(&[i64_t.into(), i64_t.into()], false),
+            None,
+        );
+        self.module.add_function(
+            "aion_spawn",
+            self.context.void_type().fn_type(&[pt.into()], false),
+            None,
+        );
+        self.module.add_function(
+            "aion_runtime_init",
+            self.context.void_type().fn_type(&[], false),
             None,
         );
 

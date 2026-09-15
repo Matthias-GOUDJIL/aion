@@ -757,8 +757,51 @@ impl<'ctx> Compiler<'ctx> {
                 Statement::ExpressionStmt(e, _) => {
                     lv = Some(self.compile_expr(e, variables, function)?);
                 }
-                Statement::UnsafeBlock(stmts, _) | Statement::Spawn(stmts, _) => {
+                Statement::UnsafeBlock(stmts, _) => {
                     lv = self.compile_block(stmts, variables, function)?;
+                }
+                Statement::Spawn(stmts, _) => {
+                    // Lower the spawn block into a fresh void() function and
+                    // hand its pointer to the runtime `aion_spawn`. The
+                    // checker rejects captured locals (#176), so the body
+                    // compiles against an empty variable frame (globals like
+                    // argc/argv and function calls still resolve).
+                    let caller_bb = self.builder.get_insert_block();
+                    let spawn_name = format!("__aion_spawn_{}", self.spawn_counter);
+                    self.spawn_counter += 1;
+                    let spawn_fn = self.module.add_function(
+                        &spawn_name,
+                        self.context.void_type().fn_type(&[], false),
+                        None,
+                    );
+                    let bb = self.context.append_basic_block(spawn_fn, "entry");
+                    self.builder.position_at_end(bb);
+                    let mut svars = HashMap::new();
+                    self.compile_block(stmts, &mut svars, spawn_fn)?;
+                    if self
+                        .builder
+                        .get_insert_block()
+                        .ok_or_else(|| {
+                            CompileError::internal("No active insert block".to_string())
+                        })?
+                        .get_terminator()
+                        .is_none()
+                    {
+                        self.builder.build_return(None)?;
+                    }
+                    // Restore the caller's insert position before emitting
+                    // the spawn call — the builder still points into the
+                    // freshly generated thunk otherwise.
+                    if let Some(cb) = caller_bb {
+                        self.builder.position_at_end(cb);
+                    }
+                    let fptr = spawn_fn.as_global_value().as_pointer_value();
+                    let spawn_call = self.module.get_function("aion_spawn").ok_or_else(|| {
+                        CompileError::internal("aion_spawn not found".to_string())
+                    })?;
+                    self.builder
+                        .build_call(spawn_call, &[fptr.into()], "spawn_call")?;
+                    lv = None;
                 }
                 _ => {
                     lv = None;

@@ -13,6 +13,7 @@ pub struct TypeChecker {
     pub current_module: Option<String>,
     in_unsafe_context: bool,
     current_return_type: Option<Type>,
+    global_env: Option<Environment>,
     source: String,
 }
 
@@ -35,6 +36,7 @@ impl TypeChecker {
             current_module: None,
             in_unsafe_context: false,
             current_return_type: None,
+            global_env: None,
             source: source.to_string(),
         };
         checker.register_builtins();
@@ -518,6 +520,10 @@ impl TypeChecker {
             }
         }
 
+        // Snapshot the global scope (declarations + builtins) before any
+        // function body pushes locals — spawn capture checks run against it.
+        self.global_env = Some(self.env.clone());
+
         for decl in &program.declarations {
             match decl {
                 Declaration::Function(f) => {
@@ -533,7 +539,6 @@ impl TypeChecker {
         }
         Ok(())
     }
-
     /// Check one function body in a fresh enclosed environment, tracking the
     /// declared return type so `return` statements can be unified against it
     /// (#171). `self_target` is the impl target name for `Self` substitution.
@@ -779,6 +784,40 @@ impl TypeChecker {
                     }
                     self.env = old_env;
                 }
+                Ok(Type::Unit)
+            }
+            Statement::Spawn(body, span) => {
+                // Spawn bodies run on a separate thread with no access to
+                // the enclosing frame's locals — reject captures (#176).
+                let mut bound: Vec<String> = Vec::new();
+                let mut free: Vec<String> = Vec::new();
+                self.collect_spawn_names(body, &mut bound, &mut free);
+                for name in &free {
+                    if !self.is_spawn_global(name) {
+                        return Err(CompileError::new(
+                            format!(
+                                "spawn block captures variable '{}' — spawn bodies run \
+                                 on a separate thread and cannot capture locals (#176)",
+                                name
+                            ),
+                            span.line,
+                            span.col,
+                        )
+                        .with_snippet(&self.source));
+                    }
+                }
+                // Check the body against the global scope only: any local
+                // name the walker missed will fail resolution here.
+                let globals = self.global_env.clone().unwrap_or_default();
+                let old_env = std::mem::replace(&mut self.env, Environment::new_enclosed(globals));
+                let result: Result<(), CompileError> = (|| {
+                    for s in body {
+                        self.check_statement(s)?;
+                    }
+                    Ok(())
+                })();
+                self.env = old_env;
+                result?;
                 Ok(Type::Unit)
             }
             _ => Ok(Type::Unit),
@@ -1839,6 +1878,208 @@ impl TypeChecker {
             && p.chars().all(|c| c.is_alphanumeric() || c == '_')
             && p.chars().next().unwrap().is_lowercase();
         is_ident && variants.iter().all(|v| v.name != *p)
+    }
+
+    /// True when `name` (or its first dotted segment) resolves to a global:
+    /// a top-level declaration, a builtin, or a module prefix of a known
+    /// function (`io` -> `io.println`). `self`/`argc`/`argv` are local to a
+    /// frame and never spawn-global. #176.
+    fn is_spawn_global(&self, name: &str) -> bool {
+        if name == "self" || name == "argc" || name == "argv" {
+            return false;
+        }
+        let seg = name.split('.').next().unwrap_or(name);
+        if let Some(g) = &self.global_env {
+            if g.get(seg).is_some() {
+                return true;
+            }
+            let prefix = format!("{}.", seg);
+            if g.visible_names().any(|k| k.starts_with(&prefix)) {
+                return true;
+            }
+        }
+        self.decls.contains_key(seg) || self.resolve_fuzzy_name(&self.decls, seg).is_some()
+    }
+
+    /// Walk a spawn body collecting every used identifier that is not bound
+    /// inside the body itself. Dotted names contribute their first segment
+    /// (`x.field` captures `x`). #176.
+    fn collect_spawn_names(
+        &self,
+        body: &[Statement],
+        bound: &mut Vec<String>,
+        free: &mut Vec<String>,
+    ) {
+        for s in body {
+            self.walk_spawn_stmt(s, bound, free);
+        }
+    }
+
+    fn walk_spawn_stmt(&self, s: &Statement, bound: &mut Vec<String>, free: &mut Vec<String>) {
+        match s {
+            Statement::Let { name, value, .. } => {
+                bound.push(name.clone());
+                self.walk_spawn_expr(value, bound, free);
+            }
+            Statement::LetTuple { names, value, .. } => {
+                bound.extend(names.iter().cloned());
+                self.walk_spawn_expr(value, bound, free);
+            }
+            Statement::Return { value, .. } => self.walk_spawn_expr(value, bound, free),
+            Statement::ExpressionStmt(e, _) => self.walk_spawn_expr(e, bound, free),
+            Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.walk_spawn_expr(condition, bound, free);
+                self.collect_spawn_names(then_branch, bound, free);
+                if let Some(eb) = else_branch {
+                    self.collect_spawn_names(eb, bound, free);
+                }
+            }
+            Statement::Assignment { target, value, .. } => {
+                self.walk_spawn_expr(target, bound, free);
+                self.walk_spawn_expr(value, bound, free);
+            }
+            Statement::While {
+                condition, body, ..
+            } => {
+                self.walk_spawn_expr(condition, bound, free);
+                self.collect_spawn_names(body, bound, free);
+            }
+            Statement::For {
+                var, range, body, ..
+            } => {
+                bound.push(var.clone());
+                self.walk_spawn_expr(range, bound, free);
+                self.collect_spawn_names(body, bound, free);
+            }
+            Statement::Match {
+                condition, arms, ..
+            } => {
+                self.walk_spawn_expr(condition, bound, free);
+                for arm in arms {
+                    bound.extend(arm.params.iter().cloned());
+                    if let Some(g) = &arm.guard {
+                        self.walk_spawn_expr(g, bound, free);
+                    }
+                    self.collect_spawn_names(&arm.body, bound, free);
+                }
+            }
+            Statement::UnsafeBlock(body, _) | Statement::Spawn(body, _) => {
+                self.collect_spawn_names(body, bound, free);
+            }
+            Statement::Break(_) | Statement::Continue(_) | Statement::NoOp => {}
+        }
+    }
+
+    fn walk_spawn_expr(&self, e: &Expression, bound: &mut Vec<String>, free: &mut Vec<String>) {
+        match e {
+            Expression::Identifier(name, _) => {
+                let seg = name.split('.').next().unwrap_or(name);
+                if !bound.iter().any(|b| b == seg) {
+                    free.push(seg.to_string());
+                }
+            }
+            Expression::Infix { left, right, .. } => {
+                self.walk_spawn_expr(left, bound, free);
+                self.walk_spawn_expr(right, bound, free);
+            }
+            Expression::Call { arguments, .. } => {
+                for a in arguments {
+                    self.walk_spawn_expr(a, bound, free);
+                }
+            }
+            Expression::StructInst { fields, .. } => {
+                for (_, v) in fields {
+                    self.walk_spawn_expr(v, bound, free);
+                }
+            }
+            Expression::Range { start, end, .. } => {
+                self.walk_spawn_expr(start, bound, free);
+                self.walk_spawn_expr(end, bound, free);
+            }
+            Expression::Block { statements, .. } => {
+                self.collect_spawn_names(statements, bound, free);
+            }
+            Expression::If {
+                condition,
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                self.walk_spawn_expr(condition, bound, free);
+                self.collect_spawn_names(then_branch, bound, free);
+                if let Some(eb) = else_branch {
+                    self.collect_spawn_names(eb, bound, free);
+                }
+            }
+            Expression::Deref { expr, .. } | Expression::Cast { expr, .. } => {
+                self.walk_spawn_expr(expr, bound, free);
+            }
+            Expression::Intrinsic { arguments, .. } => {
+                for a in arguments {
+                    self.walk_spawn_expr(a, bound, free);
+                }
+            }
+            Expression::EnumInst { arguments, .. } => {
+                for a in arguments {
+                    self.walk_spawn_expr(a, bound, free);
+                }
+            }
+            Expression::MemberAccess { receiver, .. } => {
+                self.walk_spawn_expr(receiver, bound, free);
+            }
+            Expression::MethodCall {
+                receiver,
+                arguments,
+                ..
+            } => {
+                self.walk_spawn_expr(receiver, bound, free);
+                for a in arguments {
+                    self.walk_spawn_expr(a, bound, free);
+                }
+            }
+            Expression::Match {
+                condition, arms, ..
+            } => {
+                self.walk_spawn_expr(condition, bound, free);
+                for arm in arms {
+                    bound.extend(arm.params.iter().cloned());
+                    if let Some(g) = &arm.guard {
+                        self.walk_spawn_expr(g, bound, free);
+                    }
+                    self.collect_spawn_names(&arm.body, bound, free);
+                }
+            }
+            Expression::TupleLiteral { elements, .. } => {
+                for el in elements {
+                    self.walk_spawn_expr(el, bound, free);
+                }
+            }
+            Expression::TupleAccess { tuple, .. } => {
+                self.walk_spawn_expr(tuple, bound, free);
+            }
+            Expression::ArrayLiteral { elements, .. } => {
+                for el in elements {
+                    self.walk_spawn_expr(el, bound, free);
+                }
+            }
+            Expression::Index { target, index, .. } => {
+                self.walk_spawn_expr(target, bound, free);
+                self.walk_spawn_expr(index, bound, free);
+            }
+            Expression::Integer(..)
+            | Expression::Float(..)
+            | Expression::Char(..)
+            | Expression::String(..)
+            | Expression::Duration(..)
+            | Expression::Date(..)
+            | Expression::Boolean(..)
+            | Expression::TypeRef { .. } => {}
+        }
     }
 
     /// Validate a cast source/destination pair (#173). Allowed: numeric

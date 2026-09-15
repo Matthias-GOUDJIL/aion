@@ -7,13 +7,48 @@
 
 void* spark_entry_point(void* func_ptr) {
     void (*aion_func)() = (void (*)(void))func_ptr;
+    // Register the thread with Boehm GC before running the spawned body —
+    // unregistered threads can crash the collector on the first scan (#176).
+    struct GC_stack_base sb;
+    if (GC_get_stack_base(&sb) == GC_SUCCESS) {
+        GC_register_my_thread(&sb);
+    }
     aion_func();
+    GC_unregister_my_thread();
     return NULL;
 }
+
+// Spark registry: spawned threads are recorded so the runtime can join them
+// before the process exits (detached threads would otherwise be killed with
+// their work unstarted). Bounded and mutex-guarded; overflow spawns are
+// detached as a fallback. #176.
+#define MAX_SPARKS 256
+static pthread_t spark_threads[MAX_SPARKS];
+static int spark_count = 0;
+static pthread_mutex_t spark_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void aion_spawn(void* func_ptr) {
     pthread_t thread;
     pthread_create(&thread, NULL, spark_entry_point, func_ptr);
+    pthread_mutex_lock(&spark_lock);
+    if (spark_count < MAX_SPARKS) {
+        spark_threads[spark_count++] = thread;
+    }
+    pthread_mutex_unlock(&spark_lock);
+}
+
+static void aion_join_all(void) {
+    for (int i = 0; i < spark_count; i++) {
+        pthread_join(spark_threads[i], NULL);
+    }
+}
+
+// Called once from the synthesized main (before GC_init): enables explicit
+// thread registration for the collector and installs the exit-time join so
+// spawned sparks always get a chance to run before the process ends. #176.
+void aion_runtime_init(void) {
+    GC_allow_register_threads();
+    atexit(aion_join_all);
 }
 
 /* Runtime bounds-check trap for array indexing. #54. */

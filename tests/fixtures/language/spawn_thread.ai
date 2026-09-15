@@ -1,0 +1,11 @@
+// #176 — `spawn { ... }` runs the block on a separate thread (joined at
+// process exit via the runtime's atexit handler). Previously the block
+// compiled inline and ran synchronously.
+fn main() {
+    io.println("main start")
+    spawn {
+        io.println("spawned block")
+    }
+    io.println("main end")
+    return 0
+}

@@ -1,0 +1,9 @@
+// #176 — spawn bodies run on a separate thread and cannot capture locals
+// from the enclosing frame; the checker rejects the capture by name.
+fn main() {
+    let x = 42
+    spawn {
+        io.println(string.from_int(x))
+    }
+    return 0
+}

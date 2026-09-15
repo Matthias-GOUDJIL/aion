@@ -1,0 +1,7 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/spawn_thread\")"
+---
+main start
+main end
+spawned block
