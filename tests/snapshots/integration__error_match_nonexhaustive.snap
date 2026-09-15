@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_match_nonexhaustive\")"
+---
+Type Error: non-exhaustive match on std.option.Option — missing variant(s): None

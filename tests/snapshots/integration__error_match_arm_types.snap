@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_match_arm_types\")"
+---
+Type Error: match arms return incompatible types 'i64' and 'String'

@@ -1,0 +1,26 @@
+// #180 nominal — a fully-covered enum match (every variant, no `_`)
+// remains legal, including value-producing arms of one type.
+use std.option
+
+enum Shape {
+    Circle(i64),
+    Square(i64),
+}
+
+fn main() {
+    let s = Shape::Circle(3)
+    let area: i64 = match s {
+        Shape::Circle(r) => r * r,
+        Shape::Square(side) => side * side,
+    }
+    io.println(string.from_int(area)) // 9
+
+    let o = Option::Some(7)
+    let n: i64 = match o {
+        Option::Some(x) => x,
+        Option::None => -1,
+    }
+    io.println(string.from_int(n)) // 7
+
+    return 0
+}

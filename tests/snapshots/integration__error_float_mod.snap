@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_float_mod\")"
+---
+Incompatible operator Percent for types Float and Float

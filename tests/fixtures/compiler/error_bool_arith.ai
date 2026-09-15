@@ -1,0 +1,5 @@
+// #181 — arithmetic on booleans must be a checker error, not an ICE.
+fn main() {
+    let c = true + false
+    return 0
+}

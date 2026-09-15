@@ -296,8 +296,16 @@ fn test_match_expr_multi_payload() {
     assert_snapshot!(run_aion_test("language/match_expr_multi_payload"));
 }
 #[test]
+fn test_match_exhaustive() {
+    assert_snapshot!(run_aion_test("language/match_exhaustive"));
+}
+#[test]
 fn test_float_int_cast() {
     assert_snapshot!(run_aion_test("language/float_int_cast"));
+}
+#[test]
+fn test_duration_date_values() {
+    assert_snapshot!(run_aion_test("language/duration_date_values"));
 }
 #[test]
 fn test_option_result_methods() {
@@ -765,6 +773,34 @@ fn test_error_cast_string() {
 #[test]
 fn test_error_assign_type_mismatch() {
     assert_snapshot!(run_aion_test("compiler/error_assign_type_mismatch"));
+}
+#[test]
+fn test_error_bool_arith() {
+    assert_snapshot!(run_aion_test("compiler/error_bool_arith"));
+}
+#[test]
+fn test_error_float_mod() {
+    assert_snapshot!(run_aion_test("compiler/error_float_mod"));
+}
+#[test]
+fn test_error_int_logic() {
+    assert_snapshot!(run_aion_test("compiler/error_int_logic"));
+}
+#[test]
+fn test_error_deref_scalar() {
+    assert_snapshot!(run_aion_test("compiler/error_deref_scalar"));
+}
+#[test]
+fn test_error_match_nonexhaustive() {
+    assert_snapshot!(run_aion_test("compiler/error_match_nonexhaustive"));
+}
+#[test]
+fn test_error_if_branch_types() {
+    assert_snapshot!(run_aion_test("compiler/error_if_branch_types"));
+}
+#[test]
+fn test_error_match_arm_types() {
+    assert_snapshot!(run_aion_test("compiler/error_match_arm_types"));
 }
 #[test]
 fn test_mut_use() {

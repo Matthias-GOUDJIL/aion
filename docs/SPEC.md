@@ -44,6 +44,9 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   stores an `i32`). Arithmetic requires both operands to share the same
   bit width; mixing `i32` and `i64` is a type error (#52). Same-width
   signed/unsigned mixing (`i64 ^ u64`) is allowed, result takes the LHS.
+  `&&`/`||` are logical short-circuit operators and require boolean
+  operands; `%` is integer-only; operator/type pairs without a codegen
+  lowering are checker errors, never ICEs (#181).
 - `f64` (float), `bool`, `String` (pointer to C-string), `Duration` (i64
   millis), `Date` (i64 millis timestamp).
 - Char literals: `'a'` → integer char code.
@@ -189,6 +192,13 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
   generics (`Unknown`/`Placeholder`) are tolerated until monomorphization.
   `io.println`/`io.print` remain the only documented implicit
   int→String conversions.
+- **Match exhaustiveness & branch unification** (#180): a `match` on an
+  enum must cover every declared variant (a `_` arm or a pure binding
+  arm satisfies the check) or the checker reports the missing variants —
+  previously an uncovered expression-position match segfaulted. Value
+  branches of `if`/`match` expressions must agree on a common type
+  (Unit branches contribute nothing); unresolved generics
+  (`Unknown`/`Placeholder`) lose to concrete branch types.
 - **Debug hygiene**: no `println!`/`eprintln!` in production builds.
 - **Span tracking**: all AST nodes carry `Span` (line, col) for precise
   error reporting.
