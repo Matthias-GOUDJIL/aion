@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_return_type_mismatch\")"
+---
+Type Error: return value of type 'String' does not match declared return type 'i64'

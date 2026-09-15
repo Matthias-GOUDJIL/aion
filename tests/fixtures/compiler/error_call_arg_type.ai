@@ -1,0 +1,11 @@
+// #172 — the checker must reject an argument whose type does not match the
+// declared parameter type (String passed where i64 is declared).
+fn length(s: String) -> i64 {
+    return s.len()
+}
+
+fn main() {
+    let n = length(42)
+    io.println(string.from_int(n))
+    return 0
+}

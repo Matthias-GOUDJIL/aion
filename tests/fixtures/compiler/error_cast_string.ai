@@ -1,0 +1,7 @@
+// #173 — the checker must reject casts involving String/composite types
+// (previously any cast compiled and bit-reinterpreted the value).
+fn main() {
+    let s: i64 = "hello" as i64
+    io.println(string.from_int(s))
+    return 0
+}

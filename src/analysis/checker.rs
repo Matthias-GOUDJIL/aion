@@ -12,6 +12,7 @@ pub struct TypeChecker {
     pub decls: HashMap<String, Declaration>,
     pub current_module: Option<String>,
     in_unsafe_context: bool,
+    current_return_type: Option<Type>,
     source: String,
 }
 
@@ -33,6 +34,7 @@ impl TypeChecker {
             decls: HashMap::new(),
             current_module: None,
             in_unsafe_context: false,
+            current_return_type: None,
             source: source.to_string(),
         };
         checker.register_builtins();
@@ -121,10 +123,17 @@ impl TypeChecker {
         if params.is_empty() {
             return;
         }
+        // The condition name may be a short/fuzzy form (e.g. `TokenKind`
+        // when the decl is registered as `compiler.token.TokenKind`) —
+        // resolve it before the decl lookups so variant payload types are
+        // found instead of defaulting params to i64.
+        let full_cond = self
+            .resolve_fuzzy_name(&self.decls, cond_name)
+            .unwrap_or_else(|| cond_name.to_string());
         let mut data_types: Vec<String> = Vec::new();
         let mut matched_struct: Option<String> = None;
 
-        if let Some(Declaration::Enum(e)) = self.decls.get(cond_name) {
+        if let Some(Declaration::Enum(e)) = self.decls.get(&full_cond) {
             for pat in all_patterns {
                 let mut found = false;
                 for v in &e.variants {
@@ -145,8 +154,8 @@ impl TypeChecker {
             data_types = vec!["i64".to_string()];
         } else if cond_name == "String" {
             data_types = vec!["String".to_string()];
-        } else if let Some(Declaration::Struct(_)) = self.decls.get(cond_name) {
-            matched_struct = Some(cond_name.to_string());
+        } else if let Some(Declaration::Struct(_)) = self.decls.get(&full_cond) {
+            matched_struct = Some(full_cond.clone());
         }
 
         if let Some(sname) = matched_struct {
@@ -341,6 +350,25 @@ impl TypeChecker {
 
         self.env.set("argc".to_string(), Type::i64());
         self.env.set("argv".to_string(), Type::String);
+
+        // Register method-style builtins in `decls` as well, so the
+        // MethodCall path can detect the `self` receiver parameter and map
+        // call arguments onto params[1..] for arity checking (#172).
+        for name in ["i64.abs", "i64.max", "i64.min", "string.len", "String.len"] {
+            self.decls.insert(
+                name.to_string(),
+                Declaration::Function(crate::ast::Function {
+                    name: name.to_string(),
+                    generic_params: vec![],
+                    params: vec![("self".to_string(), "i64".to_string(), None)],
+                    return_type: "i64".to_string(),
+                    body: None,
+                    modifiers: vec![],
+                    attributes: vec![],
+                    doc_comment: None,
+                }),
+            );
+        }
     }
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), CompileError> {
@@ -435,51 +463,61 @@ impl TypeChecker {
         for decl in &program.declarations {
             match decl {
                 Declaration::Function(f) => {
-                    if let Some(body) = &f.body {
-                        let was_unsafe = self.in_unsafe_context;
-                        if f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe) {
-                            self.in_unsafe_context = true;
-                        }
-                        let enclosed = Environment::new_enclosed(self.env.clone());
-                        let old_env = std::mem::replace(&mut self.env, enclosed);
-                        for (p_name, p_type, _) in &f.params {
-                            self.env.set(p_name.clone(), self.resolve_type(p_type));
-                        }
-                        for stmt in body {
-                            self.check_statement(stmt)?;
-                        }
-                        self.env = old_env;
-                        self.in_unsafe_context = was_unsafe;
-                    }
+                    self.check_fn_body(f, None)?;
                 }
                 Declaration::Impl(i) => {
                     for f in &i.functions {
-                        if let Some(body) = &f.body {
-                            let was_unsafe = self.in_unsafe_context;
-                            if f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe) {
-                                self.in_unsafe_context = true;
-                            }
-                            let enclosed = Environment::new_enclosed(self.env.clone());
-                            let old_env = std::mem::replace(&mut self.env, enclosed);
-                            for (p_name, p_type, _) in &f.params {
-                                let mut pt = p_type.clone();
-                                if pt == "Self" {
-                                    pt = i.target_name.clone();
-                                }
-                                self.env.set(p_name.clone(), self.resolve_type(&pt));
-                            }
-                            for stmt in body {
-                                self.check_statement(stmt)?;
-                            }
-                            self.env = old_env;
-                            self.in_unsafe_context = was_unsafe;
-                        }
+                        self.check_fn_body(f, Some(&i.target_name))?;
                     }
                 }
                 _ => {}
             }
         }
         Ok(())
+    }
+
+    /// Check one function body in a fresh enclosed environment, tracking the
+    /// declared return type so `return` statements can be unified against it
+    /// (#171). `self_target` is the impl target name for `Self` substitution.
+    fn check_fn_body(
+        &mut self,
+        f: &crate::ast::Function,
+        self_target: Option<&str>,
+    ) -> Result<(), CompileError> {
+        let Some(body) = &f.body else { return Ok(()) };
+        let was_unsafe = self.in_unsafe_context;
+        if f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe) {
+            self.in_unsafe_context = true;
+        }
+        let enclosed = Environment::new_enclosed(self.env.clone());
+        let old_env = std::mem::replace(&mut self.env, enclosed);
+        let mut ret_name = f.return_type.clone();
+        if ret_name == "Self"
+            && let Some(t) = self_target
+        {
+            ret_name = t.to_string();
+        }
+        let resolved_ret = self.resolve_type(&ret_name);
+        let old_ret = self.current_return_type.replace(resolved_ret);
+        for (p_name, p_type, _) in &f.params {
+            let mut pt = p_type.clone();
+            if pt == "Self"
+                && let Some(t) = self_target
+            {
+                pt = t.to_string();
+            }
+            self.env.set(p_name.clone(), self.resolve_type(&pt));
+        }
+        let result = (|| {
+            for stmt in body {
+                self.check_statement(stmt)?;
+            }
+            Ok(())
+        })();
+        self.current_return_type = old_ret;
+        self.env = old_env;
+        self.in_unsafe_context = was_unsafe;
+        result
     }
 
     fn check_statement(&mut self, stmt: &Statement) -> Result<Type, CompileError> {
@@ -552,8 +590,21 @@ impl TypeChecker {
                 Ok(Type::Unit)
             }
             Statement::Assignment { target, value, .. } => {
-                self.check_expression(target)?;
-                self.check_expression(value)?;
+                let tt = self.check_expression(target)?;
+                let vt = self.check_expression(value)?;
+                // Unify the value with the target's declared type (#179).
+                if !Self::types_unify(&tt, &vt) {
+                    return Err(self.err(
+                        format!(
+                            "cannot assign value of type '{}' to target of type '{}' (line {} col {})",
+                            vt.name(),
+                            tt.name(),
+                            value.span().line,
+                            value.span().col
+                        ),
+                        value,
+                    ));
+                }
                 Ok(Type::Unit)
             }
             Statement::Return { value, span, .. } => {
@@ -569,6 +620,21 @@ impl TypeChecker {
                              heap-allocated yet)",
                             elem.name(),
                             n,
+                        ),
+                        span.line,
+                        span.col,
+                    )
+                    .with_snippet(&self.source));
+                }
+                // Unify against the declared return type (#171).
+                if let Some(expected) = &self.current_return_type
+                    && !Self::types_unify(expected, &ty)
+                {
+                    return Err(CompileError::new(
+                        format!(
+                            "return value of type '{}' does not match declared return type '{}'",
+                            ty.name(),
+                            expected.name()
                         ),
                         span.line,
                         span.col,
@@ -625,6 +691,7 @@ impl TypeChecker {
                     Type::Integer { .. } => "i64".to_string(),
                     Type::String => "String".to_string(),
                     Type::Struct { name } => name.clone(),
+                    Type::Placeholder(n) => n.clone(),
                     _ => "unknown".to_string(),
                 };
                 for arm in arms {
@@ -692,6 +759,7 @@ impl TypeChecker {
                 {
                     let tn = match rt {
                         Type::GenericInstance(n, _) | Type::Struct { name: n } => n,
+                        Type::Placeholder(n) => n,
                         _ => "".to_string(),
                     };
                     if !tn.is_empty() {
@@ -783,7 +851,7 @@ impl TypeChecker {
                 } else if self.in_unsafe_context && function.starts_with("aion_") {
                     Type::Function {
                         is_unsafe: true,
-                        params: vec![],
+                        params: vec![Type::Unknown; arguments.len()],
                         return_type: Box::new(Type::Unknown),
                     }
                 } else {
@@ -799,7 +867,7 @@ impl TypeChecker {
                 if let Type::Function {
                     is_unsafe,
                     ref return_type,
-                    ..
+                    ref params,
                 } = ft
                 {
                     if is_unsafe && !self.in_unsafe_context {
@@ -811,8 +879,40 @@ impl TypeChecker {
                             &call_expr,
                         ));
                     }
-                    for arg in arguments {
-                        self.check_expression(arg)?;
+                    // Arity + per-argument unification (#172).
+                    if arguments.len() != params.len() {
+                        return Err(CompileError::new(
+                            format!(
+                                "function '{}' expects {} arguments, got {}",
+                                function,
+                                params.len(),
+                                arguments.len()
+                            ),
+                            span.line,
+                            span.col,
+                        )
+                        .with_snippet(&self.source));
+                    }
+                    for (arg, param) in arguments.iter().zip(params.iter()) {
+                        let at = self.check_expression(arg)?;
+                        // io.println/io.print auto-convert integers to String
+                        // at codegen (aion_int_to_str) — allow-list that
+                        // conversion here. #172.
+                        let io_conv = (function == "io.println" || function == "io.print")
+                            && *param == Type::String
+                            && at.is_integer();
+                        if !Self::types_unify(param, &at) && !io_conv {
+                            return Err(self.err(
+                                format!(
+                                    "argument of type '{}' does not match parameter type '{}' (line {} col {})",
+                                    at.name(),
+                                    param.name(),
+                                    arg.span().line,
+                                    arg.span().col
+                                ),
+                                arg,
+                            ));
+                        }
                     }
                     Ok(*return_type.clone())
                 } else {
@@ -910,7 +1010,7 @@ impl TypeChecker {
                 if let Type::Function {
                     is_unsafe,
                     ref return_type,
-                    ..
+                    ref params,
                 } = ft
                 {
                     if is_unsafe && !self.in_unsafe_context {
@@ -918,15 +1018,62 @@ impl TypeChecker {
                             self.err(format!("unsafe method call '{}'", method), &method_expr)
                         );
                     }
-                    for arg in arguments {
-                        self.check_expression(arg)?;
+                    // Method-style functions carry the receiver as their
+                    // first parameter: skip it when mapping call arguments.
+                    let has_self = self
+                        .decls
+                        .get(&cand_colon)
+                        .or_else(|| self.decls.get(&cand_dot))
+                        .is_some_and(|d| {
+                            matches!(d, Declaration::Function(f) if f.params.first().is_some_and(|(n, _, _)| n == "self"))
+                        });
+                    let param_slice = if has_self {
+                        params.get(1..).unwrap_or(&[])
+                    } else {
+                        params.as_slice()
+                    };
+                    // Arity + per-argument unification (#172).
+                    if arguments.len() != param_slice.len() {
+                        return Err(CompileError::new(
+                            format!(
+                                "method '{}' expects {} arguments, got {}",
+                                method,
+                                param_slice.len(),
+                                arguments.len()
+                            ),
+                            method_expr.span().line,
+                            method_expr.span().col,
+                        )
+                        .with_snippet(&self.source));
+                    }
+                    for (arg, param) in arguments.iter().zip(param_slice.iter()) {
+                        let at = self.check_expression(arg)?;
+                        if !Self::types_unify(param, &at) {
+                            return Err(self.err(
+                                format!(
+                                    "argument of type '{}' does not match parameter type '{}' (line {} col {})",
+                                    at.name(),
+                                    param.name(),
+                                    arg.span().line,
+                                    arg.span().col
+                                ),
+                                arg,
+                            ));
+                        }
                     }
                     Ok(*return_type.clone())
                 } else {
                     Err(self.err(format!("'{}' is not a function", cand_colon), &method_expr))
                 }
             }
-            Expression::Cast { target, .. } => Ok(self.resolve_type(target)),
+            Expression::Cast { target, expr, .. } => {
+                // Check the source expression (previously never visited) and
+                // validate the cast pair (#173).
+                let src = self.check_expression(expr)?;
+                let dst = self.resolve_type(target);
+                Self::check_cast_pair(&src, &dst).map_err(|msg| self.err(msg, expr))?;
+                Ok(dst)
+            }
             Expression::StructInst { name, .. } => {
                 let full = self
                     .resolve_fuzzy_name(&self.decls, name)
@@ -942,25 +1089,92 @@ impl TypeChecker {
                 let full = self
                     .resolve_fuzzy_name(&self.decls, name)
                     .unwrap_or(name.clone());
-                // Try to infer generic type arguments from variant arguments
-                let has_generics = if let Some(Declaration::Enum(enum_decl)) = self.decls.get(&full)
+                // Disambiguate struct static-method calls (`Lexer::method(...)`,
+                // parsed as EnumInst by the DoubleColon postfix) from enum
+                // variant construction: a registered method with this variant
+                // name wins. #171 (struct-typed returns exposed this path).
+                let cand_colon = format!("{}::{}", full, variant);
+                let cand_dot = format!("{}.{}", full, variant);
+                if let Some(Type::Function {
+                    is_unsafe,
+                    ref return_type,
+                    ref params,
+                }) = self
+                    .env
+                    .get(&cand_colon)
+                    .or_else(|| self.env.get(&cand_dot))
                 {
-                    enum_decl
+                    if is_unsafe && !self.in_unsafe_context {
+                        return Err(self.err(format!("unsafe method call '{}'", variant), expr));
+                    }
+                    let has_self = self
+                        .decls
+                        .get(&cand_colon)
+                        .or_else(|| self.decls.get(&cand_dot))
+                        .is_some_and(|d| {
+                            matches!(d, Declaration::Function(f) if f.params.first().is_some_and(|(n, _, _)| n == "self"))
+                        });
+                    let param_slice = if has_self {
+                        params.get(1..).unwrap_or(&[])
+                    } else {
+                        params.as_slice()
+                    };
+                    if arguments.len() != param_slice.len() {
+                        return Err(CompileError::new(
+                            format!(
+                                "method '{}' expects {} arguments, got {}",
+                                variant,
+                                param_slice.len(),
+                                arguments.len()
+                            ),
+                            expr.span().line,
+                            expr.span().col,
+                        )
+                        .with_snippet(&self.source));
+                    }
+                    for (arg, param) in arguments.iter().zip(param_slice.iter()) {
+                        let at = self.check_expression(arg)?;
+                        if !Self::types_unify(param, &at) {
+                            return Err(self.err(
+                                format!(
+                                    "argument of type '{}' does not match parameter type '{}' (line {} col {})",
+                                    at.name(),
+                                    param.name(),
+                                    arg.span().line,
+                                    arg.span().col
+                                ),
+                                arg,
+                            ));
+                        }
+                    }
+                    return Ok(*return_type.clone());
+                }
+                // `Type::method(...)` on a STRUCT with no matching method is
+                // a struct constructor: type it as the struct so return/arg
+                // unification sees the same variant the declaration uses.
+                if let Some(Declaration::Struct(_)) = self.decls.get(&full) {
+                    return Ok(Type::Struct { name: full });
+                }
+                // Try to infer generic type arguments from variant payloads:
+                // only when the payload count equals the enum's declared
+                // generic-param count does the payload list read as the
+                // generic args (Option<T>, Result<T, E>). Multi-payload
+                // AST-style enums (Expression<T> with Infix(x, y, z)) would
+                // otherwise produce bogus types like
+                // Expression<Expression, Token, Expression>. #171.
+                let type_args: Vec<Type> = arguments
+                    .iter()
+                    .map(|arg| self.check_expression(arg).unwrap_or(Type::Unknown))
+                    .collect();
+                if !type_args.is_empty()
+                    && let Some(Declaration::Enum(enum_decl)) = self.decls.get(&full)
+                    && enum_decl
                         .variants
                         .iter()
-                        .find(|v| v.name == *variant)
-                        .is_some_and(|v| !v.data_types.is_empty())
-                } else {
-                    false
-                };
-                if has_generics {
-                    let type_args: Vec<Type> = arguments
-                        .iter()
-                        .map(|arg| self.check_expression(arg).unwrap_or(Type::Unknown))
-                        .collect();
-                    if !type_args.is_empty() {
-                        return Ok(Type::GenericInstance(full, type_args));
-                    }
+                        .any(|v| v.name == *variant && !v.data_types.is_empty())
+                    && type_args.len() == enum_decl.generic_params.len()
+                {
+                    return Ok(Type::GenericInstance(full, type_args));
                 }
                 Ok(Type::Enum { name: full })
             }
@@ -1005,21 +1219,27 @@ impl TypeChecker {
                     Ok(Type::Pointer(Box::new(Type::i64())))
                 } else if actual_name == "mem_is_null" {
                     Ok(Type::Boolean)
-                } else if actual_name == "mem_zero" && !args.is_empty() {
-                    // mem_zero(Type): return value uses the language's boxed struct/enum
-                    // representation (matches StructInst/EnumInst), so the field-access path
-                    // (*p).field stays consistent after *p = mem_zero(T).
-                    let tnm = match &args[0] {
-                        Expression::Identifier(s, _) | Expression::TypeRef { name: s, .. } => {
-                            s.clone()
+                } else if actual_name == "mem_zero" {
+                    if !args.is_empty() {
+                        // mem_zero(Type): return value uses the language's boxed struct/enum
+                        // representation (matches StructInst/EnumInst), so the field-access path
+                        // (*p).field stays consistent after *p = mem_zero(T).
+                        let tnm = match &args[0] {
+                            Expression::Identifier(s, _) | Expression::TypeRef { name: s, .. } => {
+                                s.clone()
+                            }
+                            _ => return Ok(Type::i64()),
+                        };
+                        let full = self.resolve_fuzzy_name(&self.decls, &tnm).unwrap_or(tnm);
+                        match self.decls.get(&full) {
+                            Some(Declaration::Struct(_)) => Ok(Type::Struct { name: full }),
+                            Some(Declaration::Enum(_)) => Ok(Type::Enum { name: full }),
+                            _ => Ok(Type::i64()),
                         }
-                        _ => return Ok(Type::i64()),
-                    };
-                    let full = self.resolve_fuzzy_name(&self.decls, &tnm).unwrap_or(tnm);
-                    match self.decls.get(&full) {
-                        Some(Declaration::Struct(_)) => Ok(Type::Struct { name: full }),
-                        Some(Declaration::Enum(_)) => Ok(Type::Enum { name: full }),
-                        _ => Ok(Type::i64()),
+                    } else {
+                        // mem_zero() with no argument returns a null pointer
+                        // (codegen `pt.const_null()`), not an i64.
+                        Ok(Type::Pointer(Box::new(Type::Unknown)))
                     }
                 } else if actual_name.starts_with("ai_tensor_") {
                     Ok(Type::Struct {
@@ -1075,6 +1295,7 @@ impl TypeChecker {
                     Type::Integer { .. } => "i64".to_string(),
                     Type::String => "String".to_string(),
                     Type::Struct { name } => name.clone(),
+                    Type::Placeholder(n) => n.clone(),
                     _ => "unknown".to_string(),
                 };
                 let mut result_type = Type::Unit;
@@ -1328,12 +1549,132 @@ impl TypeChecker {
             return Some(name.to_string());
         }
         for key in map.keys() {
-            if key.ends_with(name)
-                && (key.len() == name.len() || key.as_bytes()[key.len() - name.len() - 1] == b'.')
+            // The suffix (which may itself be dotted, e.g. `token.Token`
+            // inside `compiler.token.Token`) must start at a segment
+            // boundary: position 0 or right after a '.'.
+            if let Some(pos) = key.len().checked_sub(name.len())
+                && key.ends_with(name)
+                && (pos == 0 || key.as_bytes()[pos - 1] == b'.')
             {
                 return Some(key.clone());
             }
         }
         None
+    }
+
+    /// True when two dotted names refer to the same type modulo module
+    /// prefixes (`Option` == `std.option.Option`). Used by `types_unify`.
+    fn base_names_match(a: &str, b: &str) -> bool {
+        if a == b {
+            return true;
+        }
+        a.ends_with(&format!(".{}", b)) || b.ends_with(&format!(".{}", a))
+    }
+
+    /// Structural unification for return values (#171), call arguments (#172),
+    /// and assignments (#179). Permissive exactly where codegen has an
+    /// explicit coercion path (integer width, int<->ptr, Unit) and for
+    /// unresolved generics (Unknown/Placeholder). Composite types compare on
+    /// their last dotted segment so `Option` unifies with `std.option.Option`.
+    fn types_unify(expected: &Type, actual: &Type) -> bool {
+        if expected == actual {
+            return true;
+        }
+        match (expected, actual) {
+            (Type::Unknown, _) | (_, Type::Unknown) => true,
+            (Type::Placeholder(_), _) | (_, Type::Placeholder(_)) => true,
+            (Type::Unit, _) | (_, Type::Unit) => true,
+            (Type::Integer { .. }, Type::Integer { .. }) => true,
+            // Aion bool is a 0/1 i64 at the LLVM level (see type_to_llvm);
+            // `-> bool` functions returning i64-typed intrinsics (e.g.
+            // std.fs.exists) rely on this interchangeability.
+            (Type::Integer { .. }, Type::Boolean) | (Type::Boolean, Type::Integer { .. }) => true,
+            (Type::Integer { .. }, Type::Pointer(_)) | (Type::Pointer(_), Type::Integer { .. }) => {
+                true
+            }
+            (Type::Pointer(a), Type::Pointer(b)) => Self::types_unify(a, b),
+            // Uniformly-boxed model: every composite value is a pointer at
+            // the LLVM level (docs/architecture.md), so pointer values
+            // assign to composite slots and vice versa (`*p = mem_zero()`).
+            (Type::Pointer(_), Type::Struct { .. })
+            | (Type::Struct { .. }, Type::Pointer(_))
+            | (Type::Pointer(_), Type::Enum { .. })
+            | (Type::Enum { .. }, Type::Pointer(_))
+            | (Type::Pointer(_), Type::GenericInstance(..))
+            | (Type::GenericInstance(..), Type::Pointer(_))
+            | (Type::Pointer(_), Type::String)
+            | (Type::String, Type::Pointer(_))
+            | (Type::Pointer(_), Type::Tuple(_))
+            | (Type::Tuple(_), Type::Pointer(_)) => true,
+            (Type::Enum { name: en }, Type::Enum { name: an })
+            | (Type::Struct { name: en }, Type::Struct { name: an }) => {
+                Self::base_names_match(en, an)
+            }
+            (Type::GenericInstance(en, eargs), Type::GenericInstance(an, aargs)) => {
+                // Generic-arg inference is still approximate (the checker
+                // infers only the constructed variant's payloads, e.g.
+                // `Result::Ok(x)` -> `Result<X>`), so compare pairwise
+                // rather than requiring equal arity. #180 tracks proper
+                // branch/instance unification.
+                Self::base_names_match(en, an)
+                    && eargs
+                        .iter()
+                        .zip(aargs.iter())
+                        .all(|(e, a)| Self::types_unify(e, a))
+            }
+            // Enum-as-GenericInstance and vice versa (EnumInst inference
+            // returns GenericInstance when the variant carries data).
+            (Type::GenericInstance(en, _), Type::Enum { name: an })
+            | (Type::Enum { name: an }, Type::GenericInstance(en, _)) => {
+                Self::base_names_match(en, an)
+            }
+            (Type::GenericInstance(en, _), Type::Struct { name: an })
+            | (Type::Struct { name: an }, Type::GenericInstance(en, _)) => {
+                Self::base_names_match(en, an)
+            }
+            _ => false,
+        }
+    }
+
+    /// Validate a cast source/destination pair (#173). Allowed: numeric
+    /// (int/float/bool/Duration/Date) <-> numeric, numeric <-> pointer, and
+    /// pointer -> pointer. Composite types (String, struct, enum, tuple,
+    /// array, function) are rejected with a clear message.
+    fn check_cast_pair(src: &Type, dst: &Type) -> Result<(), String> {
+        if src == dst
+            || matches!(src, Type::Unknown | Type::Placeholder(_) | Type::Unit)
+            || matches!(dst, Type::Unknown | Type::Placeholder(_))
+        {
+            return Ok(());
+        }
+        let is_num = |t: &Type| {
+            matches!(
+                t,
+                Type::Integer { .. } | Type::Float | Type::Boolean | Type::Date | Type::Duration
+            )
+        };
+        let is_ptr = |t: &Type| matches!(t, Type::Pointer(_));
+        // Uniformly-boxed composites are pointers at the LLVM level
+        // (docs/architecture.md) — pointer<->composite casts are legal
+        // (`alloc(n) as Entry<V>` in std.collections.map).
+        let is_composite = |t: &Type| {
+            matches!(
+                t,
+                Type::Struct { .. }
+                    | Type::Enum { .. }
+                    | Type::GenericInstance(..)
+                    | Type::String
+                    | Type::Tuple(_)
+                    | Type::Array(..)
+            )
+        };
+        if (is_num(src) && (is_num(dst) || is_ptr(dst)))
+            || (is_ptr(src) && (is_num(dst) || is_ptr(dst)))
+            || (is_ptr(src) && is_composite(dst))
+            || (is_composite(src) && is_ptr(dst))
+        {
+            return Ok(());
+        }
+        Err(format!("cannot cast {} to {}", src.name(), dst.name()))
     }
 }

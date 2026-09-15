@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_call_arg_type\")"
+---
+Type Error: argument of type 'i64' does not match parameter type 'String' (line 8 col 20)

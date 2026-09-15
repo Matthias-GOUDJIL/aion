@@ -1,0 +1,12 @@
+// #171 — the checker must reject a return value whose type does not match
+// the declared return type (previously compiled silently, producing the
+// String pointer reinterpreted as an integer).
+fn wrong() -> i64 {
+    return "hello"
+}
+
+fn main() {
+    let x = wrong()
+    io.println(string.from_int(x))
+    return 0
+}

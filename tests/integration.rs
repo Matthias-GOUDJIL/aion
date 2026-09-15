@@ -288,6 +288,18 @@ fn test_match_expression() {
     assert_snapshot!(run_aion_test("language/match_expression"));
 }
 #[test]
+fn test_match_as_initializer() {
+    assert_snapshot!(run_aion_test("language/match_as_initializer"));
+}
+#[test]
+fn test_match_expr_multi_payload() {
+    assert_snapshot!(run_aion_test("language/match_expr_multi_payload"));
+}
+#[test]
+fn test_float_int_cast() {
+    assert_snapshot!(run_aion_test("language/float_int_cast"));
+}
+#[test]
 fn test_option_result_methods() {
     assert_snapshot!(run_aion_test("language/option_result_methods"));
 }
@@ -733,6 +745,26 @@ fn test_error_undefined_method() {
 #[test]
 fn test_error_internal() {
     assert_snapshot!(run_aion_test("compiler/error_internal"));
+}
+#[test]
+fn test_error_return_type_mismatch() {
+    assert_snapshot!(run_aion_test("compiler/error_return_type_mismatch"));
+}
+#[test]
+fn test_error_call_arity() {
+    assert_snapshot!(run_aion_test("compiler/error_call_arity"));
+}
+#[test]
+fn test_error_call_arg_type() {
+    assert_snapshot!(run_aion_test("compiler/error_call_arg_type"));
+}
+#[test]
+fn test_error_cast_string() {
+    assert_snapshot!(run_aion_test("compiler/error_cast_string"));
+}
+#[test]
+fn test_error_assign_type_mismatch() {
+    assert_snapshot!(run_aion_test("compiler/error_assign_type_mismatch"));
 }
 #[test]
 fn test_mut_use() {
