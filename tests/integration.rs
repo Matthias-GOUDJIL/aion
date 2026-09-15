@@ -767,6 +767,14 @@ fn test_error_call_arg_type() {
     assert_snapshot!(run_aion_test("compiler/error_call_arg_type"));
 }
 #[test]
+fn test_error_syntax_unexpected_token() {
+    assert_snapshot!(run_aion_test("compiler/error_syntax_unexpected_token"));
+}
+#[test]
+fn test_error_fstring_bad_expr() {
+    assert_snapshot!(run_aion_test("compiler/error_fstring_bad_expr"));
+}
+#[test]
 fn test_error_cast_string() {
     assert_snapshot!(run_aion_test("compiler/error_cast_string"));
 }

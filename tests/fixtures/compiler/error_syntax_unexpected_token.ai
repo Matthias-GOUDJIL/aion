@@ -1,0 +1,7 @@
+// #182 — unexpected tokens must be reported as syntax errors with their
+// location, not silently folded into `invalid_token_*` identifiers that
+// surface later as confusing "undefined variable" errors.
+fn main() {
+    let x = @
+    return 0
+}

@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_fstring_bad_expr\")"
+---
+Type Error: Parse errors: Type Error: Syntax Error: unexpected token EOF
