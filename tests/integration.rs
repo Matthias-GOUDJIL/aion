@@ -539,6 +539,12 @@ fn test_codegen_control_flow() {
     assert_snapshot!(run_aion_test("compiler/codegen_control_flow"));
 }
 #[test]
+fn test_codegen_match_intrinsics() {
+    // #134 — match lowering (tag switch, payload, guards, result phi),
+    // intrinsic calls (@intrinsic), f-string desugaring, deref parse.
+    assert_snapshot!(run_aion_test("compiler/codegen_match_intrinsics"));
+}
+#[test]
 fn test_self_parser_call() {
     // #156 Slice 1 — verifies the parser's postfix dispatch loop produces
     // a Call AST node for `io.println("hello")` (vs the pre-#156 fold-only

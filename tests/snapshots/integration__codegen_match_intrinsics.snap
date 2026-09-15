@@ -1,0 +1,121 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/codegen_match_intrinsics\")"
+---
+; ModuleID = 'aion_module'
+source_filename = "aion_module"
+
+declare i32 @printf(i8*, ...)
+declare void @exit(i32)
+declare void @GC_init()
+declare ptr @aion_malloc(i64)
+declare ptr @aion_realloc(i64, i64)
+declare void @aion_free(ptr)
+declare void @aion_memzero(ptr, i64)
+declare void @aion_io_println(ptr)
+declare void @aion_io_print(ptr)
+declare ptr @aion_io_read_line()
+declare ptr @aion_int_to_str(i64)
+declare ptr @aion_float_to_str(double)
+declare double @aion_str_to_float(ptr)
+declare i64 @aion_string_len(ptr)
+declare i64 @aion_str_eq(ptr, ptr)
+declare ptr @aion_str_concat(ptr, ptr)
+declare i64 @aion_str_at(ptr, i64)
+declare ptr @aion_str_substr(ptr, i64, i64)
+declare ptr @aion_char_to_str(i64)
+declare ptr @aion_read_file(ptr)
+declare i64 @aion_write_file(ptr, ptr)
+declare i64 @aion_append_file(ptr, ptr)
+declare i64 @aion_fs_exists(ptr)
+declare ptr @aion_getenv(ptr)
+declare i64 @aion_get_argc()
+declare ptr @aion_get_argv_index(i64)
+declare void @aion_array_oob(i64, i64)
+declare void @aion_spawn(ptr)
+@aion_argc = global i64 0
+@aion_argv = global ptr null
+
+@.str.0 = private unnamed_addr constant [4 x i8] c"red\00"
+@.str.1 = private unnamed_addr constant [6 x i8] c"green\00"
+@.str.2 = private unnamed_addr constant [6 x i8] c"other\00"
+@.str.3 = private unnamed_addr constant [5 x i8] c"zero\00"
+@.str.4 = private unnamed_addr constant [8 x i8] c"nonzero\00"
+@.str.5 = private unnamed_addr constant [10 x i8] c"value={c}\00"
+@.str.6 = private unnamed_addr constant [13 x i8] c"mem_zero_ptr\00"
+
+%Color = type { i64 }
+%Maybe = type { i64, [64 x i8] }
+define ptr @describe(i64 %c) {
+entry:
+  %t0 = icmp eq i64 %c, 0
+  br i1 %t0, label %match.arm.1, label %match.next.1
+match.arm.1:
+  br label %match.exit.0
+match.next.1:
+  %t1 = icmp eq i64 %c, 1
+  br i1 %t1, label %match.arm.2, label %match.next.2
+match.arm.2:
+  br label %match.exit.0
+match.next.2:
+  br label %match.arm.3
+match.arm.3:
+  br label %match.exit.0
+match.exit.0:
+  %t2 = phi ptr [ @.str.0, %match.arm.1 ], [ @.str.1, %match.arm.2 ], [ @.str.2, %match.arm.3 ]
+  ret ptr %t2
+}
+
+define i64 @unwrap2(ptr %m) {
+entry:
+  %t3 = getelementptr %Maybe, ptr %m, i32 0, i32 0
+  %t4 = load i64, ptr %t3
+  %t5 = icmp eq i64 %t4, 0
+  br i1 %t5, label %match.arm.5, label %match.next.5
+match.arm.5:
+  %t6 = getelementptr i8, ptr %m, i64 8
+  %t7 = load i64, ptr %t6
+  %v.addr = alloca i64
+  store i64 %t7, ptr %v.addr
+  %t8 = load i64, ptr %v.addr
+  br label %match.exit.4
+match.next.5:
+  %t9 = icmp eq i64 %t4, 1
+  br i1 %t9, label %match.arm.6, label %match.exit.4
+match.arm.6:
+  br label %match.exit.4
+match.exit.4:
+  %t10 = phi i64 [ %t8, %match.arm.5 ], [ 0, %match.arm.6 ], [ 0, %match.next.5 ]
+  ret i64 %t10
+}
+
+define i32 @main() {
+entry:
+  %c.addr = alloca i64
+  store i64 1, ptr %c.addr
+  %t11 = load i64, ptr %c.addr
+  %t12 = icmp eq i64 %t11, 0
+  br i1 %t12, label %match.arm.8, label %match.next.8
+match.arm.8:
+  br label %match.exit.7
+match.next.8:
+  br label %match.arm.9
+match.arm.9:
+  br label %match.exit.7
+match.exit.7:
+  %t13 = phi ptr [ @.str.3, %match.arm.8 ], [ @.str.4, %match.arm.9 ]
+  %name.addr = alloca ptr
+  store ptr %t13, ptr %name.addr
+  %t14 = load ptr, ptr %name.addr
+  call void @aion_io_println(ptr %t14)
+  call void @aion_io_println(ptr @.str.5)
+  %raw.addr = alloca i64
+  store i64 0, ptr %raw.addr
+  %t15 = load i64, ptr %raw.addr
+  %p.addr = alloca i64
+  store i64 %t15, ptr %p.addr
+  %t16 = call ptr @aion_int_to_str(i64 0)
+  call void @aion_io_println(ptr %t16)
+  %t17 = trunc i64 0 to i32
+  ret i32 %t17
+}
