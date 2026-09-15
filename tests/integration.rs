@@ -636,12 +636,7 @@ fn test_self_codegen_parity() {
 // llc-15 → object, then clang-15 link against the C runtime. `opaque`
 // selects `--opaque-pointers` (needed for the textual IR the Aion
 // backend emits; the Rust backend's bitcode auto-detects).
-fn llc_and_link(
-    ll: &std::path::Path,
-    obj: &std::path::Path,
-    bin: &std::path::Path,
-    opaque: bool,
-) {
+fn llc_and_link(ll: &std::path::Path, obj: &std::path::Path, bin: &std::path::Path, opaque: bool) {
     let root = project_root();
     let mut llc = Command::new("llc-15");
     if opaque {
