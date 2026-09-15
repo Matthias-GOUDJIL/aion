@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_call_arity\")"
+---
+Type Error: function 'add2' expects 2 arguments, got 1

@@ -1,0 +1,7 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/match_expr_multi_payload\")"
+---
+ok
+-1
+7ok

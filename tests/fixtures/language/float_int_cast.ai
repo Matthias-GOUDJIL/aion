@@ -1,0 +1,38 @@
+// #151 — float <-> int casts must convert (fptosi/fptoui/sitofp/uitofp),
+// never bit-reinterpret. Verified against the pre-fix behavior where
+// `1.5 as i64` produced the IEEE-754 bit pattern 4609434218613702656.
+fn main() {
+    // Nominal: f64 -> i64 truncation toward zero.
+    let a: f64 = 1.5
+    let a1: i64 = a as i64
+    io.println(string.from_int(a1)) // 1
+
+    // Nominal: f64 -> u64 truncation.
+    let b: u64 = 1.5 as u64
+    io.println(string.from_int(b as i64)) // 1
+
+    // Nominal: i64 -> f64.
+    let c: f64 = 42 as f64
+    io.println(string.from_float(c)) // 42
+
+    // Nominal: u64 -> f64.
+    let d: u64 = 7
+    let d2: f64 = d as f64
+    io.println(string.from_float(d2)) // 7
+
+    // Edge: negative float truncates toward zero (fptosi), not floor.
+    let e: f64 = -1.5
+    let e1: i64 = e as i64
+    io.println(string.from_int(e1)) // -1
+
+    // Edge: value just below an integer still truncates.
+    let f: f64 = 1.9999999
+    let f1: i64 = f as i64
+    io.println(string.from_int(f1)) // 1
+
+    // Edge: f64 -> i32 narrows through the float path then int width.
+    let g: i32 = 3.9 as i32
+    io.println(string.from_int(g as i64)) // 3
+
+    return 0
+}

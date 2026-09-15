@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_assign_type_mismatch\")"
+---
+Type Error: cannot assign value of type 'String' to target of type 'i64' (line 6 col 9)

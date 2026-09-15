@@ -1,0 +1,11 @@
+// #172 — the checker must reject calls with the wrong argument count
+// (previously the missing parameter became `undef` at the LLVM level).
+fn add2(a: i64, b: i64) -> i64 {
+    return a + b
+}
+
+fn main() {
+    let x = add2(1)
+    io.println(string.from_int(x))
+    return 0
+}

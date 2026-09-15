@@ -47,6 +47,14 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
 - `f64` (float), `bool`, `String` (pointer to C-string), `Duration` (i64
   millis), `Date` (i64 millis timestamp).
 - Char literals: `'a'` → integer char code.
+- **Casts** (`expr as T`): integer→integer widens (`sext`/`zext`) or
+  narrows (`truncate`); pointer↔integer converts the address;
+  float→integer truncates toward zero (`fptosi`/`fptoui` — signedness
+  taken from the target type-name `i*`/`u*`); integer→float converts
+  numerically (`sitofp`/`uitofp` — signedness taken from the source
+  type-name). `as` is a converting cast, never a bit reinterpretation
+  (#151). Cast validity (String/composite targets) is not yet enforced
+  by the checker (#173).
 - Type system is **monomorphic at codegen**: each integer keeps its width,
   `f64`, `bool`,
   `String`, `Duration`, `Date` exist at the LLVM level. All composite
@@ -169,6 +177,18 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
   `get_terminator().is_none()`.
 - **Type safety**: `Type::Unknown` is never returned silently. Fallbacks
   are explicit and validated.
+- **Signature enforcement** (#171/#172/#173/#179): the checker verifies
+  (1) `return` values against the declared return type, (2) call
+  arity and each argument against the declared parameter types, (3)
+  assignment values against the target's declared type, and (4) cast
+  validity (numeric↔numeric, numeric↔pointer, pointer↔boxed-composite;
+  String/struct/enum/array/tuple casts are `Type Error`s). Unification
+  follows the boxed representation: every composite is a pointer at the
+  LLVM level, so pointer values freely interchange with composite slots;
+  Aion `bool` is a 0/1 `i64`; integer widths coerce (#52); unresolved
+  generics (`Unknown`/`Placeholder`) are tolerated until monomorphization.
+  `io.println`/`io.print` remain the only documented implicit
+  int→String conversions.
 - **Debug hygiene**: no `println!`/`eprintln!` in production builds.
 - **Span tracking**: all AST nodes carry `Span` (line, col) for precise
   error reporting.

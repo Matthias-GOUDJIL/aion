@@ -1598,7 +1598,7 @@ impl Codegen {
                 pl = std.string.concat(pl, " = alloca ");
                 pl = std.string.concat(pl, vt);
                 buf.push(pl);
-                let mut sl = std.string.concat("  store ");
+                let mut sl = "  store ";
                 sl = std.string.concat(sl, vt);
                 sl = std.string.concat(sl, " ");
                 sl = std.string.concat(sl, cv.value);
@@ -2763,14 +2763,18 @@ impl Codegen {
                     if self.locals.contains_key(first) {
                         let seg_str = std.string.substr(name, dot + 1, std.string.len(name) - dot - 1);
                         let seg_count = count_segments(seg_str);
+                        // Build the nested MemberAccess chain, then lower it
+                        // in one pass — the previous loop reassigned an
+                        // Operand into an ast.Expression slot, which the
+                        // checker now rejects (arity/assignment family).
                         let mut cur_expr = compiler.ast.Expression::Identifier(first);
                         let mut si = 0;
                         while si < seg_count {
                             let seg = segment_at(seg_str, si);
-                            cur_expr = self.compile_member_access(cur_expr, seg);
+                            cur_expr = compiler.ast.Expression::MemberAccess(cur_expr, seg);
                             si = si + 1;
                         }
-                        return cur_expr;
+                        return self.compile_expr(cur_expr);
                     }
                 }
                 // Global args (#106): `argc`/`argv` read from the module

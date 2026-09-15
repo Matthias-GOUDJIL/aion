@@ -1,0 +1,9 @@
+// #179 — the checker must reject assignments whose value type does not
+// match the target's declared type (previously stored the pointer into the
+// i64 slot silently).
+fn main() {
+    let mut x: i64 = 0
+    x = "str"
+    io.println(string.from_int(x))
+    return 0
+}
