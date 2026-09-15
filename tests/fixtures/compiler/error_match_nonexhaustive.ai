@@ -1,0 +1,17 @@
+// #180 — an enum match that does not cover every variant is a checker
+// error (previously segfaulted in expression position, exit 139).
+use std.option
+
+fn mkopt(b: bool) -> Option<i64> {
+    if b { return Option::Some(42); }
+    return Option::None
+}
+
+fn main() {
+    let o = mkopt(false)
+    let v = match o {
+        Option::Some(n) => n,
+    }
+    io.println(string.from_int(v))
+    return 0
+}

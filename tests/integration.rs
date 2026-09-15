@@ -296,6 +296,10 @@ fn test_match_expr_multi_payload() {
     assert_snapshot!(run_aion_test("language/match_expr_multi_payload"));
 }
 #[test]
+fn test_match_exhaustive() {
+    assert_snapshot!(run_aion_test("language/match_exhaustive"));
+}
+#[test]
 fn test_float_int_cast() {
     assert_snapshot!(run_aion_test("language/float_int_cast"));
 }
@@ -785,6 +789,18 @@ fn test_error_int_logic() {
 #[test]
 fn test_error_deref_scalar() {
     assert_snapshot!(run_aion_test("compiler/error_deref_scalar"));
+}
+#[test]
+fn test_error_match_nonexhaustive() {
+    assert_snapshot!(run_aion_test("compiler/error_match_nonexhaustive"));
+}
+#[test]
+fn test_error_if_branch_types() {
+    assert_snapshot!(run_aion_test("compiler/error_if_branch_types"));
+}
+#[test]
+fn test_error_match_arm_types() {
+    assert_snapshot!(run_aion_test("compiler/error_match_arm_types"));
 }
 #[test]
 fn test_mut_use() {

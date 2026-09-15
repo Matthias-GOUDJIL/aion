@@ -1,0 +1,11 @@
+// #180 — match-expression arms with incompatible types are a checker error.
+use std.option
+
+fn main() {
+    let o = Option::Some(5)
+    let v = match o {
+        Option::Some(n) => n,
+        Option::None => "none",
+    }
+    return 0
+}

@@ -1,0 +1,7 @@
+// #180 — if-as-expression branches with incompatible types are a checker
+// error (previously fed garbage to the merge phi).
+fn main() {
+    let c = true
+    let v = if c { 1 } else { "str" }
+    return 0
+}

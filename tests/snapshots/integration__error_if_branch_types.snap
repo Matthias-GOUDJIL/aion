@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_if_branch_types\")"
+---
+Type Error: if branches return incompatible types 'i64' and 'String'

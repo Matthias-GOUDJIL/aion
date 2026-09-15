@@ -119,7 +119,16 @@ impl TypeChecker {
     /// bind each param positionally — previously only `params[0]` was
     /// bound, leaving `params[1..]` untyped so any use errored as
     /// "method call on unknown". #161.
-    fn bind_match_params(&mut self, cond_name: &str, all_patterns: &[String], params: &[String]) {
+    /// `generic_args` are the concrete generic arguments of the matched
+    /// value when inference succeeded (`Option<i64>` -> [i64]); they are
+    /// substituted into the variant payload types so `T` becomes `i64`.
+    fn bind_match_params(
+        &mut self,
+        cond_name: &str,
+        generic_args: &[Type],
+        all_patterns: &[String],
+        params: &[String],
+    ) {
         if params.is_empty() {
             return;
         }
@@ -172,12 +181,61 @@ impl TypeChecker {
         } else {
             for (i, param) in params.iter().enumerate() {
                 let payload = match data_types.get(i) {
-                    Some(dt) => self.resolve_type(dt),
+                    Some(dt) => {
+                        // Substitute the enum's generic params with the
+                        // inferred concrete args (T -> i64) so arm params
+                        // get concrete types when inference succeeded.
+                        let dt = if let Some(Declaration::Enum(ed)) = self.decls.get(&full_cond) {
+                            Self::substitute_generics(dt, &ed.generic_params, generic_args)
+                        } else {
+                            dt.clone()
+                        };
+                        self.resolve_type(&dt)
+                    }
                     None => Type::i64(),
                 };
                 self.env.set(param.clone(), payload);
             }
         }
+    }
+
+    /// Token-aware generic substitution inside a type string: replace a
+    /// token exactly equal to a generic param with the concrete arg name.
+    /// Mirrors the codegen's `substitute_type_string` (#61/#67).
+    fn substitute_generics(type_str: &str, params: &[String], args: &[Type]) -> String {
+        if params.is_empty() || type_str.is_empty() {
+            return type_str.to_string();
+        }
+        let mut out = String::with_capacity(type_str.len());
+        let mut tok = String::new();
+        for ch in type_str.chars() {
+            if ch.is_alphanumeric() || ch == '_' || ch == '.' {
+                tok.push(ch);
+            } else {
+                Self::flush_generic_token(&mut tok, &mut out, params, args);
+                out.push(ch);
+            }
+        }
+        Self::flush_generic_token(&mut tok, &mut out, params, args);
+        out
+    }
+
+    fn flush_generic_token(tok: &mut String, out: &mut String, params: &[String], args: &[Type]) {
+        if tok.is_empty() {
+            return;
+        }
+        let mut replaced = false;
+        for (i, p) in params.iter().enumerate() {
+            if i < args.len() && *tok == *p {
+                out.push_str(&args[i].name());
+                replaced = true;
+                break;
+            }
+        }
+        if !replaced {
+            out.push_str(tok);
+        }
+        tok.clear();
     }
 
     fn register_builtins(&mut self) {
@@ -685,15 +743,17 @@ impl TypeChecker {
                 condition, arms, ..
             } => {
                 let cond_type = self.check_expression(condition)?;
-                let cond_name = match &cond_type {
-                    Type::Enum { name } => name.clone(),
-                    Type::GenericInstance(name, _) => name.clone(),
-                    Type::Integer { .. } => "i64".to_string(),
-                    Type::String => "String".to_string(),
-                    Type::Struct { name } => name.clone(),
-                    Type::Placeholder(n) => n.clone(),
-                    _ => "unknown".to_string(),
+                let (cond_name, cond_args) = match &cond_type {
+                    Type::Enum { name } => (name.clone(), vec![]),
+                    Type::GenericInstance(name, args) => (name.clone(), args.clone()),
+                    Type::Integer { .. } => ("i64".to_string(), vec![]),
+                    Type::String => ("String".to_string(), vec![]),
+                    Type::Struct { name } => (name.clone(), vec![]),
+                    Type::Placeholder(n) => (n.clone(), vec![]),
+                    _ => ("unknown".to_string(), vec![]),
                 };
+                // Enum matches must cover every declared variant (#180).
+                self.check_match_exhaustive(&cond_name, arms, condition)?;
                 for arm in arms {
                     let old_env = self.env.clone();
 
@@ -712,7 +772,7 @@ impl TypeChecker {
 
                     if !arm.params.is_empty() {
                         self.env = Environment::new_enclosed(old_env.clone());
-                        self.bind_match_params(&cond_name, &all_patterns, &arm.params);
+                        self.bind_match_params(&cond_name, &cond_args, &all_patterns, &arm.params);
                     }
 
                     // Evaluate guard if present
@@ -1281,8 +1341,24 @@ impl TypeChecker {
                     lt = self.check_statement(s)?;
                 }
                 if let Some(eb) = else_branch {
+                    let mut et = Type::Unit;
                     for s in eb {
-                        self.check_statement(s)?;
+                        et = self.check_statement(s)?;
+                    }
+                    // Branch types must agree (#180): an expression-valued
+                    // if with mismatched branches fed garbage to the phi.
+                    if lt != Type::Unit && et != Type::Unit && !Self::types_unify(&lt, &et) {
+                        return Err(self.err(
+                            format!(
+                                "if branches return incompatible types '{}' and '{}'",
+                                lt.name(),
+                                et.name()
+                            ),
+                            condition,
+                        ));
+                    }
+                    if lt == Type::Unit {
+                        lt = et;
                     }
                 }
                 Ok(lt)
@@ -1309,16 +1385,17 @@ impl TypeChecker {
                 condition, arms, ..
             } => {
                 let cond_type = self.check_expression(condition)?;
-                let cond_name = match &cond_type {
-                    Type::Enum { name } => name.clone(),
-                    Type::GenericInstance(name, _) => name.clone(),
-                    Type::Integer { .. } => "i64".to_string(),
-                    Type::String => "String".to_string(),
-                    Type::Struct { name } => name.clone(),
-                    Type::Placeholder(n) => n.clone(),
-                    _ => "unknown".to_string(),
+                let (cond_name, cond_args) = match &cond_type {
+                    Type::Enum { name } => (name.clone(), vec![]),
+                    Type::GenericInstance(name, args) => (name.clone(), args.clone()),
+                    Type::Integer { .. } => ("i64".to_string(), vec![]),
+                    Type::String => ("String".to_string(), vec![]),
+                    Type::Struct { name } => (name.clone(), vec![]),
+                    Type::Placeholder(n) => (n.clone(), vec![]),
+                    _ => ("unknown".to_string(), vec![]),
                 };
-                let mut result_type = Type::Unit;
+                let mut result_type: Option<Type> = None;
+                self.check_match_exhaustive(&cond_name, arms, condition)?;
                 for arm in arms {
                     let old_env = self.env.clone();
 
@@ -1330,19 +1407,48 @@ impl TypeChecker {
 
                     if !arm.params.is_empty() {
                         self.env = Environment::new_enclosed(old_env.clone());
-                        self.bind_match_params(&cond_name, &all_patterns, &arm.params);
+                        self.bind_match_params(&cond_name, &cond_args, &all_patterns, &arm.params);
                     }
 
                     if let Some(guard_expr) = &arm.guard {
                         self.check_expression(guard_expr)?;
                     }
 
+                    let mut arm_type = Type::Unit;
                     for s in &arm.body {
-                        result_type = self.check_statement(s)?;
+                        arm_type = self.check_statement(s)?;
+                    }
+                    // All value-producing arms must agree (#180); Unit arms
+                    // (empty bodies, returns) contribute nothing to the phi.
+                    if arm_type != Type::Unit {
+                        match &result_type {
+                            None => result_type = Some(arm_type),
+                            Some(rt) => {
+                                if !Self::types_unify(rt, &arm_type) {
+                                    return Err(self.err(
+                                        format!(
+                                            "match arms return incompatible types '{}' and '{}'",
+                                            rt.name(),
+                                            arm_type.name()
+                                        ),
+                                        condition,
+                                    ));
+                                }
+                                // Prefer the more concrete type: unresolved
+                                // generics (Placeholder/Unknown) lose to
+                                // concrete arms so `let v: i64 = match` sees
+                                // i64, not `T`.
+                                if matches!(rt, Type::Placeholder(_) | Type::Unknown)
+                                    && !matches!(arm_type, Type::Placeholder(_) | Type::Unknown)
+                                {
+                                    result_type = Some(arm_type);
+                                }
+                            }
+                        }
                     }
                     self.env = old_env;
                 }
-                Ok(result_type)
+                Ok(result_type.unwrap_or(Type::Unit))
             }
             Expression::TupleLiteral { elements, .. } => {
                 let mut tys = Vec::with_capacity(elements.len());
@@ -1680,6 +1786,65 @@ impl TypeChecker {
             }
             _ => false,
         }
+    }
+
+    /// #180 — every declared enum variant must be covered by at least one
+    /// pattern (`_`, a pure binding arm, or a name matching the variant).
+    fn check_match_exhaustive(
+        &self,
+        cond_name: &str,
+        arms: &[crate::ast::MatchArm],
+        at: &Expression,
+    ) -> Result<(), CompileError> {
+        let full = self
+            .resolve_fuzzy_name(&self.decls, cond_name)
+            .unwrap_or_else(|| cond_name.to_string());
+        let Some(Declaration::Enum(e)) = self.decls.get(&full) else {
+            return Ok(());
+        };
+        let mut missing: Vec<String> = Vec::new();
+        for v in &e.variants {
+            let covered = arms.iter().any(|arm| {
+                let all: Vec<&str> = if arm.patterns.is_empty() {
+                    vec![arm.pattern.as_str()]
+                } else {
+                    arm.patterns.iter().map(|s| s.as_str()).collect()
+                };
+                all.iter().any(|p| {
+                    *p == "_"
+                        || *p == v.name
+                        || p.ends_with(&format!(".{}", v.name))
+                        || p.ends_with(&format!("::{}", v.name))
+                }) || Self::is_binding_arm(arm, &e.variants)
+            });
+            if !covered {
+                missing.push(v.name.clone());
+            }
+        }
+        if !missing.is_empty() {
+            return Err(self.err(
+                format!(
+                    "non-exhaustive match on {} — missing variant(s): {}",
+                    full,
+                    missing.join(", ")
+                ),
+                at,
+            ));
+        }
+        Ok(())
+    }
+
+    /// A pure binding arm (`x => ...`) matches everything: the parser
+    /// cleared `patterns` and recorded the lowercase identifier in `params`.
+    fn is_binding_arm(arm: &crate::ast::MatchArm, variants: &[crate::ast::EnumVariant]) -> bool {
+        if arm.params.is_empty() || !arm.patterns.is_empty() {
+            return false;
+        }
+        let p = &arm.pattern;
+        let is_ident = !p.is_empty()
+            && p.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && p.chars().next().unwrap().is_lowercase();
+        is_ident && variants.iter().all(|v| v.name != *p)
     }
 
     /// Validate a cast source/destination pair (#173). Allowed: numeric
