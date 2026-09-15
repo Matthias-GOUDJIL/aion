@@ -311,18 +311,30 @@ impl<'ctx> Compiler<'ctx> {
             self.context.void_type().fn_type(&[pt.into()], false),
             None,
         );
-        self.module.add_function(
-            "aion_io_print",
-            self.context.void_type().fn_type(&[pt.into()], false),
-            None,
-        );
-        self.module.add_function(
-            "aion_io_println",
-            self.context.void_type().fn_type(&[pt.into()], false),
-            None,
-        );
-        self.module
-            .add_function("aion_io_read_line", pt.fn_type(&[], false), None);
+        // Runtime builtins: declared from the single BUILTINS table so the
+        // extern signature can never drift from the checker/codegen view
+        // (#177 — previously ai.tensor_matmul/add were registered but never
+        // declared, turning any call into an intrinsic-not-found error).
+        for b in crate::builtins::BUILTINS {
+            use crate::builtins::LlvmParam;
+            let mut pts: Vec<inkwell::types::BasicMetadataTypeEnum> = Vec::new();
+            for lp in b.llvm_params {
+                pts.push(match lp {
+                    LlvmParam::Ptr => pt.into(),
+                    LlvmParam::I64 => i64_t.into(),
+                    LlvmParam::F64 => self.context.f64_type().into(),
+                    LlvmParam::I32 => self.context.i32_type().into(),
+                });
+            }
+            let fn_sig = match b.ret_aion {
+                "void" => self.context.void_type().fn_type(&pts, false),
+                "String" | "ptr" => pt.fn_type(&pts, false),
+                "f64" => self.context.f64_type().fn_type(&pts, false),
+                "i32" => self.context.i32_type().fn_type(&pts, false),
+                _ => i64_t.fn_type(&pts, false),
+            };
+            self.module.add_function(b.llvm_name, fn_sig, None);
+        }
         self.module.add_function(
             "GC_init",
             self.context.void_type().fn_type(&[], false),
@@ -338,79 +350,11 @@ impl<'ctx> Compiler<'ctx> {
             pt.fn_type(&[pt.into(), pt.into()], false),
             None,
         );
-        self.module
-            .add_function("aion_int_to_str", pt.fn_type(&[i64_t.into()], false), None);
-        self.module.add_function(
-            "aion_float_to_str",
-            pt.fn_type(&[self.context.f64_type().into()], false),
-            None,
-        );
-        self.module.add_function(
-            "aion_str_to_float",
-            self.context.f64_type().fn_type(&[pt.into()], false),
-            None,
-        );
-        self.module
-            .add_function("aion_read_file", pt.fn_type(&[pt.into()], false), None);
-        self.module.add_function(
-            "aion_write_file",
-            i64_t.fn_type(&[pt.into(), pt.into()], false),
-            None,
-        );
-        self.module.add_function(
-            "aion_append_file",
-            i64_t.fn_type(&[pt.into(), pt.into()], false),
-            None,
-        );
-        self.module
-            .add_function("aion_fs_exists", i64_t.fn_type(&[pt.into()], false), None);
-        self.module
-            .add_function("aion_getenv", pt.fn_type(&[pt.into()], false), None);
-        self.module
-            .add_function("aion_get_argc", i64_t.fn_type(&[], false), None);
-        self.module.add_function(
-            "aion_get_argv_index",
-            pt.fn_type(&[i64_t.into()], false),
-            None,
-        );
-        self.module
-            .add_function("aion_malloc", pt.fn_type(&[i64_t.into()], false), None);
         self.module.add_function(
             "aion_memzero",
             self.context
                 .void_type()
                 .fn_type(&[pt.into(), i64_t.into()], false),
-            None,
-        );
-        self.module.add_function(
-            "aion_str_at",
-            i64_t.fn_type(&[pt.into(), i64_t.into()], false),
-            None,
-        );
-        self.module.add_function(
-            "aion_str_substr",
-            pt.fn_type(&[pt.into(), i64_t.into(), i64_t.into()], false),
-            None,
-        );
-        self.module
-            .add_function("aion_char_to_str", pt.fn_type(&[i64_t.into()], false), None);
-        self.module.add_function(
-            "aion_ai_tensor_zeros",
-            pt.fn_type(&[pt.into()], false),
-            None,
-        );
-        self.module
-            .add_function("aion_ai_tensor_ones", pt.fn_type(&[pt.into()], false), None);
-        self.module
-            .add_function("aion_ai_tensor_rand", pt.fn_type(&[pt.into()], false), None);
-        self.module.add_function(
-            "aion_ai_tensor_backward",
-            self.context.void_type().fn_type(&[pt.into()], false),
-            None,
-        );
-        self.module.add_function(
-            "aion_ai_tensor_move",
-            pt.fn_type(&[pt.into(), pt.into()], false),
             None,
         );
         self.module.add_function(

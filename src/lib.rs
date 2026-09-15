@@ -7,6 +7,8 @@ pub mod codegen;
 
 pub mod error;
 
+pub mod builtins;
+
 use crate::analysis::checker::TypeChecker;
 use crate::ast::Program;
 use crate::codegen::compiler::Compiler;

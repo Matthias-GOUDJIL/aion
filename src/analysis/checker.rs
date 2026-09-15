@@ -241,77 +241,57 @@ impl TypeChecker {
     }
 
     fn register_builtins(&mut self) {
-        self.env.set(
-            "aion_read_file".to_string(),
-            Type::Function {
-                is_unsafe: true,
-                params: vec![Type::String],
-                return_type: Box::new(Type::String),
-            },
-        );
-        self.env.set(
-            "aion_write_file".to_string(),
-            Type::Function {
-                is_unsafe: true,
-                params: vec![Type::String, Type::String],
-                return_type: Box::new(Type::i64()),
-            },
-        );
-        self.env.set(
-            "aion_get_argc".to_string(),
-            Type::Function {
-                is_unsafe: true,
-                params: vec![],
-                return_type: Box::new(Type::i64()),
-            },
-        );
-        self.env.set(
-            "aion_get_argv_index".to_string(),
-            Type::Function {
-                is_unsafe: true,
-                params: vec![Type::i64()],
-                return_type: Box::new(Type::String),
-            },
-        );
+        // Builtin functions backed by the C runtime/libc: derived from the
+        // single `BUILTINS` table in `src/builtins.rs` (shared with the
+        // codegen decls and the extern declarations — #177).
+        for b in crate::builtins::BUILTINS {
+            let params: Vec<Type> = b
+                .params_aion
+                .iter()
+                .map(|(_, t)| self.resolve_type(t))
+                .collect();
+            let ret = self.resolve_type(b.ret_aion);
+            self.env.set(
+                b.aion_name.to_string(),
+                Type::Function {
+                    is_unsafe: b.is_unsafe,
+                    params: params.clone(),
+                    return_type: Box::new(ret.clone()),
+                },
+            );
+            // Method-style builtins are also registered in `decls` so the
+            // MethodCall path can detect the `self` receiver parameter and
+            // map call arguments onto params[1..] for arity checking (#172).
+            if b.params_aion.first().is_some_and(|(n, _)| *n == "self") {
+                let f_params: Vec<(String, String, Option<Box<crate::ast::Expression>>)> = b
+                    .params_aion
+                    .iter()
+                    .map(|(n, t)| (n.to_string(), t.to_string(), None))
+                    .collect();
+                self.decls.insert(
+                    b.aion_name.to_string(),
+                    Declaration::Function(crate::ast::Function {
+                        name: b.aion_name.to_string(),
+                        generic_params: vec![],
+                        params: f_params,
+                        return_type: b.ret_aion.to_string(),
+                        body: None,
+                        modifiers: vec![],
+                        attributes: vec![],
+                        doc_comment: None,
+                    }),
+                );
+            }
+        }
+
+        // Checker-only entries: no runtime symbol behind them (they lower
+        // through @intrinsic(...) dispatch or are plain globals).
         self.env.set(
             "aion_str_ptr".to_string(),
             Type::Function {
                 is_unsafe: true,
                 params: vec![Type::String],
                 return_type: Box::new(Type::Pointer(Box::new(Type::i64()))),
-            },
-        );
-        self.env.set(
-            "exit".to_string(),
-            Type::Function {
-                is_unsafe: true,
-                params: vec![Type::i64()],
-                return_type: Box::new(Type::Unit),
-            },
-        );
-        self.env.set(
-            "aion_exit".to_string(),
-            Type::Function {
-                is_unsafe: true,
-                params: vec![Type::i64()],
-                return_type: Box::new(Type::Unit),
-            },
-        );
-
-        self.env.set(
-            "io.println".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::String],
-                return_type: Box::new(Type::Unit),
-            },
-        );
-        self.env.set(
-            "io.print".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::String],
-                return_type: Box::new(Type::Unit),
             },
         );
         self.env.set(
@@ -334,22 +314,6 @@ impl TypeChecker {
             },
         );
         self.env.set(
-            "string.len".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::String],
-                return_type: Box::new(Type::i64()),
-            },
-        );
-        self.env.set(
-            "String.len".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::String],
-                return_type: Box::new(Type::i64()),
-            },
-        );
-        self.env.set(
             "string.concat".to_string(),
             Type::Function {
                 is_unsafe: false,
@@ -357,78 +321,8 @@ impl TypeChecker {
                 return_type: Box::new(Type::String),
             },
         );
-        self.env.set(
-            "string.from_int".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::i64()],
-                return_type: Box::new(Type::String),
-            },
-        );
-        self.env.set(
-            "string.from_float".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::Float],
-                return_type: Box::new(Type::String),
-            },
-        );
-        self.env.set(
-            "string.to_float".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::String],
-                return_type: Box::new(Type::Float),
-            },
-        );
-
-        // i64 methods as functions
-        self.env.set(
-            "i64.abs".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::i64()],
-                return_type: Box::new(Type::i64()),
-            },
-        );
-        self.env.set(
-            "i64.max".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::i64(), Type::i64()],
-                return_type: Box::new(Type::i64()),
-            },
-        );
-        self.env.set(
-            "i64.min".to_string(),
-            Type::Function {
-                is_unsafe: false,
-                params: vec![Type::i64(), Type::i64()],
-                return_type: Box::new(Type::i64()),
-            },
-        );
-
         self.env.set("argc".to_string(), Type::i64());
         self.env.set("argv".to_string(), Type::String);
-
-        // Register method-style builtins in `decls` as well, so the
-        // MethodCall path can detect the `self` receiver parameter and map
-        // call arguments onto params[1..] for arity checking (#172).
-        for name in ["i64.abs", "i64.max", "i64.min", "string.len", "String.len"] {
-            self.decls.insert(
-                name.to_string(),
-                Declaration::Function(crate::ast::Function {
-                    name: name.to_string(),
-                    generic_params: vec![],
-                    params: vec![("self".to_string(), "i64".to_string(), None)],
-                    return_type: "i64".to_string(),
-                    body: None,
-                    modifiers: vec![],
-                    attributes: vec![],
-                    doc_comment: None,
-                }),
-            );
-        }
     }
 
     pub fn check_program(&mut self, program: &Program) -> Result<(), CompileError> {
