@@ -29,13 +29,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn error(&self, message: &str) -> String {
-        format!(
-            "{} at line {}, col {}",
-            message, self.current_token.line, self.current_token.col
-        )
-    }
-
     fn push_error(&mut self, message: impl Into<String>) {
         self.errors.push(CompileError::Type {
             message: message.into(),
@@ -205,10 +198,9 @@ impl<'a> Parser<'a> {
         };
 
         if self.current_token.kind != TokenKind::LBrace {
-            eprintln!(
-                "{}",
-                self.error("Syntax Error: Expected '{' after impl target")
-            );
+            // Route through the standard error list instead of a bare
+            // eprintln outside the error-collection path (#182).
+            self.push_error("Syntax Error: Expected '{' after impl target");
             return None;
         }
         self.next_token();
@@ -490,6 +482,12 @@ impl<'a> Parser<'a> {
             self.next_token();
         } else {
             let tok = self.current_token.clone();
+            // Report the invalid type token instead of silently folding it
+            // into a `invalid_type_*` string (#182).
+            self.push_error(format!(
+                "Syntax Error: expected type name, got {:?}",
+                tok.kind
+            ));
             self.next_token();
             return format!("invalid_type_{:?}", tok);
         }
@@ -644,6 +642,12 @@ impl<'a> Parser<'a> {
             if let Some(s) = self.parse_statement() {
                 stmts.push(s);
             } else {
+                // Recovery: report the unexpected token instead of skipping
+                // it silently (#182).
+                self.push_error(format!(
+                    "Syntax Error: unexpected token {:?} in block",
+                    self.current_token.kind
+                ));
                 self.next_token();
             }
             if self.current_token.kind == TokenKind::Semicolon {
@@ -1638,9 +1642,19 @@ impl<'a> Parser<'a> {
                             span,
                         }
                     } else {
+                        // Report the misuse instead of silently emitting an
+                        // invalid placeholder identifier (#182).
+                        self.push_error(format!(
+                            "Syntax Error: attribute '@{}' requires parenthesized arguments",
+                            name
+                        ));
                         Expression::Identifier(format!("invalid_attribute_{}", name), span)
                     }
                 } else {
+                    self.push_error(format!(
+                        "Syntax Error: unexpected token {:?} after '@'",
+                        self.current_token.kind
+                    ));
                     Expression::Identifier("invalid_at_usage".to_string(), span)
                 }
             }
@@ -1654,6 +1668,7 @@ impl<'a> Parser<'a> {
                         span,
                     }
                 } else {
+                    self.push_error("Syntax Error: 'unsafe' must be followed by a block");
                     Expression::Identifier("invalid_unsafe_usage".to_string(), span)
                 }
             }
@@ -1685,6 +1700,10 @@ impl<'a> Parser<'a> {
             _ => {
                 let span = Span::from_token(&self.current_token);
                 let tok = self.current_token.clone();
+                // Report the syntax error at the offending token instead of
+                // silently producing an `invalid_token_*` identifier that
+                // surfaces later as a confusing "undefined variable" (#182).
+                self.push_error(format!("Syntax Error: unexpected token {:?}", tok.kind));
                 self.next_token();
                 Expression::Identifier(format!("invalid_token_{:?}", tok), span)
             }
@@ -2019,7 +2038,13 @@ impl<'a> Parser<'a> {
         let owned = src.to_string();
         let lexer = Lexer::new(&owned);
         let mut sub = Parser::new(lexer);
-        sub.parse_expression()
+        let expr = sub.parse_expression();
+        // Propagate sub-parser errors into the parent's error list — a
+        // malformed f-string expression must be reported, not silently
+        // accepted as an empty expression (#182).
+        let sub_errors = std::mem::take(&mut sub.errors);
+        self.errors.extend(sub_errors);
+        expr
     }
 }
 

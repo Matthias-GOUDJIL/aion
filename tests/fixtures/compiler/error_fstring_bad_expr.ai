@@ -1,0 +1,7 @@
+// #182 — a malformed f-string expression must be reported, not silently
+// accepted as an empty expression.
+fn main() {
+    let name = "aion"
+    io.println(f"hello {name + } world")
+    return 0
+}
