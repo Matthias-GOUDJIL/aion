@@ -590,12 +590,59 @@ impl Codegen {
                 }
                 return "unknown";
             },
-            compiler.ast.Expression::Infix(l, _op, _r) => {
+            compiler.ast.Expression::Infix(l, _op, r) => {
                 let lt = self.infer_type(l);
-                if std.string.equals(lt, "f64") {
+                let rt = self.infer_type(r);
+                if std.string.equals(lt, "String") || std.string.equals(rt, "String") {
+                    return "String";
+                }
+                if std.string.equals(lt, "f64") || std.string.equals(rt, "f64") {
                     return "f64";
                 }
                 return "i64";
+            },
+            compiler.ast.Expression::Call(name, _generics, _args) => {
+                // Builtin runtime functions first (the self-hosted
+                // pipeline does not flatten imports — std.string.from_int
+                // & co. resolve through the builtin table). #135.
+                if std.string.equals(name, "string.from_int") { return "String"; }
+                if std.string.equals(name, "string.from_float") { return "String"; }
+                if std.string.equals(name, "string.to_float") { return "f64"; }
+                if std.string.equals(name, "io.read_line") { return "String"; }
+                if std.string.equals(name, "i64.abs") { return "i64"; }
+                if std.string.equals(name, "i64.max") { return "i64"; }
+                if std.string.equals(name, "i64.min") { return "i64"; }
+                if std.string.equals(name, "io.println") { return "void"; }
+                if std.string.equals(name, "io.print") { return "void"; }
+                // Look up the callee's declared return type (Aion name),
+                // exact then suffix match over flattened import paths.
+                let m = (self.signatures_aion).len();
+                let mut j = 0;
+                let mut found = "";
+                while j < m {
+                    let key = (self.signatures_aion).keys_in_order().get(j).unwrap();
+                    if std.string.equals(key, name) {
+                        found = key;
+                    }
+                    j = j + 1;
+                }
+                if std.string.len(found) == 0 {
+                    // Suffix match: key ends with ".name".
+                    let suffix = std.string.concat(".", name);
+                    j = 0;
+                    while j < m {
+                        let key = (self.signatures_aion).keys_in_order().get(j).unwrap();
+                        if std.string.ends_with(key, suffix) {
+                            found = key;
+                        }
+                        j = j + 1;
+                    }
+                }
+                if std.string.len(found) > 0 {
+                    let rt = self.signatures_aion.get(found).unwrap();
+                    return rt;
+                }
+                return "unknown";
             },
             compiler.ast.Expression::TypeRef(name, generics) => {
                 let ng = (generics).len();
@@ -1296,6 +1343,33 @@ impl Codegen {
     // check). Unknown intrinsics emit a safe i64 zero (documented
     // limitation — extend the table as needed). #134.
     fn compile_intrinsic(mut self, name: String, args: vector.Vector<compiler.ast.Expression>) -> Operand {
+        // `@intrinsic("name", args...)` — the checker/Rust codegen unwrap
+        // the first string argument as the actual intrinsic name
+        // (checker.rs:975-990). #135.
+        let mut an = name;
+        let mut aa = args;
+        if std.string.equals(an, "intrinsic") {
+            let na = (aa).len();
+            if na >= 1 {
+                let a0 = (aa).get(0).unwrap() as compiler.ast.Expression;
+                match a0 {
+                    compiler.ast.Expression::StringLit(s) => {
+                        an = s;
+                        let mut rest = vector.Vector<compiler.ast.Expression>.new();
+                        let mut i = 1;
+                        while i < na {
+                            let a = (aa).get(i).unwrap() as compiler.ast.Expression;
+                            rest.push(a);
+                            i = i + 1;
+                        }
+                        aa = rest;
+                    },
+                    _ => {},
+                }
+            }
+        }
+        let name = an;
+        let args = aa;
         // mem_is_null — inline null check.
         if std.string.equals(name, "mem_is_null") {
             let na = (args).len();
@@ -1316,8 +1390,8 @@ impl Codegen {
                 line2 = std.string.concat(line2, " to i64");
                 buf.push(line2);
                 self.output = buf;
-                let r = Operand { value: z, ty: "i64" };
-                return r;
+                let res_op = Operand { value: z, ty: "i64" };
+                return res_op;
             }
         }
         // Runtime-call intrinsics.
@@ -1334,6 +1408,9 @@ impl Codegen {
         else if std.string.equals(name, "aion_malloc") { cname = "aion_malloc"; ret = "ptr"; }
         else if std.string.equals(name, "aion_realloc") { cname = "aion_realloc"; ret = "ptr"; }
         else if std.string.equals(name, "aion_free") { cname = "aion_free"; ret = "void"; }
+        else if std.string.equals(name, "malloc") { cname = "aion_malloc"; ret = "ptr"; }
+        else if std.string.equals(name, "realloc") { cname = "aion_realloc"; ret = "ptr"; }
+        else if std.string.equals(name, "free") { cname = "aion_free"; ret = "void"; }
         if std.string.len(cname) == 0 {
             // Unknown intrinsic — safe zero placeholder (extends per
             // need; the Rust table lives in intrinsics.rs).
@@ -2293,7 +2370,8 @@ impl Codegen {
                 return false;
             },
             compiler.ast.Statement::Assignment(target, value) => {
-                // Simple identifier targets — member/index targets are #134.
+                // Identifier and deref targets (`*p = v`) — member/index
+                // targets are #134 follow-up.
                 let op = self.compile_expr(value);
                 match target {
                     compiler.ast.Expression::Identifier(name) => {
@@ -2310,6 +2388,20 @@ impl Codegen {
                             buf.push(line);
                             self.output = buf;
                         }
+                    },
+                    compiler.ast.Expression::Deref(inner) => {
+                        // Store through the pointer: compile the inner
+                        // pointer expression, store the value at it. #134.
+                        let pop = self.compile_expr(inner);
+                        let mut buf = self.output;
+                        let mut line = std.string.concat("  store ", "");
+                        line = std.string.concat(line, op.ty);
+                        line = std.string.concat(line, " ");
+                        line = std.string.concat(line, op.value);
+                        line = std.string.concat(line, ", ptr ");
+                        line = std.string.concat(line, pop.value);
+                        buf.push(line);
+                        self.output = buf;
                     },
                     _ => {},
                 }
@@ -2527,6 +2619,23 @@ impl Codegen {
             let op = Operand { value: name, ty: "double" };
             return op;
         }
+        if sw > 0 && dw < 0 && !is_tgt_double && !is_src_double {
+            // Integer -> pointer: inttoptr (the Rust Let/Return paths
+            // emit build_int_to_ptr for this — control_flow.rs:46-53).
+            // #135.
+            let name = self.next_ssa();
+            let mut buf = self.output;
+            let mut line = std.string.concat("  ", name);
+            line = std.string.concat(line, " = inttoptr ");
+            line = std.string.concat(line, src.ty);
+            line = std.string.concat(line, " ");
+            line = std.string.concat(line, src.value);
+            line = std.string.concat(line, " to ptr");
+            buf.push(line);
+            self.output = buf;
+            let op = Operand { value: name, ty: "ptr" };
+            return op;
+        }
         if is_src_double && dw > 0 {
             // Unsigned targets use fptoui; everything else fptosi.
             let mut instr = "fptosi";
@@ -2704,10 +2813,7 @@ impl Codegen {
                 if is_short {
                     return self.compile_short_circuit(l, is_and, r);
                 }
-                let lo = self.compile_expr(l);
-                let ro = self.compile_expr(r);
-                let kind = op_tok.kind;
-                return self.compile_infix(lo, kind, ro);
+                return self.compile_infix_expr(l, op_tok, r);
             },
             compiler.ast.Expression::Call(name, generics, args) => {
                 return self.compile_call(name, generics, args);
@@ -2724,6 +2830,28 @@ impl Codegen {
             compiler.ast.Expression::MethodCall(receiver, method, generics, args) => {
                 return self.compile_method_call(receiver, method, generics, args);
             },
+            compiler.ast.Expression::Deref(inner) => {
+                // Load through the pointer: pointee type from the Aion
+                // type of the pointer (`*T` -> `T`). #134.
+                let pop = self.compile_expr(inner);
+                let pt_aion = self.infer_type(inner);
+                let mut pointee = "i64";
+                if std.string.starts_with(pt_aion, "*") {
+                    pointee = std.string.substr(pt_aion, 1, std.string.len(pt_aion) - 1);
+                }
+                let lt = aion_type_to_llvm(pointee);
+                let loaded = self.next_ssa();
+                let mut buf = self.output;
+                let mut line = std.string.concat("  ", loaded);
+                line = std.string.concat(line, " = load ");
+                line = std.string.concat(line, lt);
+                line = std.string.concat(line, ", ptr ");
+                line = std.string.concat(line, pop.value);
+                buf.push(line);
+                self.output = buf;
+                let op = Operand { value: loaded, ty: lt };
+                return op;
+            },
             compiler.ast.Expression::Cast(e, target) => {
                 let src = self.compile_expr(e);
                 let t2 = self.substitute(target);
@@ -2732,6 +2860,15 @@ impl Codegen {
 
             compiler.ast.Expression::Intrinsic(name, args) => {
                 return self.compile_intrinsic(name, args);
+            },
+            compiler.ast.Expression::Block(stmts, _is_unsafe) => {
+                // unsafe { ... } block expression — the last statement's
+                // value flows out. #135.
+                self.compile_block_stmts(stmts, self.current_ret_ty);
+                let v = self.last_value_val;
+                let t = self.last_value_ty;
+                let op = Operand { value: v, ty: t };
+                return op;
             },
             compiler.ast.Expression::Match(cond, arms) => {
                 // Match expression — the phi carries the value.
@@ -2872,6 +3009,96 @@ impl Codegen {
         buf.push(line2);
         self.output = buf;
         let op = Operand { value: c2, ty: "i64" };
+        return op;
+    }
+
+    // Infix dispatch on the AION types (not just LLVM types): String
+    // operands route to the concat/eq runtime path (f-strings land
+    // here), floats to the float path, everything else to the integer
+    // path. Mirrors `src/codegen/expressions.rs:478-571`. #135.
+    fn compile_infix_expr(mut self, l: compiler.ast.Expression, op_tok: compiler.token.Token, re: compiler.ast.Expression) -> Operand {
+        let lt = self.infer_type(l);
+        let rt = self.infer_type(re);
+        let kind = op_tok.kind;
+        // String path.
+        if std.string.equals(lt, "String") || std.string.equals(rt, "String") {
+            return self.compile_string_infix(l, kind, re, lt, rt);
+        }
+        let lo = self.compile_expr(l);
+        let ro = self.compile_expr(re);
+        return self.compile_infix(lo, kind, ro);
+    }
+
+    // String operand lowering: `+` → aion_str_concat (with
+    // aion_char_to_str when the other side is an integer char code);
+    // `==` / `!=` → aion_str_eq. Mirrors
+    // `src/codegen/expressions.rs:480-568`. #135.
+    fn compile_string_infix(mut self, l: compiler.ast.Expression, kind: compiler.token.TokenKind, re: compiler.ast.Expression, lt: String, rt: String) -> Operand {
+        let lo = self.compile_expr(l);
+        let ro = self.compile_expr(re);
+        let mut eq = "";
+        match kind {
+            token.TokenKind::EqEq => { eq = "eq"; },
+            token.TokenKind::NotEq => { eq = "ne"; },
+            _ => {},
+        }
+        if std.string.len(eq) > 0 {
+            // String equality via aion_str_eq.
+            let g = self.next_ssa();
+            let mut buf = self.output;
+            let mut gl = std.string.concat("  ", g);
+            gl = std.string.concat(gl, " = call i64 @aion_str_eq(ptr ");
+            gl = std.string.concat(gl, lo.value);
+            gl = std.string.concat(gl, ", ptr ");
+            gl = std.string.concat(gl, ro.value);
+            gl = std.string.concat(gl, ")");
+            buf.push(gl);
+            let c = self.next_ssa();
+            let mut cl = std.string.concat("  ", c);
+            cl = std.string.concat(cl, " = icmp ");
+            if std.string.equals(eq, "eq") {
+                cl = std.string.concat(cl, "ne i64 ");
+            } else {
+                cl = std.string.concat(cl, "eq i64 ");
+            }
+            cl = std.string.concat(cl, g);
+            cl = std.string.concat(cl, ", 0");
+            buf.push(cl);
+            let z = self.next_ssa();
+            let mut zl = std.string.concat("  ", z);
+            zl = std.string.concat(zl, " = zext i1 ");
+            zl = std.string.concat(zl, c);
+            zl = std.string.concat(zl, " to i64");
+            buf.push(zl);
+            self.output = buf;
+            let op = Operand { value: z, ty: "i64" };
+            return op;
+        }
+        // Concat: coerce a non-string right side via aion_char_to_str
+        // (the Rust codegen's semantics — int is a char code). #135.
+        let mut r2 = ro;
+        if !std.string.equals(rt, "String") {
+            let c2s = self.next_ssa();
+            let mut buf = self.output;
+            let mut cl = std.string.concat("  ", c2s);
+            cl = std.string.concat(cl, " = call ptr @aion_char_to_str(i64 ");
+            cl = std.string.concat(cl, ro.value);
+            cl = std.string.concat(cl, ")");
+            buf.push(cl);
+            self.output = buf;
+            r2 = Operand { value: c2s, ty: "ptr" };
+        }
+        let res = self.next_ssa();
+        let mut buf = self.output;
+        let mut rl = std.string.concat("  ", res);
+        rl = std.string.concat(rl, " = call ptr @aion_str_concat(ptr ");
+        rl = std.string.concat(rl, lo.value);
+        rl = std.string.concat(rl, ", ptr ");
+        rl = std.string.concat(rl, r2.value);
+        rl = std.string.concat(rl, ")");
+        buf.push(rl);
+        self.output = buf;
+        let op = Operand { value: res, ty: "ptr" };
         return op;
     }
 

@@ -545,6 +545,140 @@ fn test_codegen_match_intrinsics() {
     assert_snapshot!(run_aion_test("compiler/codegen_match_intrinsics"));
 }
 #[test]
+fn test_self_codegen_parity() {
+    // #135 — the Ouroboros parity check: the self-hosted pipeline
+    // (lexer.ai + parser.ai + codegen.ai) generates the `.ll` for a
+    // non-trivial source; the Rust backend compiles the same source;
+    // both binaries must produce IDENTICAL stdout and exit codes.
+    //
+    // `self_codegen.ai` writes `tests/tmp/parity_src.ai` (the embedded
+    // source) and `tests/tmp/parity_aion.ll` (the Aion-generated IR).
+    let root = project_root();
+    let out = run_aion_test("compiler/self_codegen");
+    assert!(
+        out.contains("ll written:"),
+        "self_codegen fixture must write the .ll — got: {}",
+        out
+    );
+
+    let aion_ll = root.join("tests/tmp/parity_aion.ll");
+    let rust_ll = root.join("tests/tmp/parity_rust.ll");
+    let src = root.join("tests/tmp/parity_src.ai");
+    let aion_obj = root.join("tests/tmp/parity_aion.o");
+    let rust_obj = root.join("tests/tmp/parity_rust.o");
+    let aion_bin = root.join("tests/tmp/bin_parity_aion");
+    let rust_bin = root.join("tests/tmp/bin_parity_rust");
+
+    // Rust backend: compile the same source.
+    let build = Command::new("cargo")
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "build",
+            src.to_str().unwrap(),
+            "-o",
+            rust_ll.to_str().unwrap(),
+        ])
+        .current_dir(&root)
+        .timeout(std::time::Duration::from_secs(60))
+        .output()
+        .expect("rust build failed");
+    assert!(
+        rust_ll.exists(),
+        "rust build produced no .ll — stderr: {}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    // Both `.ll` files must pass the LLVM verifier.
+    for (name, ll, opaque) in [
+        ("aion", aion_ll.clone(), true),
+        ("rust", rust_ll.clone(), false),
+    ] {
+        let mut cmd = Command::new("opt-15");
+        if opaque {
+            cmd.arg("--opaque-pointers");
+        }
+        let v = cmd
+            .args(["-verify", ll.to_str().unwrap()])
+            .output()
+            .expect("opt-15 missing (tests must run inside the LLVM 15 image)");
+        assert!(
+            v.status.success(),
+            "{} .ll failed opt-15 -verify: {}",
+            name,
+            String::from_utf8_lossy(&v.stderr)
+        );
+    }
+
+    // Object code + link against the C runtime (both paths use the same
+    // llc/clang pipeline as `aion run`).
+    llc_and_link(&aion_ll, &aion_obj, &aion_bin, true);
+    llc_and_link(&rust_ll, &rust_obj, &rust_bin, false);
+
+    // Run both binaries, compare stdout + exit codes.
+    let sa = Command::new(aion_bin.to_str().unwrap())
+        .output()
+        .expect("aion binary run failed");
+    let sr = Command::new(rust_bin.to_str().unwrap())
+        .output()
+        .expect("rust binary run failed");
+    let out_a = String::from_utf8_lossy(&sa.stdout).to_string();
+    let out_r = String::from_utf8_lossy(&sr.stdout).to_string();
+    assert_eq!(
+        out_a, out_r,
+        "parity mismatch between the Aion and Rust backends"
+    );
+    assert_eq!(sa.status.code(), sr.status.code(), "exit codes must match");
+    assert_eq!(out_a.trim(), "7\n10\nzero\ncount=2\n42");
+}
+
+// llc-15 → object, then clang-15 link against the C runtime. `opaque`
+// selects `--opaque-pointers` (needed for the textual IR the Aion
+// backend emits; the Rust backend's bitcode auto-detects).
+fn llc_and_link(ll: &std::path::Path, obj: &std::path::Path, bin: &std::path::Path, opaque: bool) {
+    let root = project_root();
+    let mut llc = Command::new("llc-15");
+    if opaque {
+        llc.arg("--opaque-pointers");
+    }
+    let l = llc
+        .args([
+            "-filetype=obj",
+            "-relocation-model=pic",
+            ll.to_str().unwrap(),
+            "-o",
+            obj.to_str().unwrap(),
+        ])
+        .current_dir(&root)
+        .output()
+        .expect("llc-15 missing (tests must run inside the LLVM 15 image)");
+    assert!(
+        l.status.success(),
+        "llc-15 failed: {}",
+        String::from_utf8_lossy(&l.stderr)
+    );
+    let c = Command::new("clang-15")
+        .args([
+            "-fuse-ld=lld",
+            obj.to_str().unwrap(),
+            "src/runtime.c",
+            "-o",
+            bin.to_str().unwrap(),
+            "-lpthread",
+            "-lgc",
+        ])
+        .current_dir(&root)
+        .output()
+        .expect("clang-15 missing");
+    assert!(
+        c.status.success(),
+        "clang-15 link failed: {}",
+        String::from_utf8_lossy(&c.stderr)
+    );
+}
+
+#[test]
 fn test_self_parser_call() {
     // #156 Slice 1 — verifies the parser's postfix dispatch loop produces
     // a Call AST node for `io.println("hello")` (vs the pre-#156 fold-only

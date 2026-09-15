@@ -1,5 +1,6 @@
 ---
 source: tests/integration.rs
+assertion_line: 545
 expression: "run_aion_test(\"compiler/codegen_match_intrinsics\")"
 ---
 ; ModuleID = 'aion_module'
