@@ -1182,8 +1182,28 @@ impl TypeChecker {
                 let rt = self.check_expression(expr)?;
                 if let Type::Pointer(t) = rt {
                     Ok(*t)
+                } else if matches!(
+                    rt,
+                    Type::Struct { .. }
+                        | Type::Enum { .. }
+                        | Type::GenericInstance(..)
+                        | Type::String
+                        | Type::Tuple(_)
+                        | Type::Array(..)
+                        | Type::Placeholder(_)
+                        | Type::Unknown
+                ) {
+                    // Uniformly-boxed composite: the value IS the pointer to
+                    // its data, so `(*p).field` loads through the box
+                    // (docs/architecture.md). Deref yields the pointee type.
+                    Ok(rt.clone())
                 } else {
-                    Ok(Type::i64())
+                    // Dereferencing a scalar is a type error (#181) — it was
+                    // silently typed as i64 before.
+                    Err(self.err(
+                        format!("cannot dereference non-pointer type {}", rt.name()),
+                        expr,
+                    ))
                 }
             }
             Expression::Intrinsic {
@@ -1443,9 +1463,8 @@ impl TypeChecker {
                                 | TokenKind::Star
                                 | TokenKind::Slash
                                 | TokenKind::Percent
-                                | TokenKind::And
-                                | TokenKind::Or
                                 | TokenKind::Caret
+                                | TokenKind::Range
                         ) {
                             return Ok(t1.clone());
                         }
@@ -1457,10 +1476,20 @@ impl TypeChecker {
                                 | TokenKind::Gt
                                 | TokenKind::LtEq
                                 | TokenKind::GtEq
+                                | TokenKind::Inside
                         ) {
                             return Ok(Type::Boolean);
                         }
-                        return Ok(t1.clone());
+                        // `&&`/`||` are logical short-circuit operators, not
+                        // bitwise — they require boolean operands (#181).
+                        return Err(CompileError::InvalidOperator {
+                            op: format!("{:?}", op.kind),
+                            left: t1.name(),
+                            right: t2.name(),
+                            line: op.line,
+                            col: op.col,
+                            snippet: None,
+                        });
                     }
                     // Different bit widths: type error.
                     return Err(CompileError::Type {
@@ -1495,17 +1524,17 @@ impl TypeChecker {
                     ) {
                         return Ok(Type::Boolean);
                     }
-                    return Ok(Type::Float);
+                    // `%` and bitwise ops have no float lowering — reject
+                    // instead of falling through to an ICE (#181).
                 }
             }
             Type::Boolean => {
-                if t2 == Type::Boolean {
-                    if matches!(
+                if t2 == Type::Boolean
+                    && matches!(
                         op.kind,
                         TokenKind::And | TokenKind::Or | TokenKind::EqEq | TokenKind::NotEq
-                    ) {
-                        return Ok(Type::Boolean);
-                    }
+                    )
+                {
                     return Ok(Type::Boolean);
                 }
             }
@@ -1521,8 +1550,25 @@ impl TypeChecker {
                 return Ok(t1.clone());
             }
             Type::Date => {
-                if t2 == Type::Duration && op.kind == TokenKind::Plus {
+                // SPEC §4: Date + Duration -> Date, Date - Duration -> Date.
+                if t2 == Type::Duration && matches!(op.kind, TokenKind::Plus | TokenKind::Minus) {
                     return Ok(Type::Date);
+                }
+            }
+            Type::Duration => {
+                // SPEC §4: Duration + Duration -> Duration,
+                // Duration - Duration -> Duration, Duration / Duration -> float.
+                // Previously documented but rejected by the checker.
+                if t2 == Type::Duration {
+                    if matches!(op.kind, TokenKind::Plus | TokenKind::Minus) {
+                        return Ok(Type::Duration);
+                    }
+                    if op.kind == TokenKind::Slash {
+                        return Ok(Type::Float);
+                    }
+                    if matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq) {
+                        return Ok(Type::Boolean);
+                    }
                 }
             }
             _ => {

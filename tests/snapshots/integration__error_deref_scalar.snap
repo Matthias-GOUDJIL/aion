@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_deref_scalar\")"
+---
+Type Error: cannot dereference non-pointer type i64

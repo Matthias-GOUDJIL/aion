@@ -771,6 +771,22 @@ fn test_error_assign_type_mismatch() {
     assert_snapshot!(run_aion_test("compiler/error_assign_type_mismatch"));
 }
 #[test]
+fn test_error_bool_arith() {
+    assert_snapshot!(run_aion_test("compiler/error_bool_arith"));
+}
+#[test]
+fn test_error_float_mod() {
+    assert_snapshot!(run_aion_test("compiler/error_float_mod"));
+}
+#[test]
+fn test_error_int_logic() {
+    assert_snapshot!(run_aion_test("compiler/error_int_logic"));
+}
+#[test]
+fn test_error_deref_scalar() {
+    assert_snapshot!(run_aion_test("compiler/error_deref_scalar"));
+}
+#[test]
 fn test_mut_use() {
     // #141 — verifies two-way cross-module `use` (mutual imports) compiles
     // and runs correctly between sibling files in `compiler/`.

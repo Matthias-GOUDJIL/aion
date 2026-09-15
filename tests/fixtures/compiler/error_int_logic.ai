@@ -1,0 +1,5 @@
+// #181 — `&&`/`||` are logical, not bitwise; they require booleans.
+fn main() {
+    let c = 1 && 2
+    return 0
+}

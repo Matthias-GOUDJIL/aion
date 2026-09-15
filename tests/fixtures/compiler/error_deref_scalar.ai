@@ -1,0 +1,5 @@
+// #181 — dereferencing a scalar is a type error (was silently i64).
+fn main() {
+    let x = *42
+    return 0
+}
