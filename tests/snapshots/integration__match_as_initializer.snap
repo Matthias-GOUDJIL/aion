@@ -1,0 +1,8 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/match_as_initializer\")"
+---
+42
+7
+42
+10

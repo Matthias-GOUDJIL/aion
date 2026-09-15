@@ -1,0 +1,42 @@
+// #174 — match-as-expression must bind ALL variant payloads positionally
+// (the #161 fix was only applied to Statement::Match; Expression::Match
+// still bound params[0] only). Multi-payload variant in expression position.
+enum Pair {
+    Pair(i64, String),
+    Empty,
+}
+
+fn mkpair(filled: bool) -> Pair {
+    if filled {
+        return Pair::Pair(7, "ok")
+    }
+    return Pair::Empty
+}
+
+fn main() {
+    // Nominal: both params bound in expression position.
+    let p = mkpair(true)
+    let r: String = match p {
+        Pair::Pair(a, b) => b,
+        Pair::Empty => "empty",
+    }
+    io.println(r) // ok
+
+    // Edge: first payload used, second variant taken.
+    let p2 = mkpair(false)
+    let n: i64 = match p2 {
+        Pair::Pair(a, b) => a,
+        Pair::Empty => -1,
+    }
+    io.println(string.from_int(n)) // -1
+
+    // Edge: both payloads used together via concat.
+    let p3 = mkpair(true)
+    let s: String = match p3 {
+        Pair::Pair(a, b) => string.from_int(a) + b,
+        Pair::Empty => "none",
+    }
+    io.println(s) // 7ok
+
+    return 0
+}

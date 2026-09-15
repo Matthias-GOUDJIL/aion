@@ -1,0 +1,11 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/float_int_cast\")"
+---
+1
+1
+42
+7
+-1
+1
+3

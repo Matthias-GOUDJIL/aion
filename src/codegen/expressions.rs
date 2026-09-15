@@ -838,6 +838,53 @@ impl<'ctx> Compiler<'ctx> {
                         .builder
                         .build_int_to_ptr(v.into_int_value(), dest.into_pointer_type(), "i2p")?
                         .into())
+                } else if v.is_float_value() && dest.is_int_type() {
+                    // f64 -> iN/uN: truncating conversion (fptosi/fptoui),
+                    // NOT bit_cast. Signedness comes from the Aion target
+                    // type-name (`i*` signed, `u*` unsigned). #151.
+                    if t_clean.starts_with('u') {
+                        Ok(self
+                            .builder
+                            .build_float_to_unsigned_int(
+                                v.into_float_value(),
+                                dest.into_int_type(),
+                                "f2u",
+                            )?
+                            .into())
+                    } else {
+                        Ok(self
+                            .builder
+                            .build_float_to_signed_int(
+                                v.into_float_value(),
+                                dest.into_int_type(),
+                                "f2si",
+                            )?
+                            .into())
+                    }
+                } else if v.is_int_value() && dest.is_float_type() {
+                    // iN/uN -> f64 (sitofp/uitofp). Signedness comes from the
+                    // SOURCE Aion type-name, not the LLVM type (opaque to
+                    // signedness). #151.
+                    let src_name = self.get_expr_type_name(expr, variables);
+                    if src_name.starts_with('u') {
+                        Ok(self
+                            .builder
+                            .build_unsigned_int_to_float(
+                                v.into_int_value(),
+                                dest.into_float_type(),
+                                "u2f",
+                            )?
+                            .into())
+                    } else {
+                        Ok(self
+                            .builder
+                            .build_signed_int_to_float(
+                                v.into_int_value(),
+                                dest.into_float_type(),
+                                "si2f",
+                            )?
+                            .into())
+                    }
                 } else if v.get_type() == dest {
                     Ok(v)
                 } else {
@@ -1261,34 +1308,55 @@ impl<'ctx> Compiler<'ctx> {
                         let mut av = variables.clone();
                         if !arm.params.is_empty() {
                             let dp = self.builder.build_struct_gep(et, ep, 1, "arm_dataptr")?;
-                            let mut ptn = "i64".to_string();
+                            // Resolve the matched variant's element types once,
+                            // then bind each param positionally: element i lives
+                            // at byte offset i*8 in the enum payload buffer (all
+                            // Aion values are 8 bytes — ptr or i64). Mirrors the
+                            // Statement::Match path fixed in #161. #174.
+                            let mut data_types: Vec<String> = Vec::new();
                             if let Some(Declaration::Enum(e_decl)) = self.decls.get(&fen) {
                                 for v in &e_decl.variants {
                                     if arm.pattern == v.name
                                         || arm.pattern.ends_with(&format!(".{}", v.name))
                                         || arm.pattern.ends_with(&format!("::{}", v.name))
                                     {
-                                        if !v.data_types.is_empty() {
-                                            ptn = v.data_types[0].clone();
-                                        }
+                                        data_types = v.data_types.clone();
                                         break;
                                     }
                                 }
                             }
-                            let lt = self.aion_type_to_llvm(&ptn);
-                            let cp = self.builder.build_bit_cast(
-                                dp,
-                                self.context.ptr_type(AddressSpace::default()),
-                                "arm_datacast",
-                            )?;
-                            let lv_val = self.builder.build_load(
-                                lt,
-                                cp.into_pointer_value(),
-                                &arm.params[0],
-                            )?;
-                            let pa = self.builder.build_alloca(lt, &arm.params[0])?;
-                            self.builder.build_store(pa, lv_val)?;
-                            av.insert(arm.params[0].clone(), (pa, lt, ptn));
+                            let base_ptr = self
+                                .builder
+                                .build_bit_cast(
+                                    dp,
+                                    self.context.ptr_type(AddressSpace::default()),
+                                    "arm_datacast",
+                                )?
+                                .into_pointer_value();
+                            for (i, param) in arm.params.iter().enumerate() {
+                                let ptn = data_types
+                                    .get(i)
+                                    .cloned()
+                                    .unwrap_or_else(|| "i64".to_string());
+                                let lt = self.aion_type_to_llvm(&ptn);
+                                let elem_ptr = if i == 0 {
+                                    base_ptr
+                                } else {
+                                    let byte_off = (i * 8) as u64;
+                                    unsafe {
+                                        self.builder.build_in_bounds_gep(
+                                            self.context.i8_type(),
+                                            base_ptr,
+                                            &[i64_t.const_int(byte_off, false)],
+                                            &format!("arm_off_{}", i),
+                                        )?
+                                    }
+                                };
+                                let lv_val = self.builder.build_load(lt, elem_ptr, param)?;
+                                let pa = self.builder.build_alloca(lt, param)?;
+                                self.builder.build_store(pa, lv_val)?;
+                                av.insert(param.clone(), (pa, lt, ptn));
+                            }
                         }
 
                         if let Some(guard_expr) = &arm.guard {
@@ -1522,7 +1590,13 @@ impl<'ctx> Compiler<'ctx> {
                                     .into();
                             }
                         }
-                        self.builder.build_unconditional_branch(exit_bb)?;
+                        // The block may already terminate (last arm's dispatch
+                        // block ends in a conditional branch to exit_bb) — the
+                        // phi edge then already exists and a second terminator
+                        // would corrupt the IR (the #152 segfault). #152.
+                        if b.get_terminator().is_none() {
+                            self.builder.build_unconditional_branch(exit_bb)?;
+                        }
                         final_phis.push((v, b));
                     }
                     self.builder.position_at_end(exit_bb);

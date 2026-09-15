@@ -1,0 +1,50 @@
+// #152 — `let v: T = match ... { arms }` used to segfault the codegen
+// (exit 139) because the exit-phi loop built a second terminator on the
+// last arm's dispatch block. Nominal + edge coverage.
+use std.option
+use std.result
+
+fn mkopt(b: bool) -> Option<i64> {
+    if b { return Option::Some(42); }
+    return Option::None
+}
+
+fn mkres(b: bool) -> Result<i64, String> {
+    if b { return Result::Ok(10); }
+    return Result::Err("boom")
+}
+
+fn main() {
+    // Nominal: Option<i64> match-as-let with explicit annotation.
+    let o = mkopt(true)
+    let v: i64 = match o {
+        Option::Some(n) => n,
+        Option::None => 0,
+    }
+    io.println(string.from_int(v)) // 42
+
+    // Edge: fallback arm taken.
+    let o2 = mkopt(false)
+    let w: i64 = match o2 {
+        Option::Some(n) => n,
+        Option::None => 7,
+    }
+    io.println(string.from_int(w)) // 7
+
+    // Edge: arms returning String, explicit String annotation.
+    let s: String = match mkopt(true) {
+        Option::Some(n) => string.from_int(n),
+        Option::None => "none",
+    }
+    io.println(s) // 42
+
+    // Edge: Result<i64, String> match-as-let.
+    let r = mkres(true)
+    let rv: i64 = match r {
+        Result::Ok(v) => v,
+        Result::Err(e) => 0,
+    }
+    io.println(string.from_int(rv)) // 10
+
+    return 0
+}
