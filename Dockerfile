@@ -17,12 +17,15 @@ RUN apt-get update && apt-get install -y \
     libgc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Installer LLVM 15 et forcer l'écrasement pour résoudre les conflits de paquets
-RUN wget https://apt.llvm.org/llvm.sh && \
-    chmod +x llvm.sh && \
-    ./llvm.sh 15 && \
-    apt-get install -o Dpkg::Options::="--force-overwrite" -y llvm-15-dev libpolly-15-dev lld-15 && \
-    rm llvm.sh
+# Install LLVM 15 directly from the apt.llvm.org repository (the
+# llvm.sh helper script rejects Ubuntu point releases like 22.04.5 —
+# its version check compares the full lsb string, not the ABI series).
+# Direct repo setup is stable and avoids that fragility.
+RUN wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor > /usr/share/keyrings/llvm.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main" > /etc/apt/sources.list.d/llvm.list && \
+    apt-get update && \
+    apt-get install -o Dpkg::Options::="--force-overwrite" -y llvm-15-dev libpolly-15-dev lld-15 clang-15 && \
+    rm -rf /var/lib/apt/lists/*
 
 ENV LLVM_SYS_150_PREFIX=/usr/lib/llvm-15
 ENV PATH="/usr/lib/llvm-15/bin:${PATH}"

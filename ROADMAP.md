@@ -99,9 +99,22 @@ This document outlines the technical path to transform Aion from its current Rus
       porting work for statements the v0.8 skeleton skipped.
 
 ### **v0.9: Aion LLVM Backend**
-- [ ] Direct generation of `.ll` (LLVM IR) text files from the AST.
-      Blocked by #147 + #148 (front-end gap) — see issue #9 for the
-      8-slice breakdown (#128 → #135) and the landing order.
+- [x] Direct generation of `.ll` (LLVM IR) text files from the AST
+      (#129 → #134): memory layout (struct/enum types, string
+      globals), SSA expression lowering, control flow (allocas,
+      basic blocks, short-circuit phis), calls + monomorphization
+      (deterministic worklist), match (tag switch, payload at the
+      #161 layout contract, typed result phis), intrinsics,
+      f-strings, deref.
+- [x] **Ouroboros parity (#135)**: the self-hosted pipeline
+      (lexer.ai + parser.ai + codegen.ai) compiles a non-trivial
+      program with stdout byte-identical to the Rust backend
+      (proven end-to-end by `test_self_codegen_parity` — both IRs
+      pass `opt-15 -verify`, both binaries produce identical
+      output and exit codes).
+      Upstream fix landed: `parse_generic_args` now uses
+      `parse_type_name` (nested generics no longer leak `>` into
+      the infix loop — root cause of #91).
 
 ---
 
