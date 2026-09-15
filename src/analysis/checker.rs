@@ -764,12 +764,6 @@ impl TypeChecker {
                         arm.patterns.clone()
                     };
 
-                    // Check if this is a binding variable pattern (lowercase identifier that should bind)
-                    let _is_binding_pattern = !arm.params.is_empty()
-                        && all_patterns
-                            .iter()
-                            .all(|p| p.parse::<i64>().is_err() && !p.starts_with('"'));
-
                     if !arm.params.is_empty() {
                         self.env = Environment::new_enclosed(old_env.clone());
                         self.bind_match_params(&cond_name, &cond_args, &all_patterns, &arm.params);
