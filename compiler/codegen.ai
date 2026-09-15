@@ -72,6 +72,14 @@ pub struct Codegen {
     sub_args: vector.Vector<String>,
     // Symbol-name override for monomorphized instances. #133.
     name_override: String,
+    // Last statement value tracking for match-arm result phis. Flat
+    // scalars — the checker cannot resolve `self.field.subfield` chains.
+    has_last_value: bool,
+    last_value_val: String,
+    last_value_ty: String,
+    last_value_terminated: bool,
+    // Enclosing function's return type (for match-expression phis). #134.
+    current_ret_ty: String,
 }
 
 // A lowered expression value: the LLVM operand text (`"0"`, `"%t3"`,
@@ -281,6 +289,11 @@ impl Codegen {
             sub_params: vector.Vector<String>.new(),
             sub_args: vector.Vector<String>.new(),
             name_override: "",
+            has_last_value: false,
+            last_value_val: "0",
+            last_value_ty: "i64",
+            last_value_terminated: false,
+            current_ret_ty: "i64",
         }
     }
 
@@ -993,6 +1006,608 @@ impl Codegen {
         return op;
     }
 
+    // Lower a match: tag switch over the enum variants with per-arm
+    // payload extraction (element i at byte 8 + i*8 — the #161 layout
+    // contract), guards, and a result phi when every non-terminated arm
+    // yields a value of the same type. Mirrors
+    // `src/codegen/control_flow.rs:304-734` (sequential tag compare
+    // chain — not a switch instruction — for Rust parity). #134.
+    fn compile_match(mut self, cond: compiler.ast.Expression, arms: vector.Vector<compiler.ast.MatchArm>, ret_ty: String) -> Operand {
+        let cv = self.compile_expr(cond);
+        let rt = self.infer_type(cond);
+        let base = Codegen::struct_base(rt);
+        // Primitive subject (i64 / String): compare the value directly —
+        // no tag GEP. Mirrors the Rust primitive path
+        // (`src/codegen/control_flow.rs:486-690`). #134.
+        let is_prim = std.string.equals(base, "i64") || std.string.equals(base, "String");
+        if is_prim {
+            return self.compile_prim_match(cv, base, arms, ret_ty);
+        }
+        // Tag load: GEP index 0.
+        let tagptr = self.next_ssa();
+        let mut buf = self.output;
+        let mut line = std.string.concat("  ", tagptr);
+        line = std.string.concat(line, " = getelementptr %");
+        line = std.string.concat(line, base);
+        line = std.string.concat(line, ", ptr ");
+        line = std.string.concat(line, cv.value);
+        line = std.string.concat(line, ", i32 0, i32 0");
+        buf.push(line);
+        let tag = self.next_ssa();
+        let mut line2 = std.string.concat("  ", tag);
+        line2 = std.string.concat(line2, " = load i64, ptr ");
+        line2 = std.string.concat(line2, tagptr);
+        buf.push(line2);
+        self.output = buf;
+        // Block ids.
+        let exit_bid = self.next_block_id();
+        let exit_l = std.string.concat("match.exit.", std.string.from_int(exit_bid));
+        let na = (arms).len();
+        // Track arm result values for the phi.
+        let mut result_ty = "";
+        let mut result_vals = vector.Vector<String>.new();
+        let mut result_blocks = vector.Vector<String>.new();
+        let mut phi_ok = true;
+        let mut a = 0;
+        let mut prev_checked = false;
+        let mut prev_bid = 0;
+        let mut fail_block = "";
+        while a < na {
+            // Emit the deferred `match.next.<prev>` label — the next tag
+            // check lands here (linear order). #134.
+            if a > 0 && prev_checked {
+                let next_l = std.string.concat("match.next.", std.string.from_int(prev_bid));
+                let _ = self.emit_label(next_l);
+            }
+            let arm = (arms).get(a).unwrap() as compiler.ast.MatchArm;
+            let arm_bid = self.next_block_id();
+            let arm_l = std.string.concat("match.arm.", std.string.from_int(arm_bid));
+            let is_last = a == na - 1;
+            // Build the tag check (OR over patterns) unless this arm is
+            // the last one and matches anything.
+            let is_default = self.arm_is_default(arm);
+            let vidx = self.arm_variant_index(base, arm);
+            let checkable = (!is_last) || (!is_default && vidx >= 0);
+            if checkable {
+                let c = self.next_ssa();
+                let mut cl = std.string.concat("  ", c);
+                cl = std.string.concat(cl, " = icmp eq i64 ");
+                cl = std.string.concat(cl, tag);
+                cl = std.string.concat(cl, ", ");
+                cl = std.string.concat(cl, std.string.from_int(vidx));
+                let mut buf2 = self.output;
+                buf2.push(cl);
+                let target = std.string.concat("match.arm.", std.string.from_int(arm_bid));
+                let fail_l = if is_last {
+                    exit_l
+                } else {
+                    std.string.concat("match.next.", std.string.from_int(arm_bid))
+                };
+                let mut bl = std.string.concat("  br i1 ", c);
+                bl = std.string.concat(bl, ", label %");
+                bl = std.string.concat(bl, target);
+                bl = std.string.concat(bl, ", label %");
+                bl = std.string.concat(bl, fail_l);
+                buf2.push(bl);
+                self.output = buf2;
+                self.block_terminated = true;
+                if is_last {
+                    fail_block = self.current_block;
+                }
+            } else {
+                // Default arm (or last with unknown variant): direct br.
+                self.emit_br(arm_l);
+            }
+            // Arm body.
+            let _ = self.emit_label(arm_l);
+            // Payload binds: params[i] <- element i at 8 + i*8.
+            let nparams = (arm.params).len();
+            let mut pi = 0;
+            while pi < nparams {
+                let pname = (arm.params).get(pi).unwrap();
+                let dptr = self.next_ssa();
+                let mut buf3 = self.output;
+                let mut dl = std.string.concat("  ", dptr);
+                dl = std.string.concat(dl, " = getelementptr i8, ptr ");
+                dl = std.string.concat(dl, cv.value);
+                dl = std.string.concat(dl, ", i64 ");
+                dl = std.string.concat(dl, std.string.from_int(8 + pi * 8));
+                buf3.push(dl);
+                let v = self.next_ssa();
+                let mut vl = std.string.concat("  ", v);
+                vl = std.string.concat(vl, " = load i64, ptr ");
+                vl = std.string.concat(vl, dptr);
+                buf3.push(vl);
+                self.output = buf3;
+                self.locals.insert(pname, "i64");
+                self.local_kinds.insert(pname, "alloca");
+                self.locals_aion.insert(pname, "i64");
+                // Param slot: alloca FIRST, then store (reads go through
+                // the standard alloca path). #134.
+                let mut buf4 = self.output;
+                let paddr = std.string.concat("%", std.string.concat(pname, ".addr"));
+                let mut pl = std.string.concat("  ", paddr);
+                pl = std.string.concat(pl, " = alloca i64");
+                buf4.push(pl);
+                let mut sl = std.string.concat("  store i64 ", "");
+                sl = std.string.concat(sl, v);
+                sl = std.string.concat(sl, ", ptr ");
+                sl = std.string.concat(sl, paddr);
+                buf4.push(sl);
+                self.output = buf4;
+                pi = pi + 1;
+            }
+            // Guard.
+            if arm.has_guard {
+                let g = self.compile_expr(arm.guard);
+                let gc = self.bool_from(g);
+                let gbid = self.next_block_id();
+                let gpass = std.string.concat("match.guard.", std.string.from_int(gbid));
+                let mut buf5 = self.output;
+                let mut gl = std.string.concat("  br i1 ", gc);
+                gl = std.string.concat(gl, ", label %");
+                gl = std.string.concat(gl, gpass);
+                gl = std.string.concat(gl, ", label %");
+                gl = std.string.concat(gl, exit_l);
+                buf5.push(gl);
+                self.output = buf5;
+                self.block_terminated = true;
+                let _ = self.emit_label(gpass);
+            }
+            self.compile_block_stmts(arm.body, ret_ty);
+            // Unbind params (no remove — shadowing inside arms is the
+            // standard case; outer bindings with the same name are
+            // overwritten, documented limitation for #134).
+            if !self.block_terminated {
+                self.emit_br(exit_l);
+            }
+            // Capture the arm result (the last statement's value, when
+            // the block terminated with an expression value).
+            if self.has_last_value && !self.last_value_terminated {
+                if std.string.len(result_ty) == 0 {
+                    result_ty = self.last_value_ty;
+                }
+                result_vals.push(self.last_value_val);
+                result_blocks.push(std.string.concat("match.arm.", std.string.from_int(arm_bid)));
+            } else if self.last_value_terminated {
+                phi_ok = false;
+            }
+            if checkable {
+                prev_checked = true;
+                prev_bid = arm_bid;
+            } else {
+                prev_checked = false;
+            }
+            a = a + 1;
+        }
+        // Fail path: when the LAST arm had a tag check, the fall-through
+        // edge into the exit block carries no value — add a zero entry so
+        // the phi has one incoming per predecessor (LLVM verifier). #134.
+        if std.string.len(fail_block) > 0 {
+            let rt2 = if std.string.len(result_ty) == 0 {
+                "i64"
+            } else {
+                result_ty
+            };
+            result_ty = rt2;
+            result_vals.push("0");
+            result_blocks.push(fail_block);
+            phi_ok = true;
+        }
+        let _ = self.emit_label(exit_l);
+        // Result phi (match expressions): only when every arm produced
+        // a value of a consistent type.
+        let nv = (result_vals).len();
+        if phi_ok && nv > 0 && std.string.len(result_ty) > 0 {
+            let mut incoming = vector.Vector<String>.new();
+            let mut k = 0;
+            while k < nv {
+                let v = (result_vals).get(k).unwrap();
+                let b = (result_blocks).get(k).unwrap();
+                let mut inc = std.string.concat("[ ", v);
+                inc = std.string.concat(inc, ", %");
+                inc = std.string.concat(inc, b);
+                inc = std.string.concat(inc, " ]");
+                incoming.push(inc);
+                k = k + 1;
+            }
+            let joined = std.string.join(incoming, ", ");
+            let p = self.next_ssa();
+            let mut buf6 = self.output;
+            let mut pl = std.string.concat("  ", p);
+            pl = std.string.concat(pl, " = phi ");
+            pl = std.string.concat(pl, result_ty);
+            pl = std.string.concat(pl, " ");
+            pl = std.string.concat(pl, joined);
+            buf6.push(pl);
+            self.output = buf6;
+            let op = Operand { value: p, ty: "i64" };
+            return op;
+        }
+        let op = Operand { value: "0", ty: "i64" };
+        return op;
+    }
+
+    // True when the arm matches anything (`_` pattern or unknown
+    // variant name). #134.
+    fn arm_is_default(self, arm: compiler.ast.MatchArm) -> bool {
+        // patterns list (or the single pattern) — default if any is "_".
+        let all = arm.patterns;
+        let n = (all).len();
+        if n == 0 {
+            return std.string.equals(arm.pattern, "_");
+        }
+        let mut i = 0;
+        while i < n {
+            let p = (all).get(i).unwrap();
+            if std.string.equals(p, "_") {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    // Resolve the arm's tag value: the LAST segment of the first pattern
+    // (after `::` or `.`) resolved via the enum's variant order. Returns
+    // -1 when unresolvable. #134.
+    fn arm_variant_index(self, base: String, arm: compiler.ast.MatchArm) -> i64 {
+        let mut pat = arm.pattern;
+        let np = (arm.patterns).len();
+        if np > 0 {
+            pat = (arm.patterns).get(0).unwrap();
+        }
+        // Last path segment.
+        let mut start = 0;
+        let n = std.string.len(pat);
+        let mut i = 0;
+        while i < n {
+            let c = std.string.at(pat, i);
+            if c == 58 || c == 46 {
+                start = i + 1;
+            }
+            i = i + 1;
+        }
+        let short = std.string.substr(pat, start, n - start);
+        // Lookup in the enum variant order.
+        let m = (self.enum_variants).len();
+        let mut e = 0;
+        while e < m {
+            let ee = (self.enum_variants).get(e).unwrap() as EnumEntry;
+            if std.string.ends_with(ee.name, base) {
+                let names = ee.variants;
+                let k = (names).len();
+                let mut j = 0;
+                while j < k {
+                    let v = (names).get(j).unwrap();
+                    if std.string.equals(v, short) {
+                        return j;
+                    }
+                    j = j + 1;
+                }
+            }
+            e = e + 1;
+        }
+        return -1;
+    }
+
+    // Lower an intrinsic call. Resolves the runtime symbol for the
+    // common intrinsics; inline-lowers mem_is_null (null pointer
+    // check). Unknown intrinsics emit a safe i64 zero (documented
+    // limitation — extend the table as needed). #134.
+    fn compile_intrinsic(mut self, name: String, args: vector.Vector<compiler.ast.Expression>) -> Operand {
+        // mem_is_null — inline null check.
+        if std.string.equals(name, "mem_is_null") {
+            let na = (args).len();
+            if na >= 1 {
+                let a = (args).get(0).unwrap() as compiler.ast.Expression;
+                let op = self.compile_expr(a);
+                let c = self.next_ssa();
+                let mut buf = self.output;
+                let mut line = std.string.concat("  ", c);
+                line = std.string.concat(line, " = icmp eq ptr ");
+                line = std.string.concat(line, op.value);
+                line = std.string.concat(line, ", null");
+                buf.push(line);
+                let z = self.next_ssa();
+                let mut line2 = std.string.concat("  ", z);
+                line2 = std.string.concat(line2, " = zext i1 ");
+                line2 = std.string.concat(line2, c);
+                line2 = std.string.concat(line2, " to i64");
+                buf.push(line2);
+                self.output = buf;
+                let r = Operand { value: z, ty: "i64" };
+                return r;
+            }
+        }
+        // Runtime-call intrinsics.
+        let mut cname = "";
+        let mut ret = "i64";
+        if std.string.equals(name, "mem_zero_ptr") { cname = "aion_memzero"; ret = "void"; }
+        else if std.string.equals(name, "str_len") { cname = "aion_string_len"; ret = "i64"; }
+        else if std.string.equals(name, "str_eq") { cname = "aion_str_eq"; ret = "i64"; }
+        else if std.string.equals(name, "str_concat") { cname = "aion_str_concat"; ret = "ptr"; }
+        else if std.string.equals(name, "int_to_str") { cname = "aion_int_to_str"; ret = "ptr"; }
+        else if std.string.equals(name, "char_to_str") { cname = "aion_char_to_str"; ret = "ptr"; }
+        else if std.string.equals(name, "str_at") { cname = "aion_str_at"; ret = "i64"; }
+        else if std.string.equals(name, "str_substr") { cname = "aion_str_substr"; ret = "ptr"; }
+        else if std.string.equals(name, "aion_malloc") { cname = "aion_malloc"; ret = "ptr"; }
+        else if std.string.equals(name, "aion_realloc") { cname = "aion_realloc"; ret = "ptr"; }
+        else if std.string.equals(name, "aion_free") { cname = "aion_free"; ret = "void"; }
+        if std.string.len(cname) == 0 {
+            // Unknown intrinsic — safe zero placeholder (extends per
+            // need; the Rust table lives in intrinsics.rs).
+            let op = Operand { value: "0", ty: "i64" };
+            return op;
+        }
+        let mut arg_ops = vector.Vector<Operand>.new();
+        let na = (args).len();
+        let mut i = 0;
+        while i < na {
+            let a = (args).get(i).unwrap() as compiler.ast.Expression;
+            let op = self.compile_expr(a);
+            arg_ops.push(op);
+            i = i + 1;
+        }
+        let mut parts = vector.Vector<String>.new();
+        let mut j = 0;
+        while j < na {
+            let op = (arg_ops).get(j).unwrap();
+            let mut part = std.string.concat(op.ty, " ");
+            part = std.string.concat(part, op.value);
+            parts.push(part);
+            j = j + 1;
+        }
+        let joined = std.string.join(parts, ", ");
+        let is_void = std.string.equals(ret, "void");
+        if is_void {
+            let mut buf = self.output;
+            let mut line = std.string.concat("  call void @", "");
+            line = std.string.concat(line, cname);
+            line = std.string.concat(line, "(");
+            line = std.string.concat(line, joined);
+            line = std.string.concat(line, ")");
+            buf.push(line);
+            self.output = buf;
+            let op = Operand { value: "", ty: "void" };
+            return op;
+        }
+        let res = self.next_ssa();
+        let mut buf = self.output;
+        let mut line = std.string.concat("  ", res);
+        line = std.string.concat(line, " = call ");
+        line = std.string.concat(line, ret);
+        line = std.string.concat(line, " @");
+        line = std.string.concat(line, cname);
+        line = std.string.concat(line, "(");
+        line = std.string.concat(line, joined);
+        line = std.string.concat(line, ")");
+        buf.push(line);
+        self.output = buf;
+        let op = Operand { value: res, ty: ret };
+        return op;
+    }
+
+    // Lower a match over a PRIMITIVE subject (i64 / String): each arm
+    // compares the value directly (aion_str_eq for strings), binds
+    // params to the subject value, and the phi folds arm results.
+    // Mirrors `src/codegen/control_flow.rs:486-690`. #134.
+    fn compile_prim_match(mut self, cv: Operand, base: String, arms: vector.Vector<compiler.ast.MatchArm>, ret_ty: String) -> Operand {
+        let is_str = std.string.equals(base, "String");
+        let exit_bid = self.next_block_id();
+        let exit_l = std.string.concat("match.exit.", std.string.from_int(exit_bid));
+        let na = (arms).len();
+        let mut result_vals = vector.Vector<String>.new();
+        let mut result_blocks = vector.Vector<String>.new();
+        let mut result_tys = vector.Vector<String>.new();
+        let mut a = 0;
+        let mut prev_checked = false;
+        let mut prev_bid = 0;
+        while a < na {
+            // Emit the deferred `match.next.<prev>` label — the next
+            // check lands here (linear order: check N-1's br targets
+            // this label, which precedes check N). #134.
+            if a > 0 && prev_checked {
+                let next_l = std.string.concat("match.next.", std.string.from_int(prev_bid));
+                let _ = self.emit_label(next_l);
+            }
+            let arm = (arms).get(a).unwrap() as compiler.ast.MatchArm;
+            let arm_bid = self.next_block_id();
+            let arm_l = std.string.concat("match.arm.", std.string.from_int(arm_bid));
+            let is_last = a == na - 1;
+            let is_default = self.arm_is_default(arm);
+            let mut emitted_check = false;
+            // Build the comparison (OR over literal patterns).
+            let mut check = "";
+            if !is_default {
+                let pats = arm.patterns;
+                let npc = (pats).len();
+                let mut k = 0;
+                while k < npc {
+                    let p = (pats).get(k).unwrap();
+                    if is_str {
+                        // String compare via aion_str_eq(subject, @.str.N).
+                        let idx = self.string_index(p);
+                        let mut gname = std.string.concat("@.str.", std.string.from_int(idx));
+                        let gres = self.next_ssa();
+                        let mut buf = self.output;
+                        let mut gl = std.string.concat("  ", gres);
+                        gl = std.string.concat(gl, " = call i64 @aion_str_eq(ptr ");
+                        gl = std.string.concat(gl, cv.value);
+                        gl = std.string.concat(gl, ", ptr ");
+                        gl = std.string.concat(gl, gname);
+                        gl = std.string.concat(gl, ")");
+                        buf.push(gl);
+                        self.output = buf;
+                        let c = self.next_ssa();
+                        let mut cl = std.string.concat("  ", c);
+                        cl = std.string.concat(cl, " = icmp ne i64 ");
+                        cl = std.string.concat(cl, gres);
+                        cl = std.string.concat(cl, ", 0");
+                        let mut buf2 = self.output;
+                        buf2.push(cl);
+                        let target = arm_l;
+                        let fail_l = if is_last {
+                            exit_l
+                        } else {
+                            std.string.concat("match.next.", std.string.from_int(arm_bid))
+                        };
+                        let mut bl = std.string.concat("  br i1 ", c);
+                        bl = std.string.concat(bl, ", label %");
+                        bl = std.string.concat(bl, target);
+                        bl = std.string.concat(bl, ", label %");
+                        bl = std.string.concat(bl, fail_l);
+                        buf2.push(bl);
+                        self.output = buf2;
+                        self.block_terminated = true;
+                        emitted_check = true;
+                        check = c;
+                    } else {
+                        // Integer pattern: parse the literal.
+                        let pv = std.string.to_int(p);
+                        let mut val = "0";
+                        match pv {
+                            Option::Some(n) => { val = std.string.from_int(n); },
+                            Option::None => { val = "0"; },
+                        }
+                        let c = self.next_ssa();
+                        let mut cl = std.string.concat("  ", c);
+                        cl = std.string.concat(cl, " = icmp eq i64 ");
+                        cl = std.string.concat(cl, cv.value);
+                        cl = std.string.concat(cl, ", ");
+                        cl = std.string.concat(cl, val);
+                        let mut buf = self.output;
+                        buf.push(cl);
+                        let target = arm_l;
+                        let fail_l = if is_last {
+                            exit_l
+                        } else {
+                            std.string.concat("match.next.", std.string.from_int(arm_bid))
+                        };
+                        let mut bl = std.string.concat("  br i1 ", c);
+                        bl = std.string.concat(bl, ", label %");
+                        bl = std.string.concat(bl, target);
+                        bl = std.string.concat(bl, ", label %");
+                        bl = std.string.concat(bl, fail_l);
+                        buf.push(bl);
+                        self.output = buf;
+                        self.block_terminated = true;
+                        emitted_check = true;
+                        check = c;
+                    }
+                    k = k + 1;
+                }
+            } else {
+                self.emit_br(arm_l);
+            }
+            // Arm body.
+            let _ = self.emit_label(arm_l);
+            // Bind params to the subject value.
+            let nparams = (arm.params).len();
+            let mut pi = 0;
+            while pi < nparams {
+                let pname = (arm.params).get(pi).unwrap();
+                let vt = if is_str {
+                    "ptr"
+                } else {
+                    "i64"
+                };
+                self.locals.insert(pname, vt);
+                self.local_kinds.insert(pname, "alloca");
+                self.locals_aion.insert(pname, base);
+                let mut buf = self.output;
+                let paddr = self.next_ssa();
+                let mut pl = std.string.concat("  ", paddr);
+                pl = std.string.concat(pl, " = alloca ");
+                pl = std.string.concat(pl, vt);
+                buf.push(pl);
+                let mut sl = std.string.concat("  store ");
+                sl = std.string.concat(sl, vt);
+                sl = std.string.concat(sl, " ");
+                sl = std.string.concat(sl, cv.value);
+                sl = std.string.concat(sl, ", ptr ");
+                sl = std.string.concat(sl, paddr);
+                buf.push(sl);
+                self.output = buf;
+                pi = pi + 1;
+            }
+            // Guard.
+            if arm.has_guard {
+                let g = self.compile_expr(arm.guard);
+                let gc = self.bool_from(g);
+                let gbid = self.next_block_id();
+                let gpass = std.string.concat("match.guard.", std.string.from_int(gbid));
+                let mut buf = self.output;
+                let mut gl = std.string.concat("  br i1 ", gc);
+                gl = std.string.concat(gl, ", label %");
+                gl = std.string.concat(gl, gpass);
+                gl = std.string.concat(gl, ", label %");
+                gl = std.string.concat(gl, exit_l);
+                buf.push(gl);
+                self.output = buf;
+                self.block_terminated = true;
+                let _ = self.emit_label(gpass);
+            }
+            self.compile_block_stmts(arm.body, ret_ty);
+            if !self.block_terminated {
+                self.emit_br(exit_l);
+            }
+            if self.has_last_value && !self.last_value_terminated {
+                result_vals.push(self.last_value_val);
+                result_tys.push(self.last_value_ty);
+                result_blocks.push(std.string.concat("match.arm.", std.string.from_int(arm_bid)));
+            }
+            if emitted_check {
+                prev_checked = true;
+                prev_bid = arm_bid;
+            } else {
+                prev_checked = false;
+            }
+            a = a + 1;
+        }
+        if prev_checked {
+            let fail_l = std.string.concat("match.next.", std.string.from_int(prev_bid));
+            result_vals.push("0");
+            result_tys.push("i64");
+            result_blocks.push(fail_l);
+        }
+        let _ = self.emit_label(exit_l);
+        let nv = (result_vals).len();
+        if nv == na + (if prev_checked { 1 } else { 0 }) && nv > 0 {
+            let mut incoming = vector.Vector<String>.new();
+            let mut rty = "i64";
+            if nv > 0 {
+                let t0 = (result_tys).get(0).unwrap();
+                rty = t0;
+            }
+            let mut k = 0;
+            while k < nv {
+                let v = (result_vals).get(k).unwrap();
+                let b = (result_blocks).get(k).unwrap();
+                let mut inc = std.string.concat("[ ", v);
+                inc = std.string.concat(inc, ", %");
+                inc = std.string.concat(inc, b);
+                inc = std.string.concat(inc, " ]");
+                incoming.push(inc);
+                k = k + 1;
+            }
+            let joined = std.string.join(incoming, ", ");
+            let p = self.next_ssa();
+            let mut buf = self.output;
+            let mut pl = std.string.concat("  ", p);
+            pl = std.string.concat(pl, " = phi ");
+            pl = std.string.concat(pl, rty);
+            pl = std.string.concat(pl, " ");
+            pl = std.string.concat(pl, joined);
+            buf.push(pl);
+            self.output = buf;
+            let op = Operand { value: p, ty: rty };
+            return op;
+        }
+        let op = Operand { value: "0", ty: "i64" };
+        return op;
+    }
+
     // Compute a struct's allocation size with natural alignment (each
     // field aligned to its own size). All composite types are pointers
     // (8 bytes); integers use their LLVM width. #133.
@@ -1355,6 +1970,15 @@ impl Codegen {
             compiler.ast.Statement::UnsafeBlock(body) => {
                 self.collect_strings_stmts(body);
             },
+            compiler.ast.Statement::Match(_cond, arms) => {
+                let na = (arms).len();
+                let mut i = 0;
+                while i < na {
+                    let arm = (arms).get(i).unwrap() as compiler.ast.MatchArm;
+                    self.collect_strings_stmts(arm.body);
+                    i = i + 1;
+                }
+            },
             _ => {},
         }
     }
@@ -1396,6 +2020,56 @@ impl Codegen {
             },
             compiler.ast.Expression::Cast(inner, _target) => {
                 self.collect_strings_expr(inner);
+            },
+            compiler.ast.Expression::Match(condition, arms) => {
+                self.collect_strings_expr(condition);
+                let na = (arms).len();
+                let mut i = 0;
+                while i < na {
+                    let arm = (arms).get(i).unwrap() as compiler.ast.MatchArm;
+                    self.collect_strings_stmts(arm.body);
+                    i = i + 1;
+                }
+            },
+            compiler.ast.Expression::MethodCall(receiver, _m, _g, args) => {
+                self.collect_strings_expr(receiver);
+                let na = (args).len();
+                let mut i = 0;
+                while i < na {
+                    let a = (args).get(i).unwrap() as compiler.ast.Expression;
+                    self.collect_strings_expr(a);
+                    i = i + 1;
+                }
+            },
+            compiler.ast.Expression::MemberAccess(receiver, _m) => {
+                self.collect_strings_expr(receiver);
+            },
+            compiler.ast.Expression::StructInst(_n, _g, fields) => {
+                let nf = (fields).len();
+                let mut i = 0;
+                while i < nf {
+                    let fi = (fields).get(i).unwrap() as ast.FieldInit;
+                    self.collect_strings_expr(fi.value);
+                    i = i + 1;
+                }
+            },
+            compiler.ast.Expression::EnumInst(_n, _v, _g, args) => {
+                let na = (args).len();
+                let mut i = 0;
+                while i < na {
+                    let a = (args).get(i).unwrap() as compiler.ast.Expression;
+                    self.collect_strings_expr(a);
+                    i = i + 1;
+                }
+            },
+            compiler.ast.Expression::Intrinsic(_n, args) => {
+                let na = (args).len();
+                let mut i = 0;
+                while i < na {
+                    let a = (args).get(i).unwrap() as compiler.ast.Expression;
+                    self.collect_strings_expr(a);
+                    i = i + 1;
+                }
             },
             _ => {},
         }
@@ -1528,6 +2202,7 @@ impl Codegen {
         self.output = buf;
         self.current_block = "entry";
         self.block_terminated = false;
+        self.current_ret_ty = ret_ty;
         // Forward scan — full statement lowering. #132.
         let body = f.body;
         let n = (body).len();
@@ -1550,6 +2225,17 @@ impl Codegen {
         if !emitted_ret {
             if std.string.equals(ret_ty, "void") {
                 buf.push("  ret void");
+            } else if self.has_last_value && !self.last_value_terminated {
+                // The trailing expression's value is the return value
+                // (e.g. a trailing `match` expression). #134.
+                let saved_v = self.last_value_val;
+                let saved_t = self.last_value_ty;
+                let src = Operand { value: saved_v, ty: saved_t };
+                let final_op = self.coerce_operand(src, ret_ty);
+                let mut rl = std.string.concat("  ret ", ret_ty);
+                rl = std.string.concat(rl, " ");
+                rl = std.string.concat(rl, final_op.value);
+                buf.push(rl);
             } else {
                 buf.push("  ret " + ret_ty + " 0");
             }
@@ -1630,9 +2316,12 @@ impl Codegen {
                 return false;
             },
             compiler.ast.Statement::ExpressionStmt(e) => {
-                // Evaluate and discard — the emitted SSA (e.g. a call)
-                // stays in the buffer; unused values are valid LLVM.
-                let _ = self.compile_expr(e);
+                // Evaluate and discard — but keep the value for the
+                // match-arm result phi. #134.
+                let op = self.compile_expr(e);
+                self.has_last_value = true;
+                self.last_value_val = op.value;
+                self.last_value_ty = op.ty;
                 return false;
             },
             compiler.ast.Statement::If(condition, then_branch, else_branch) => {
@@ -1729,7 +2418,15 @@ impl Codegen {
             compiler.ast.Statement::NoOp => {
                 return false;
             },
-            // Match lowering is #134.
+            compiler.ast.Statement::Match(condition, arms) => {
+                // Capture the match's value (match expressions used as
+                // the trailing statement drive the implicit return). #134.
+                let op = self.compile_match(condition, arms, ret_ty);
+                self.has_last_value = true;
+                self.last_value_val = op.value;
+                self.last_value_ty = op.ty;
+                return false;
+            },
             _ => {
                 return false;
             },
@@ -1737,16 +2434,24 @@ impl Codegen {
     }
 
     // Lower a statement list into the current block, skipping dead
-    // statements after a terminator.
+    // statements after a terminator. Tracks the last expression value
+    // (for match-arm result phis) and whether the block terminated. #134.
     fn compile_block_stmts(mut self, body: vector.Vector<compiler.ast.Statement>, ret_ty: String) {
         let n = (body).len();
         let mut i = 0;
+        self.has_last_value = false;
+        self.last_value_terminated = false;
         while i < n {
             if self.block_terminated {
                 return;
             }
             let s = (body).get(i).unwrap() as compiler.ast.Statement;
+            let was_terminated = self.block_terminated;
             let _ = self.compile_stmt(s, ret_ty);
+            if self.block_terminated && !was_terminated {
+                // A Return — the block ended; no value flows out.
+                self.last_value_terminated = true;
+            }
             i = i + 1;
         }
     }
@@ -2025,8 +2730,15 @@ impl Codegen {
                 return self.coerce_operand(src, t2);
             },
 
-            // Remaining variants lowered in later sub-issues (#132/#133/
-            // #134) — safe i64 zero placeholder keeps the `.ll` valid.
+            compiler.ast.Expression::Intrinsic(name, args) => {
+                return self.compile_intrinsic(name, args);
+            },
+            compiler.ast.Expression::Match(cond, arms) => {
+                // Match expression — the phi carries the value.
+                return self.compile_match(cond, arms, self.current_ret_ty);
+            },
+            // Remaining variants lowered in later sub-issues (#134) —
+            // safe i64 zero placeholder keeps the `.ll` valid.
             _ => {
                 let op = Operand { value: "0", ty: "i64" };
                 return op;

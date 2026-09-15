@@ -591,6 +591,102 @@ impl Parser {
             token.TokenKind::False => {
                 return result.Result::Ok(ast.Expression::Boolean(false));
             },
+            token.TokenKind::Star => {
+                // Deref: `*p`. Mirrors `src/parser/mod.rs:1469-1476`.
+                // #134.
+                let inner_res = self.parse_primary();
+                if inner_res.is_err() {
+                    return inner_res;
+                }
+                let inner = inner_res.unwrap();
+                let mut expr = ast.Expression::Deref(inner);
+                expr = self.parse_postfix(expr);
+                return result.Result::Ok(expr);
+            },
+            token.TokenKind::At => {
+                // Intrinsic call: `@name(args...)` or type args
+                // `@mem_zero(T)`. Mirrors `src/parser/mod.rs:1599-1642`.
+                // NOTE: parse_primary's leading advance() already
+                // consumed the '@' token — do NOT advance again. #134.
+                let name_tk = self.advance();
+                let mut name = "";
+                match name_tk.kind {
+                    token.TokenKind::Identifier(n) => { name = n; },
+                    _ => {
+                        return result.Result::Err("Expected intrinsic name after @");
+                    },
+                }
+                let mut args = vector.Vector<ast.Expression>.new();
+                let lp_tk = self.peek();
+                let mut is_lparen = false;
+                match lp_tk.kind {
+                    token.TokenKind::LParen => { is_lparen = true; },
+                    _ => { is_lparen = false; },
+                }
+                if is_lparen {
+                    let _ = self.advance();  // consume '('
+                    let mut adone = false;
+                    while !adone {
+                        let tk = self.peek();
+                        let mut stop = false;
+                        match tk.kind {
+                            token.TokenKind::RParen => { stop = true; },
+                            token.TokenKind::EOF => { stop = true; },
+                            _ => { stop = false; },
+                        }
+                        if stop {
+                            adone = true;
+                        } else if tk.kind == token.TokenKind::LBracket {
+                            // Type argument: `[T; N]` array type-name
+                            // parsed as a TypeRef (Rust mod.rs:1613-1620).
+                            let t = self.parse_type_name();
+                            let tr = ast.Expression::TypeRef(t, vector.Vector<String>.new());
+                            args.push(tr);
+                            let c_tk = self.peek();
+                            let mut is_comma = false;
+                            match c_tk.kind {
+                                token.TokenKind::Comma => { is_comma = true; },
+                                _ => { is_comma = false; },
+                            }
+                            if is_comma { let _ = self.advance(); }
+                        } else {
+                            let a_res = self.parse_expression();
+                            if a_res.is_err() {
+                                return a_res;
+                            }
+                            args.push(a_res.unwrap());
+                            let c_tk = self.peek();
+                            let mut is_comma = false;
+                            match c_tk.kind {
+                                token.TokenKind::Comma => { is_comma = true; },
+                                _ => { is_comma = false; },
+                            }
+                            if is_comma { let _ = self.advance(); }
+                        }
+                    }
+                    let rp_tk = self.peek();
+                    let mut is_rparen = false;
+                    match rp_tk.kind {
+                        token.TokenKind::RParen => { is_rparen = true; },
+                        _ => { is_rparen = false; },
+                    }
+                    if is_rparen { let _ = self.advance(); }
+                }
+                let mut expr = ast.Expression::Intrinsic(name, args);
+                expr = self.parse_postfix(expr);
+                return result.Result::Ok(expr);
+            },
+            token.TokenKind::FString(s) => {
+                // f-string — desugars to a concatenation chain at parse
+                // time (Rust parse_fstring, mod.rs:1950-2019). #134.
+                let res = self.parse_fstring(s);
+                if res.is_err() {
+                    return res;
+                }
+                let expr = res.unwrap();
+                let e2 = self.parse_postfix(expr);
+                return result.Result::Ok(e2);
+            },
             token.TokenKind::Match => {
                 // Expression-position match: `return match x { ... }` /
                 // `let x = match e { ... }`. Mirrors
@@ -1299,6 +1395,109 @@ impl Parser {
         }
         
         return result.Result::Ok(stmts);
+    }
+
+    // Parse an f-string body into a concatenation expression chain.
+    // Scans `{...}` interpolations (depth-aware), sub-lexes each
+    // expression source with a fresh Lexer+Parser, and folds all
+    // segments with `+`. Faithful port of `src/parser/mod.rs:1950-2019`.
+    // #134.
+    fn parse_fstring(mut self, s: String) -> result.Result<ast.Expression, String> {
+        // Collect segments: L:<literal> / E:<expr-src> encoded in a
+        // string-vector (local enums with two String payloads work but
+        // the encoded form keeps the sub-parse recursion simple).
+        let mut segs = vector.Vector<String>.new();
+        let n = std.string.len(s);
+        let mut cur = "";
+        let mut i = 0;
+        while i < n {
+            let c = std.string.at(s, i);
+            if c == 123 {  // '{'
+                if std.string.len(cur) > 0 {
+                    let enc = std.string.concat("L:", cur);
+                    segs.push(enc);
+                    cur = "";
+                }
+                // Depth-aware expression scan until matching '}'.
+                let mut depth = 1;
+                let mut esrc = "";
+                i = i + 1;
+                let mut edone = false;
+                while !edone {
+                    if i >= n {
+                        edone = true;
+                    } else {
+                        let nc = std.string.at(s, i);
+                        if nc == 123 {
+                            depth = depth + 1;
+                            esrc = std.string.concat(esrc, "{");
+                        } else if nc == 125 {
+                            depth = depth - 1;
+                            if depth == 0 {
+                                edone = true;
+                            } else {
+                                esrc = std.string.concat(esrc, "}");
+                            }
+                        } else {
+                            esrc = std.string.concat(esrc, std.string.substr(s, i, 1));
+                        }
+                        i = i + 1;
+                    }
+                }
+                let enc2 = std.string.concat("E:", esrc);
+                segs.push(enc2);
+            } else {
+                cur = std.string.concat(cur, std.string.substr(s, i, 1));
+                i = i + 1;
+            }
+        }
+        if std.string.len(cur) > 0 {
+            let enc = std.string.concat("L:", cur);
+            segs.push(enc);
+        }
+        // Fold segments with '+' (Plus token — mirrors mod.rs:1991-2008).
+        let plus_tok = compiler.token.Token::new(token.TokenKind::Plus, 0, 0);
+        let mut has_result = false;
+        let mut result = ast.Expression::StringLit("");
+        let ns = (segs).len();
+        let mut k = 0;
+        while k < ns {
+            let seg = (segs).get(k).unwrap();
+            let mut part = ast.Expression::StringLit("");
+            if std.string.starts_with(seg, "L:") {
+                let lit = std.string.substr(seg, 2, std.string.len(seg) - 2);
+                part = ast.Expression::StringLit(lit);
+            } else {
+                let src = std.string.substr(seg, 2, std.string.len(seg) - 2);
+                // Sub-lex + sub-parse the interpolation source.
+                let mut sublex = compiler.lexer.Lexer_new(src);
+                let mut subtoks = vector.Vector<token.Token>.new();
+                let mut sdone = false;
+                while !sdone {
+                    let t = sublex.next_token();
+                    let is_eof = match t.kind {
+                        compiler.token.TokenKind::EOF => true,
+                        _ => false,
+                    };
+                    subtoks.push(t);
+                    if is_eof { sdone = true; }
+                }
+                let mut sub = compiler.parser.Parser.new(subtoks);
+                let pr = sub.parse_expression();
+                if pr.is_err() {
+                    return pr;
+                }
+                part = pr.unwrap();
+            }
+            if !has_result {
+                result = part;
+                has_result = true;
+            } else {
+                result = ast.Expression::Infix(result, plus_tok, part);
+            }
+            k = k + 1;
+        }
+        return result.Result::Ok(result);
     }
 
     // Parse the arms of a `match` block, from the token AFTER `{` up to
