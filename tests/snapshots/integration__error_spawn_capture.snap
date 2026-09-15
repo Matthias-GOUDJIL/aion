@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_spawn_capture\")"
+---
+Type Error: spawn block captures variable 'x' — spawn bodies run on a separate thread and cannot capture locals (#176)

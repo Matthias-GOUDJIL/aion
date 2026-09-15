@@ -308,6 +308,10 @@ fn test_duration_date_values() {
     assert_snapshot!(run_aion_test("language/duration_date_values"));
 }
 #[test]
+fn test_spawn_thread() {
+    assert_snapshot!(run_aion_test("language/spawn_thread"));
+}
+#[test]
 fn test_option_result_methods() {
     assert_snapshot!(run_aion_test("language/option_result_methods"));
 }
@@ -773,6 +777,10 @@ fn test_error_syntax_unexpected_token() {
 #[test]
 fn test_error_fstring_bad_expr() {
     assert_snapshot!(run_aion_test("compiler/error_fstring_bad_expr"));
+}
+#[test]
+fn test_error_spawn_capture() {
+    assert_snapshot!(run_aion_test("compiler/error_spawn_capture"));
 }
 #[test]
 fn test_error_cast_string() {

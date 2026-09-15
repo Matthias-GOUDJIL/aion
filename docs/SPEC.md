@@ -221,11 +221,14 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 
 ## 6. Concurrency & AI-Native Features
 
-- **Threading**: `spawn { ... }` is parsed but currently compiles the
-  block **synchronously in the current thread** — no thread is created
-  (#176 tracks the thread lowering; the C runtime already ships
-  `aion_spawn`, unused). `std.thread` is a stub. Rewriting `aion_spawn`
-  and the scheduler in Aion is a ROADMAP item (Self-Runtime).
+- **Threading**: `spawn { ... }` compiles the block into a fresh `void()`
+  function whose pointer is handed to the C runtime's `aion_spawn`
+  (`pthread_create`, GC-registered thread). Spawn bodies run on a separate
+  thread and **cannot capture locals** from the enclosing frame — the
+  checker rejects captures by name (#176). The runtime joins all spawned
+  threads at process exit (atexit handler) so sparks always run to
+  completion. Rewriting `aion_spawn` and the scheduler in Aion is a
+  ROADMAP item (Self-Runtime).
 - **AI Tensors**: first-class `std.ai.tensor`. Constructors `zeros`,
   `ones`, `rand` are functional; `matmul`, `add` and `backward` (autograd)
   are runtime placeholders, not yet implemented (see `docs/STDLIB.md` and
