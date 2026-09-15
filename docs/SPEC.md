@@ -221,9 +221,11 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 
 ## 6. Concurrency & AI-Native Features
 
-- **Threading**: 1:1 via `pthread`. `spawn { ... }` creates detached
-  threads. `aion_spawn` is currently a C runtime builtin — rewriting it
-  in Aion is a ROADMAP item (Self-Runtime).
+- **Threading**: `spawn { ... }` is parsed but currently compiles the
+  block **synchronously in the current thread** — no thread is created
+  (#176 tracks the thread lowering; the C runtime already ships
+  `aion_spawn`, unused). `std.thread` is a stub. Rewriting `aion_spawn`
+  and the scheduler in Aion is a ROADMAP item (Self-Runtime).
 - **AI Tensors**: first-class `std.ai.tensor`. Constructors `zeros`,
   `ones`, `rand` are functional; `matmul`, `add` and `backward` (autograd)
   are runtime placeholders, not yet implemented (see `docs/STDLIB.md` and
@@ -250,7 +252,7 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 - **Wrapper**: `./aion` is the primary entry point for `build`, `run`,
   `doc`, `transpile` subcommands.
 - **Testing**: `cargo test` with `insta` snapshots + `assert_cmd` CLI
-  tests, run inside Docker. See `docs/testing.md`.
+  tests, run inside Docker. See `docs/workflow.md`.
 - **Import resolution**: `compiler.*` → project root, everything else →
   `stdlib/`. Recursive imports with automatic namespace prefixing to
   prevent symbol collisions. Local declarations are renamed **before**

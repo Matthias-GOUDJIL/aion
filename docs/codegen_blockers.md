@@ -1,3 +1,9 @@
+> ARCHIVED — historical output of #128 (2025 audit).
+> Every blocker listed below has been resolved and merged: #136 (OrderedMap),
+> #137 (fmt.s), #139 (escape_llvm_c_string), #140 (string.join), #141
+> (mutual use), #129-#135 (the Aion LLVM backend), #161 (positional match
+> binding). Kept for reference only — the "open" status column is stale.
+
 # `compiler/codegen.ai` — Blockers Audit (#128, sub-issue of #9)
 
 > Output of #128. Read this before starting any of #129 → #135. Every line

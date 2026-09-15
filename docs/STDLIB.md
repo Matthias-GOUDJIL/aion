@@ -143,7 +143,11 @@ The core of Aion. Only the constructors are functional today; the math ops
 and autograd are runtime placeholders (see `src/runtime.c:220-235`).
 - `tensor_zeros`, `tensor_ones`, `tensor_rand`: Working constructors.
 - `tensor_move`: Device transfer stub (currently a no-op string swap, not real GPU/TPU).
-- `matmul`, `add`: **Not implemented** — `aion_ai_tensor_matmul` / `aion_ai_tensor_add` return a zero tensor regardless of input (`// Placeholder: return zeros for now`).
+- `matmul`, `add`: **Not implemented** — `aion_ai_tensor_matmul` /
+  `aion_ai_tensor_add` are registered in the codegen builtin table but
+  never declared in the module, so calling them is a compile-time
+  `internal error: Intrinsic not found` (the runtime placeholders in
+  `src/runtime.c` are unreachable until #177 lands).
 - `backward()`: **Not implemented** — `aion_ai_tensor_backward` only prints to stdout, no gradient is computed.
 - `to(device)`: See `tensor_move` above; no real device support yet.
 
@@ -253,12 +257,16 @@ Universally Unique Identifiers.
 Duration works (constructors, `as_secs`/`as_millis`, arithmetic — exercised by
 `duration_literal`). `now()` and `sleep()` are **not implemented**: their
 `@intrinsic("time_now")` / `@intrinsic("time_sleep")` resolve to
-`aion_time_now` / `aion_time_sleep`, which are absent from `src/runtime.c`.
-Add the runtime symbols before re-promoting to [stable].
+`aion_time_now` / `aion_time_sleep`, which are never declared in the codegen
+module — calling them is a compile-time `internal error: Intrinsic not found`
+(the symbols are also absent from `src/runtime.c`; #177). Add both before
+re-promoting to [stable].
 
 ### `std.date` **[partial]**
 The `Date` struct and date-literal arithmetic work (exercised by
 `date_arithmetic`). `DateTime::now()` is **not implemented**: its
 `date_year`/`date_month`/`date_day`/`date_hour`/`date_min`/`date_sec`
-intrinsics resolve to `aion_date_*` symbols absent from `src/runtime.c`.
-Add the runtime symbols before re-promoting to [stable].
+intrinsics resolve to `aion_date_*` symbols that are never declared in
+the codegen module (compile-time `internal error: Intrinsic not found`)
+and absent from `src/runtime.c` (#177). Add both before re-promoting
+to [stable].
