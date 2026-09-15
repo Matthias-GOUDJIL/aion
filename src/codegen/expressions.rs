@@ -28,6 +28,19 @@ impl<'ctx> Compiler<'ctx> {
         match e {
             Expression::Integer(n, _) => Ok(i64_t.const_int(*n as u64, false).into()),
             Expression::Float(f_val, _) => Ok(self.context.f64_type().const_float(*f_val).into()),
+            // Duration literals are i64 milliseconds (SPEC.md §4). The lexer
+            // splits the value into (secs, nanos); `5s` -> 5000, `1.5ms` ->
+            // 1. Before this arm existed the literals compiled to i64 0.
+            Expression::Duration(secs, nanos, _) => {
+                let millis = secs.saturating_mul(1000) + (*nanos as u64) / 1_000_000;
+                Ok(i64_t.const_int(millis, false).into())
+            }
+            // Date literals are i64 millisecond timestamps (SPEC.md §4). The
+            // lexer produces epoch-days * 86400 (seconds), so scale to millis.
+            Expression::Date(ts, _) => {
+                let millis = ts.saturating_mul(1000);
+                Ok(i64_t.const_int(millis as u64, false).into())
+            }
             Expression::Char(c, _) => Ok(i64_t.const_int(*c as u64, false).into()),
             Expression::Boolean(b, _) => Ok(i64_t.const_int(if *b { 1 } else { 0 }, false).into()),
             Expression::String(s, _) => Ok(self

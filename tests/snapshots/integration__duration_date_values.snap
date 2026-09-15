@@ -1,0 +1,8 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/duration_date_values\")"
+---
+5000
+500
+1704067200000
+5500

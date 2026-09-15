@@ -300,6 +300,10 @@ fn test_float_int_cast() {
     assert_snapshot!(run_aion_test("language/float_int_cast"));
 }
 #[test]
+fn test_duration_date_values() {
+    assert_snapshot!(run_aion_test("language/duration_date_values"));
+}
+#[test]
 fn test_option_result_methods() {
     assert_snapshot!(run_aion_test("language/option_result_methods"));
 }

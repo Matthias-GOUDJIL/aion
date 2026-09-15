@@ -1,0 +1,19 @@
+// Duration/Date literal VALUES — the codegen previously compiled both
+// literal forms to i64 0 (no compile_expr arm); the existing fixtures only
+// asserted compilation, never the numeric value. SPEC.md §4: Duration is
+// i64 milliseconds, Date is an i64 millisecond timestamp.
+fn main() {
+    let a = 5s
+    io.println(string.from_int(a as i64)) // 5000
+
+    let b = 500ms
+    io.println(string.from_int(b as i64)) // 500
+
+    let d = D2024-01-01
+    io.println(string.from_int(d as i64)) // 1704067200000
+
+    let c = a + b
+    io.println(string.from_int(c as i64)) // 5500
+
+    return 0
+}
