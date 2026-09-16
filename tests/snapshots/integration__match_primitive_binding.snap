@@ -1,0 +1,10 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/match_primitive_binding\")"
+---
+42
+43
+hello
+hello
+42
+42

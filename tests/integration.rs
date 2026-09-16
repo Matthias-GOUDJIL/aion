@@ -188,6 +188,13 @@ fn test_enum_match() {
     assert_snapshot!(run_aion_test("language/enum_match"));
 }
 #[test]
+fn test_match_primitive_binding() {
+    // #183 — shared match lowering: primitive binding vars in both
+    // positions (String bindings used to stay unresolved in the statement
+    // path; binding var as last arm emitted a corrupt phi edge).
+    assert_snapshot!(run_aion_test("language/match_primitive_binding"));
+}
+#[test]
 fn test_generics_basic() {
     assert_snapshot!(run_aion_test("language/generics_basic"));
 }
