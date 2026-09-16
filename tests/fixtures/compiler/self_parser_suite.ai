@@ -1,0 +1,203 @@
+// #156 acceptance gate — the self-hosted lexer+parser must parse every
+// fixture end-to-end. The list below is generated (137 files); fixtures
+// that are intentionally invalid at the parse level are excluded. Each
+// FAIL line prints the path and the parser error; the summary prints
+// the parsed/total counts. Any improvement to compiler/parser.ai moves
+// the counters and must update the snapshot.
+use std.io
+use std.string
+use std.collections.vector
+use std.fs
+use compiler.lexer
+use compiler.token
+use compiler.parser
+
+fn parse_source(source: String, label: String) -> i64 {
+    let mut lex = compiler.lexer.Lexer_new(source)
+    let mut tokens = vector.Vector<token.Token>.new()
+    let mut done = false
+    while !done {
+        let tok = lex.next_token()
+        let is_eof = match tok.kind {
+            compiler.token.TokenKind::EOF => true,
+            _ => false,
+        }
+        tokens.push(tok)
+        if is_eof { done = true }
+    }
+    let mut p = compiler.parser.Parser.new(tokens)
+    let res = p.parse_program()
+    if res.is_err() {
+        io.print("FAIL: ")
+        io.print(label)
+        io.print(": ")
+        io.println(res.unwrap_err() as String)
+        return 1
+    }
+    return 0
+}
+
+fn main() {
+    let paths: [String; 137] = [
+        "tests/fixtures/language/array_as_param.ai",
+        "tests/fixtures/language/array_basic.ai",
+        "tests/fixtures/language/array_bounds.ai",
+        "tests/fixtures/language/array_return_error.ai",
+        "tests/fixtures/language/array_return_literal.ai",
+        "tests/fixtures/language/break_continue.ai",
+        "tests/fixtures/language/char_literal.ai",
+        "tests/fixtures/language/complex_pipeline.ai",
+        "tests/fixtures/language/date_arithmetic.ai",
+        "tests/fixtures/language/duration_date_values.ai",
+        "tests/fixtures/language/duration_literal.ai",
+        "tests/fixtures/language/enum_match.ai",
+        "tests/fixtures/language/float_int_cast.ai",
+        "tests/fixtures/language/fstring_edge.ai",
+        "tests/fixtures/language/fstring_exprs.ai",
+        "tests/fixtures/language/fstring_interpolation.ai",
+        "tests/fixtures/language/fstring_many_interpolations.ai",
+        "tests/fixtures/language/fstring_nested_braces.ai",
+        "tests/fixtures/language/function_as_param.ai",
+        "tests/fixtures/language/function_pointer.ai",
+        "tests/fixtures/language/function_types.ai",
+        "tests/fixtures/language/generics_basic.ai",
+        "tests/fixtures/language/generics_local.ai",
+        "tests/fixtures/language/generics_multi_arg.ai",
+        "tests/fixtures/language/generics_multi_arg_err.ai",
+        "tests/fixtures/language/generics_result.ai",
+        "tests/fixtures/language/generics_substring.ai",
+        "tests/fixtures/language/hello.ai",
+        "tests/fixtures/language/integer_mismatch.ai",
+        "tests/fixtures/language/integer_sizes.ai",
+        "tests/fixtures/language/let_type_annotation.ai",
+        "tests/fixtures/language/loop_basic.ai",
+        "tests/fixtures/language/match_as_initializer.ai",
+        "tests/fixtures/language/match_exhaustive.ai",
+        "tests/fixtures/language/match_expr_multi_payload.ai",
+        "tests/fixtures/language/match_expression.ai",
+        "tests/fixtures/language/method_chaining.ai",
+        "tests/fixtures/language/operators.ai",
+        "tests/fixtures/language/option_result_methods.ai",
+        "tests/fixtures/language/parse_result.ai",
+        "tests/fixtures/language/pipeline_operator.ai",
+        "tests/fixtures/language/primitive_methods.ai",
+        "tests/fixtures/language/recursion_basic.ai",
+        "tests/fixtures/language/recursion_deep.ai",
+        "tests/fixtures/language/result_basic.ai",
+        "tests/fixtures/language/result_methods.ai",
+        "tests/fixtures/language/run_exit_code.ai",
+        "tests/fixtures/language/short_circuit.ai",
+        "tests/fixtures/language/simple_expression.ai",
+        "tests/fixtures/language/sizeof_variables.ai",
+        "tests/fixtures/language/spawn_thread.ai",
+        "tests/fixtures/language/string_escapes.ai",
+        "tests/fixtures/language/string_match.ai",
+        "tests/fixtures/language/string_operations.ai",
+        "tests/fixtures/language/struct_name_resolution.ai",
+        "tests/fixtures/language/struct_return.ai",
+        "tests/fixtures/language/tuple_basic.ai",
+        "tests/fixtures/language/tuple_nested.ai",
+        "tests/fixtures/language/tuple_return.ai",
+        "tests/fixtures/language/unsafe_block.ai",
+        "tests/fixtures/language/unsafe_check_fail.ai",
+        "tests/fixtures/stdlib/dataframe_basic.ai",
+        "tests/fixtures/stdlib/env_args.ai",
+        "tests/fixtures/stdlib/env_args_cli.ai",
+        "tests/fixtures/stdlib/env_var.ai",
+        "tests/fixtures/stdlib/env_vector_args.ai",
+        "tests/fixtures/stdlib/fmt_format.ai",
+        "tests/fixtures/stdlib/fmt_s.ai",
+        "tests/fixtures/stdlib/fs_result_error.ai",
+        "tests/fixtures/stdlib/fs_write_read.ai",
+        "tests/fixtures/stdlib/hashmap_basic.ai",
+        "tests/fixtures/stdlib/hashmap_resize_hashset.ai",
+        "tests/fixtures/stdlib/hashmap_utils.ai",
+        "tests/fixtures/stdlib/json_parse_basic.ai",
+        "tests/fixtures/stdlib/memzero_struct.ai",
+        "tests/fixtures/stdlib/memzero_typed.ai",
+        "tests/fixtures/stdlib/ordered_map_basic.ai",
+        "tests/fixtures/stdlib/path_operations.ai",
+        "tests/fixtures/stdlib/ptr_deref_member.ai",
+        "tests/fixtures/stdlib/ptr_deref_member_err.ai",
+        "tests/fixtures/stdlib/ptr_memzero_field.ai",
+        "tests/fixtures/stdlib/sql_advanced.ai",
+        "tests/fixtures/stdlib/sql_transpile.ai",
+        "tests/fixtures/stdlib/std_fs_read_write.ai",
+        "tests/fixtures/stdlib/string_escape_llvm.ai",
+        "tests/fixtures/stdlib/string_join.ai",
+        "tests/fixtures/stdlib/string_methods.ai",
+        "tests/fixtures/stdlib/string_to_int.ai",
+        "tests/fixtures/stdlib/tensor_basic.ai",
+        "tests/fixtures/stdlib/vector_basic.ai",
+        "tests/fixtures/stdlib/vector_contains.ai",
+        "tests/fixtures/stdlib/vector_edge.ai",
+        "tests/fixtures/stdlib/vector_generic.ai",
+        "tests/fixtures/stdlib/vector_push_pop.ai",
+        "tests/fixtures/stdlib/vector_utils.ai",
+        "tests/fixtures/compiler/codegen_calls_generics.ai",
+        "tests/fixtures/compiler/codegen_control_flow.ai",
+        "tests/fixtures/compiler/codegen_expressions.ai",
+        "tests/fixtures/compiler/codegen_match_intrinsics.ai",
+        "tests/fixtures/compiler/codegen_memory_layout.ai",
+        "tests/fixtures/compiler/codegen_skeleton.ai",
+        "tests/fixtures/compiler/debug_output.ai",
+        "tests/fixtures/compiler/doc_gen.ai",
+        "tests/fixtures/compiler/error_assign_type_mismatch.ai",
+        "tests/fixtures/compiler/error_bool_arith.ai",
+        "tests/fixtures/compiler/error_call_arg_type.ai",
+        "tests/fixtures/compiler/error_call_arity.ai",
+        "tests/fixtures/compiler/error_cast_string.ai",
+        "tests/fixtures/compiler/error_deref_scalar.ai",
+        "tests/fixtures/compiler/error_float_mod.ai",
+        "tests/fixtures/compiler/error_if_branch_types.ai",
+        "tests/fixtures/compiler/error_int_logic.ai",
+        "tests/fixtures/compiler/error_internal.ai",
+        "tests/fixtures/compiler/error_match_arm_types.ai",
+        "tests/fixtures/compiler/error_match_nonexhaustive.ai",
+        "tests/fixtures/compiler/error_return_type_mismatch.ai",
+        "tests/fixtures/compiler/error_spawn_capture.ai",
+        "tests/fixtures/compiler/error_undefined_field.ai",
+        "tests/fixtures/compiler/error_undefined_function.ai",
+        "tests/fixtures/compiler/error_undefined_method.ai",
+        "tests/fixtures/compiler/extern_ffi.ai",
+        "tests/fixtures/compiler/gc_leak_test.ai",
+        "tests/fixtures/compiler/malloc_test.ai",
+        "tests/fixtures/compiler/mut_use.ai",
+        "tests/fixtures/compiler/mut_use_missing.ai",
+        "tests/fixtures/compiler/optimization_check.ai",
+        "tests/fixtures/compiler/self_codegen.ai",
+        "tests/fixtures/compiler/self_lexer.ai",
+        "tests/fixtures/compiler/self_lexer_hello.ai",
+        "tests/fixtures/compiler/self_lexer_loop.ai",
+        "tests/fixtures/compiler/self_parser.ai",
+        "tests/fixtures/compiler/self_parser_call.ai",
+        "tests/fixtures/compiler/self_parser_decls.ai",
+        "tests/fixtures/compiler/self_parser_hello.ai",
+        "tests/fixtures/compiler/self_parser_match.ai",
+        "tests/fixtures/compiler/self_parser_stmts.ai",
+        "tests/fixtures/compiler/self_parser_suite.ai",
+    ]
+    let total = @sizeof([String; 137]) / 8
+    let mut i = 0
+    let mut failed = 0
+    while i < total {
+        let src_res = fs.read_to_string(paths[i])
+        if src_res.is_err() {
+            io.print("FAIL(read): ")
+            io.println(paths[i])
+            failed = failed + 1
+            i = i + 1
+            continue
+        }
+        let src = src_res.unwrap()
+        let r = parse_source(src, paths[i])
+        failed = failed + r
+        i = i + 1
+    }
+    io.print("parsed ")
+    io.print(string.from_int(total - failed))
+    io.print("/")
+    io.print(string.from_int(total))
+    io.println(" fixtures")
+    return 0
+}
