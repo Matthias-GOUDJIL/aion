@@ -636,7 +636,17 @@ impl Parser {
                         }
                         if stop {
                             adone = true;
-                        } else if tk.kind == token.TokenKind::LBracket {
+                        } else {
+                            // NOTE: enum equality via `==` compares box
+                            // pointers (Aion enums are uniformly boxed) and
+                            // is always false across distinct instances —
+                            // dispatch on the variant with a match instead.
+                            let mut is_lb = false;
+                            match tk.kind {
+                                token.TokenKind::LBracket => { is_lb = true; },
+                                _ => { is_lb = false; },
+                            }
+                            if is_lb {
                             // Type argument: `[T; N]` array type-name
                             // parsed as a TypeRef (Rust mod.rs:1613-1620).
                             let t = self.parse_type_name();
@@ -649,7 +659,7 @@ impl Parser {
                                 _ => { is_comma = false; },
                             }
                             if is_comma { let _ = self.advance(); }
-                        } else {
+                            } else {
                             let a_res = self.parse_expression();
                             if a_res.is_err() {
                                 return a_res;
@@ -662,6 +672,7 @@ impl Parser {
                                 _ => { is_comma = false; },
                             }
                             if is_comma { let _ = self.advance(); }
+                            }
                         }
                     }
                     let rp_tk = self.peek();
@@ -743,25 +754,207 @@ impl Parser {
                 if expr_res.is_err() {
                     return expr_res;
                 }
+                let first = expr_res.unwrap();
 
                 let next_tk = self.peek();
+                let mut is_comma = false;
+                match next_tk.kind {
+                    token.TokenKind::Comma => { is_comma = true; },
+                    _ => { is_comma = false; },
+                }
+                if is_comma {
+                    // Tuple literal: `(a, b, ...)`
+                    // (src/parser/mod.rs:1492-1516). #156 family 2.
+                    let mut elems = vector.Vector<ast.Expression>.new();
+                    elems.push(first);
+                    let mut tdone = false;
+                    while !tdone {
+                        let tk = self.peek();
+                        let mut is_rp = false;
+                        match tk.kind {
+                            token.TokenKind::RParen => { is_rp = true; },
+                            token.TokenKind::EOF => { is_rp = true; },
+                            _ => { is_rp = false; },
+                        }
+                        if is_rp {
+                            tdone = true;
+                        } else {
+                            let _ = self.advance();  // consume ','
+                            let e_res = self.parse_expression();
+                            if e_res.is_err() { return e_res; }
+                            elems.push(e_res.unwrap());
+                            let c_tk = self.peek();
+                            let mut is_c = false;
+                            match c_tk.kind {
+                                token.TokenKind::Comma => { is_c = true; },
+                                _ => { is_c = false; },
+                            }
+                            if !is_c { tdone = true; }
+                        }
+                    }
+                    let rp_tk = self.peek();
+                    let mut is_rp2 = false;
+                    match rp_tk.kind {
+                        token.TokenKind::RParen => { is_rp2 = true; },
+                        _ => { is_rp2 = false; },
+                    }
+                    if is_rp2 { let _ = self.advance(); }
+                    let expr = self.parse_postfix(ast.Expression::TupleLit(elems));
+                    return result.Result::Ok(expr);
+                }
+
                 let mut is_rparen = false;
                 match next_tk.kind {
                     token.TokenKind::RParen => { is_rparen = true; },
                     _ => { is_rparen = false; }
                 }
-
                 if is_rparen {
                     self.advance();
-                    let inner = expr_res.unwrap();
-                    let mut expr = self.parse_postfix(inner);
+                    let expr = self.parse_postfix(first);
                     return result.Result::Ok(expr);
                 } else {
                     return result.Result::Err("Expected ')' after expression");
                 }
             },
+            token.TokenKind::Minus => {
+                // Unary minus: `-n`, `-f`, or `-expr` desugars to
+                // `0 - expr` (src/parser/mod.rs:1546-1566). #156 family 2.
+                let n_tk = self.peek();
+                let mut is_int = false;
+                let mut is_float = false;
+                match n_tk.kind {
+                    token.TokenKind::IntLiteral(_) => { is_int = true; },
+                    token.TokenKind::FloatLiteral(_) => { is_float = true; },
+                    _ => { },
+                }
+                if is_int {
+                    let v_tk = self.advance();
+                    let mut v: i64 = 0;
+                    match v_tk.kind {
+                        token.TokenKind::IntLiteral(val) => { v = 0 - val; },
+                        _ => { },
+                    }
+                    return result.Result::Ok(ast.Expression::Integer(v));
+                }
+                if is_float {
+                    let v_tk = self.advance();
+                    let mut v: f64 = 0.0;
+                    match v_tk.kind {
+                        token.TokenKind::FloatLiteral(val) => { v = 0.0 - val; },
+                        _ => { },
+                    }
+                    return result.Result::Ok(ast.Expression::Float(v));
+                }
+                let inner_res = self.parse_primary();
+                if inner_res.is_err() { return inner_res; }
+                let inner = inner_res.unwrap();
+                let minus_tk = token.Token::new(token.TokenKind::Minus, 0, 0);
+                return result.Result::Ok(ast.Expression::Infix(
+                    ast.Expression::Integer(0), minus_tk, inner));
+            },
+            token.TokenKind::Bang => {
+                // `!expr` desugars to `expr == false`
+                // (src/parser/mod.rs:1477-1491). #156 family 2.
+                let inner_res = self.parse_primary();
+                if inner_res.is_err() { return inner_res; }
+                let inner = inner_res.unwrap();
+                let eq_tk = token.Token::new(token.TokenKind::EqEq, 0, 0);
+                return result.Result::Ok(ast.Expression::Infix(
+                    inner, eq_tk, ast.Expression::Boolean(false)));
+            },
+            token.TokenKind::LBrace => {
+                // Block expression: `{ ... }`
+                // (src/parser/mod.rs:1456-1463). #156 family 2.
+                let body_res = self.parse_block();
+                if body_res.is_err() { return result.Result::Err(body_res.unwrap_err()); }
+                let body = body_res.unwrap();
+                return result.Result::Ok(ast.Expression::Block(body, false));
+            },
+            token.TokenKind::If => {
+                // If-expression: `let x = if c { 1 } else { 2 }`
+                // (src/parser/mod.rs:1222-1244). NOTE: parse_primary's
+                // leading advance() already consumed the 'if'. #156 family 2.
+                let cond_res = self.parse_expression();
+                if cond_res.is_err() { return cond_res; }
+                let cond = cond_res.unwrap();
+                let then_res = self.parse_block();
+                if then_res.is_err() { return result.Result::Err(then_res.unwrap_err()); }
+                let then_branch = then_res.unwrap();
+                let else_tk = self.peek();
+                let mut has_else = false;
+                match else_tk.kind {
+                    token.TokenKind::Else => { has_else = true; },
+                    _ => { has_else = false; },
+                }
+                if has_else {
+                    self.advance(); // consume else
+                    let next_if = self.peek();
+                    let mut is_else_if = false;
+                    match next_if.kind {
+                        token.TokenKind::If => { is_else_if = true; },
+                        _ => { is_else_if = false; },
+                    }
+                    if is_else_if {
+                        let stmt_res = self.parse_statement();
+                        if stmt_res.is_err() { return result.Result::Err(stmt_res.unwrap_err()); }
+                        let stmt = stmt_res.unwrap();
+                        let mut else_branch = vector.Vector<ast.Statement>.new();
+                        else_branch.push(stmt);
+                        return result.Result::Ok(
+                            ast.Expression::IfExpr(cond, then_branch, else_branch));
+                    }
+                    let else_res = self.parse_block();
+                    if else_res.is_err() { return result.Result::Err(else_res.unwrap_err()); }
+                    let else_branch = else_res.unwrap();
+                    return result.Result::Ok(
+                        ast.Expression::IfExpr(cond, then_branch, else_branch));
+                }
+                let else_branch = vector.Vector<ast.Statement>.new();
+                return result.Result::Ok(
+                    ast.Expression::IfExpr(cond, then_branch, else_branch));
+            },
+            token.TokenKind::LBracket => {
+                // Array literal: `[a, b, c]`
+                // (src/parser/mod.rs:1528-1544). #156 family 2.
+                let mut elems = vector.Vector<ast.Expression>.new();
+                let mut adone = false;
+                while !adone {
+                    let tk = self.peek();
+                    let mut stop = false;
+                    match tk.kind {
+                        token.TokenKind::RBracket => { stop = true; },
+                        token.TokenKind::EOF => { stop = true; },
+                        _ => { stop = false; },
+                    }
+                    if stop {
+                        adone = true;
+                    } else {
+                        let e_res = self.parse_expression();
+                        if e_res.is_err() { return e_res; }
+                        elems.push(e_res.unwrap());
+                        let c_tk = self.peek();
+                        let mut is_comma = false;
+                        match c_tk.kind {
+                            token.TokenKind::Comma => { is_comma = true; },
+                            _ => { is_comma = false; },
+                        }
+                        if is_comma { let _ = self.advance(); }
+                    }
+                }
+                let rb_tk = self.peek();
+                let mut is_rb = false;
+                match rb_tk.kind {
+                    token.TokenKind::RBracket => { is_rb = true; },
+                    _ => { is_rb = false; },
+                }
+                if is_rb { let _ = self.advance(); }
+                return result.Result::Ok(ast.Expression::ArrayLit(elems));
+            },
             _ => {
-                return result.Result::Err("Expected expression in parse_primary");
+                return result.Result::Err(std.string.concat(
+                    "Expected expression in parse_primary at token ",
+                    std.string.from_int(self.current)
+                ));
             }
         }
     }
@@ -832,6 +1025,7 @@ impl Parser {
                 token.TokenKind::Lt => { dispatch = true; },
                 token.TokenKind::DoubleColon => { dispatch = true; },
                 token.TokenKind::LBrace => { dispatch = true; },
+                token.TokenKind::LBracket => { dispatch = true; },
                 _ => { dispatch = false; },
             }
             if !dispatch {
@@ -839,6 +1033,23 @@ impl Parser {
             } else {
                 let p_kind = p.kind;
                 match p_kind {
+                    token.TokenKind::LBracket => {
+                        // Array index: `arr[i]` (#156 family 2).
+                        let _ = self.advance();  // consume '['
+                        let i_res = self.parse_expression();
+                        let mut idx = ast.Expression::Integer(0);
+                        if !i_res.is_err() {
+                            idx = i_res.unwrap();
+                        }
+                        let rb_tk = self.peek();
+                        let mut is_rb = false;
+                        match rb_tk.kind {
+                            token.TokenKind::RBracket => { is_rb = true; },
+                            _ => { is_rb = false; },
+                        }
+                        if is_rb { let _ = self.advance(); }
+                        current = ast.Expression::Index(current, idx);
+                    },
                     token.TokenKind::Lt => {
                         // Generic type arguments: `Vector<String>`,
                         // `HashMap<K, V>`, `id<i64>(5)`. If `(` follows,
@@ -1909,13 +2120,97 @@ impl Parser {
                     _ => {},
                 }
                 
+                // Destructuring let: `let (a, b) = pair`
+                // (src/parser/mod.rs:686-714). #156 family 2.
+                let lp_tk = self.peek();
+                let mut is_lp = false;
+                match lp_tk.kind {
+                    token.TokenKind::LParen => { is_lp = true; },
+                    _ => { is_lp = false; },
+                }
+                if is_lp {
+                    let _ = self.advance();  // consume '('
+                    let mut names = vector.Vector<String>.new();
+                    let mut ndone = false;
+                    while !ndone {
+                        let tk = self.peek();
+                        let mut stop = false;
+                        match tk.kind {
+                            token.TokenKind::RParen => { stop = true; },
+                            token.TokenKind::EOF => { stop = true; },
+                            _ => { stop = false; },
+                        }
+                        if stop {
+                            ndone = true;
+                        } else {
+                            let n_tk = self.advance();
+                            match n_tk.kind {
+                                token.TokenKind::Identifier(n) => { names.push(n); },
+                                _ => {
+                                    return result.Result::Err(
+                                        "Expected identifier in destructuring let");
+                                },
+                            }
+                            let c_tk = self.peek();
+                            let mut is_comma = false;
+                            match c_tk.kind {
+                                token.TokenKind::Comma => { is_comma = true; },
+                                _ => { is_comma = false; },
+                            }
+                            if is_comma { let _ = self.advance(); }
+                        }
+                    }
+                    let rp_tk = self.peek();
+                    let mut is_rp = false;
+                    match rp_tk.kind {
+                        token.TokenKind::RParen => { is_rp = true; },
+                        _ => { is_rp = false; },
+                    }
+                    if is_rp { let _ = self.advance(); }
+                    let eq_tk = self.peek();
+                    let mut is_eq2 = false;
+                    match eq_tk.kind {
+                        token.TokenKind::Eq => { is_eq2 = true; },
+                        _ => { is_eq2 = false; },
+                    }
+                    if !is_eq2 {
+                        return result.Result::Err("Expected = after destructuring let");
+                    }
+                    let _ = self.advance();  // consume '='
+                    let val_res = self.parse_expression();
+                    if val_res.is_err() { return result.Result::Err(val_res.unwrap_err()); }
+                    let val = val_res.unwrap();
+                    let check_semi = self.peek();
+                    let mut consume_semi2 = false;
+                    match check_semi.kind {
+                        token.TokenKind::Semicolon => { consume_semi2 = true; },
+                        _ => { consume_semi2 = false; },
+                    }
+                    if consume_semi2 { self.advance(); }
+                    return result.Result::Ok(ast.Statement::LetTuple(names, val));
+                }
+
                 let name_tk = self.advance();
                 let mut name = "";
                 match name_tk.kind {
                     token.TokenKind::Identifier(val) => { name = val; },
                     _ => { return result.Result::Err("Expected identifier after let"); },
                 }
-                
+
+                // Explicit type annotation: `let x: T = ...`. Mirrors
+                // `src/parser/mod.rs:718-723` (#156 family 1).
+                let mut explicit_type = "";
+                let colon_tk = self.peek();
+                let mut is_colon = false;
+                match colon_tk.kind {
+                    token.TokenKind::Colon => { is_colon = true; },
+                    _ => { is_colon = false; },
+                }
+                if is_colon {
+                    self.advance(); // consume ':'
+                    explicit_type = self.parse_type_name();
+                }
+
                 let eq_tk = self.peek();
                 let mut is_eq = false;
                 match eq_tk.kind {
@@ -1937,7 +2232,7 @@ impl Parser {
                     }
                     if consume_semi { self.advance(); }
                     
-                    return result.Result::Ok(ast.Statement::Let(name, val, "", is_mut));
+                    return result.Result::Ok(ast.Statement::Let(name, val, "", explicit_type, is_mut));
                 } else {
                     return result.Result::Err("Expected = after let identifier");
                 }

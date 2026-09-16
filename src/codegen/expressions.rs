@@ -4,7 +4,7 @@ use crate::error::CompileError;
 use crate::lexer::token::TokenKind;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue, ValueKind};
-use inkwell::{AddressSpace, IntPredicate};
+use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 use std::collections::HashMap;
 
 impl<'ctx> Compiler<'ctx> {
@@ -300,6 +300,104 @@ impl<'ctx> Compiler<'ctx> {
                 right,
                 ..
             } => {
+                // Float arithmetic/comparison: the checker accepts these
+                // (Type::Float arm) but the codegen had no lowering — any
+                // float infix hit the "Type mismatch" ICE. #156 family 2
+                // (self-hosted parser needs `0.0 - val`).
+                let lv = self.compile_expr(left, variables, function)?;
+                let rv = self.compile_expr(right, variables, function)?;
+                if lv.is_float_value() && rv.is_float_value() {
+                    let l = lv.into_float_value();
+                    let r = rv.into_float_value();
+                    return match operator.kind {
+                        TokenKind::Plus => Ok(self.builder.build_float_add(l, r, "fadd")?.into()),
+                        TokenKind::Minus => Ok(self.builder.build_float_sub(l, r, "fsub")?.into()),
+                        TokenKind::Star => Ok(self.builder.build_float_mul(l, r, "fmul")?.into()),
+                        TokenKind::Slash => Ok(self.builder.build_float_div(l, r, "fdiv")?.into()),
+                        TokenKind::EqEq => Ok(self
+                            .builder
+                            .build_int_z_extend(
+                                self.builder.build_float_compare(
+                                    FloatPredicate::OEQ,
+                                    l,
+                                    r,
+                                    "fcmp",
+                                )?,
+                                i64_t,
+                                "fbool",
+                            )?
+                            .into()),
+                        TokenKind::NotEq => Ok(self
+                            .builder
+                            .build_int_z_extend(
+                                self.builder.build_float_compare(
+                                    FloatPredicate::UNE,
+                                    l,
+                                    r,
+                                    "fcmp",
+                                )?,
+                                i64_t,
+                                "fbool",
+                            )?
+                            .into()),
+                        TokenKind::Lt => Ok(self
+                            .builder
+                            .build_int_z_extend(
+                                self.builder.build_float_compare(
+                                    FloatPredicate::OLT,
+                                    l,
+                                    r,
+                                    "fcmp",
+                                )?,
+                                i64_t,
+                                "fbool",
+                            )?
+                            .into()),
+                        TokenKind::Gt => Ok(self
+                            .builder
+                            .build_int_z_extend(
+                                self.builder.build_float_compare(
+                                    FloatPredicate::OGT,
+                                    l,
+                                    r,
+                                    "fcmp",
+                                )?,
+                                i64_t,
+                                "fbool",
+                            )?
+                            .into()),
+                        TokenKind::LtEq => Ok(self
+                            .builder
+                            .build_int_z_extend(
+                                self.builder.build_float_compare(
+                                    FloatPredicate::OLE,
+                                    l,
+                                    r,
+                                    "fcmp",
+                                )?,
+                                i64_t,
+                                "fbool",
+                            )?
+                            .into()),
+                        TokenKind::GtEq => Ok(self
+                            .builder
+                            .build_int_z_extend(
+                                self.builder.build_float_compare(
+                                    FloatPredicate::OGE,
+                                    l,
+                                    r,
+                                    "fcmp",
+                                )?,
+                                i64_t,
+                                "fbool",
+                            )?
+                            .into()),
+                        _ => Err(CompileError::internal(format!(
+                            "Operator {:?} not supported for floats",
+                            operator.kind
+                        ))),
+                    };
+                }
                 if operator.kind == TokenKind::And || operator.kind == TokenKind::Or {
                     let lhs = self.compile_expr(left, variables, function)?;
                     let li = match lhs {
