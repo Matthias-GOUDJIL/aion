@@ -1208,25 +1208,7 @@ impl TypeChecker {
                 for arg in args {
                     self.check_expression(arg)?;
                 }
-                if actual_name == "str_len"
-                    || actual_name == "fs_exists"
-                    || actual_name == "fs_write"
-                    || actual_name == "fs_append"
-                {
-                    Ok(Type::i64())
-                } else if actual_name == "str_concat"
-                    || actual_name == "fs_read_to_string"
-                    || actual_name == "int_to_str"
-                    || actual_name == "float_to_str"
-                    || actual_name == "char_to_str"
-                    || actual_name == "str_substr"
-                {
-                    Ok(Type::String)
-                } else if actual_name == "str_ptr" {
-                    Ok(Type::Pointer(Box::new(Type::i64())))
-                } else if actual_name == "mem_is_null" {
-                    Ok(Type::Boolean)
-                } else if actual_name == "mem_zero" {
+                if actual_name == "mem_zero" {
                     if !args.is_empty() {
                         // mem_zero(Type): return value uses the language's boxed struct/enum
                         // representation (matches StructInst/EnumInst), so the field-access path
@@ -1252,6 +1234,8 @@ impl TypeChecker {
                     Ok(Type::Struct {
                         name: "std.ai.tensor.Tensor".to_string(),
                     })
+                } else if let Some(t) = Self::intrinsic_ret_type(&actual_name) {
+                    Ok(t)
                 } else {
                     Ok(Type::i64())
                 }
@@ -1772,6 +1756,28 @@ impl TypeChecker {
             && p.chars().all(|c| c.is_alphanumeric() || c == '_')
             && p.chars().next().unwrap().is_lowercase();
         is_ident && variants.iter().all(|v| v.name != *p)
+    }
+
+    /// Return type of an `@intrinsic("name", ...)` dispatch, resolved from
+    /// the BUILTINS table (by Aion name) plus the legacy intrinsic names
+    /// still used by the stdlib — data-driven instead of the previous
+    /// magic-string if/else chain (#178). The special forms (`sizeof`,
+    /// `mem_zero`, `mem_zero_ptr`, `ai_tensor_*`) keep dedicated arms.
+    fn intrinsic_ret_type(name: &str) -> Option<Type> {
+        for b in crate::builtins::BUILTINS {
+            if b.aion_name == name || b.llvm_name == name {
+                return Some(Type::parse(b.ret_aion));
+            }
+        }
+        match name {
+            "str_len" | "fs_exists" => Some(Type::i64()),
+            "str_concat" | "int_to_str" | "float_to_str" | "char_to_str" | "str_substr" => {
+                Some(Type::String)
+            }
+            "str_ptr" => Some(Type::Pointer(Box::new(Type::i64()))),
+            "mem_is_null" => Some(Type::Boolean),
+            _ => None,
+        }
     }
 
     /// True when `name` (or its first dotted segment) resolves to a global:
