@@ -743,6 +743,15 @@ fn test_self_parser() {
     assert_snapshot!(run_aion_test("compiler/self_parser"));
 }
 #[test]
+fn test_self_parser_suite() {
+    // #156 acceptance gate — the self-hosted lexer+parser must parse every
+    // fixture end-to-end (fixtures intentionally invalid at the parse level
+    // are excluded). The snapshot records the parsed/total counters and the
+    // FAIL list; every parser improvement moves it and must update the
+    // snapshot.
+    assert_snapshot!(run_aion_test("compiler/self_parser_suite"));
+}
+#[test]
 fn test_error_undefined_function() {
     assert_snapshot!(run_aion_test("compiler/error_undefined_function"));
 }
