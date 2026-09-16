@@ -92,7 +92,8 @@ pub struct MatchArm {
 }
 
 pub enum Statement {
-    Let(String, Expression, String, bool), // name, value, intent, is_mut
+    Let(String, Expression, String, String, bool), // name, value, intent, explicit_type, is_mut
+    LetTuple(vector.Vector<String>, Expression), // names, value (#156 family 2)
     Return(Expression, String), // value, intent
     ExpressionStmt(Expression),
     If(Expression, vector.Vector<Statement>, vector.Vector<Statement>), // condition, then_branch, else_branch (empty if none)
@@ -133,5 +134,8 @@ pub enum Expression {
     MemberAccess(Expression, String), // receiver, member
     MethodCall(Expression, String, vector.Vector<String>, vector.Vector<Expression>), // receiver, method, generic_args, arguments
     Match(Expression, vector.Vector<MatchArm>), // expression-position match: `let x = match e { ... }` (#156 Slice 4)
-    TypeRef(String, vector.Vector<String>) // name, generic_args
+    TypeRef(String, vector.Vector<String>), // name, generic_args
+    ArrayLit(vector.Vector<Expression>), // `[a, b, c]` (#156 family 2)
+    TupleLit(vector.Vector<Expression>), // `(a, b)` (#156 family 2)
+    Index(Expression, Expression) // target, index (#156 family 2)
 }

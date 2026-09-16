@@ -2019,7 +2019,10 @@ impl Codegen {
 
     fn collect_strings_stmt(mut self, s: compiler.ast.Statement) {
         match s {
-            compiler.ast.Statement::Let(name, value, _intent, _is_mut) => {
+            compiler.ast.Statement::Let(name, value, _intent, _et, _is_mut) => {
+                self.collect_strings_expr(value);
+            },
+            compiler.ast.Statement::LetTuple(_names, value) => {
                 self.collect_strings_expr(value);
             },
             compiler.ast.Statement::Return(value, _ty) => {
@@ -2343,29 +2346,41 @@ impl Codegen {
                 self.block_terminated = true;
                 return true;
             },
-            compiler.ast.Statement::Let(name, value, _intent, _is_mut) => {
-                // alloca slot + store. The variable's LLVM type is the
-                // operand's type (no explicit type annotation reaches the
-                // Aion AST Let tuple). #132.
+            compiler.ast.Statement::LetTuple(_names, _value) => {
+                // Destructuring-let lowering is not needed by the
+                // self-codegen fixtures yet — emit nothing (#156 family 2).
+                return false;
+            },
+            compiler.ast.Statement::Let(name, value, _intent, explicit_type, _is_mut) => {
+                // alloca slot + store. An explicit type annotation wins
+                // for the alloca type (mirrors the Rust codegen #78):
+                // the value is coerced to the annotated LLVM type.
                 let op = self.compile_expr(value);
+                let mut lt = op.ty;
+                let mut stored = op;
+                let mut aion_ty = self.infer_type(value);
+                if std.string.len(explicit_type) > 0 {
+                    let sub = self.substitute(explicit_type);
+                    lt = aion_type_to_llvm(sub);
+                    stored = self.coerce_operand(op, lt);
+                    aion_ty = sub;
+                }
                 let addr = std.string.concat("%", std.string.concat(name, ".addr"));
                 let mut buf = self.output;
                 let mut line = std.string.concat("  ", addr);
                 line = std.string.concat(line, " = alloca ");
-                line = std.string.concat(line, op.ty);
+                line = std.string.concat(line, lt);
                 buf.push(line);
                 let mut line2 = std.string.concat("  store ", "");
-                line2 = std.string.concat(line2, op.ty);
+                line2 = std.string.concat(line2, lt);
                 line2 = std.string.concat(line2, " ");
-                line2 = std.string.concat(line2, op.value);
+                line2 = std.string.concat(line2, stored.value);
                 line2 = std.string.concat(line2, ", ptr ");
                 line2 = std.string.concat(line2, addr);
                 buf.push(line2);
                 self.output = buf;
-                self.locals.insert(name, op.ty);
+                self.locals.insert(name, lt);
                 self.local_kinds.insert(name, "alloca");
-                // Aion type name for infer_type (method/field resolution).
-                let aion_ty = self.infer_type(value);
                 self.locals_aion.insert(name, aion_ty);
                 return false;
             },
