@@ -1,0 +1,44 @@
+// #183 — shared match lowering exercises primitive binding vars in both
+// positions. The statement-position String binding used to store the
+// value without registering the name in the arm frame; the binding var as
+// the last arm used to emit a corrupt zero-sentinel phi edge.
+fn main() {
+    // Nominal: i64 binding var, statement position.
+    let x = 42
+    match x {
+        n => io.println(string.from_int(n)), // 42
+    }
+
+    // Edge: i64 binding var with guard, statement position.
+    match x {
+        n if n > 40 => io.println(string.from_int(n + 1)), // 43
+        _ => io.println("small"),
+    }
+
+    // String binding var, statement position (previously unresolved).
+    let kw = "hello"
+    match kw {
+        s => io.println(s), // hello
+    }
+
+    // String binding var, expression position.
+    let copied: String = match kw {
+        s => s,
+    }
+    io.println(copied) // hello
+
+    // Binding var as the last non-default arm, statement position.
+    match x {
+        0 => io.println("zero"),
+        n => io.println(string.from_int(n)), // 42
+    }
+
+    // Binding var as the last non-default arm, expression position.
+    let r: i64 = match x {
+        0 => -1,
+        n => n,
+    }
+    io.println(string.from_int(r)) // 42
+
+    return 0
+}
