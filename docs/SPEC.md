@@ -244,9 +244,13 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 ## 7. Transpilation
 
 - **SQL transpiler** (`src/codegen/transpiler/sql.rs`, `./aion transpile`):
-  compiles a subset of Aion to PostgreSQL functions. Supports `if`
-  blocks and complex expressions. Status: **IN PROGRESS** (ROADMAP
-  Phase 1.5).
+  compiles a subset of Aion to PostgreSQL `CREATE TYPE` /
+  `CREATE FUNCTION` statements. Covers `if`/`while`/`match` (incl. guards,
+  ranges, multi-patterns, enums), structs (PG composites), payload-free
+  enums (PG enum types), `let`/`DECLARE`, operators, casts, and builtin
+  mappings. Unsupported constructs produce **spanned diagnostics** (no
+  silent invalid SQL). Full mapping tables and limitations:
+  `docs/SPEC_SQL.md`. Status: **COMPLETED** (ROADMAP Phase 1.5, #74).
 
 ## 8. Environment & Build
 

@@ -64,3 +64,24 @@ pub struct MatchArm {
     pub params: Vec<String>,
     pub body: Vec<Statement>,
 }
+
+impl Statement {
+    /// Source location of the statement (first token). Zero for `NoOp`.
+    pub fn span(&self) -> Span {
+        match self {
+            Statement::Let { span, .. } => *span,
+            Statement::LetTuple { span, .. } => *span,
+            Statement::Return { span, .. } => *span,
+            Statement::ExpressionStmt(_, span) => *span,
+            Statement::If { span, .. } => *span,
+            Statement::Assignment { span, .. } => *span,
+            Statement::While { span, .. } => *span,
+            Statement::For { span, .. } => *span,
+            Statement::Spawn(_, span) => *span,
+            Statement::Match { span, .. } => *span,
+            Statement::UnsafeBlock(_, span) => *span,
+            Statement::Break(span) | Statement::Continue(span) => *span,
+            Statement::NoOp => Span::zero(),
+        }
+    }
+}

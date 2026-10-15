@@ -83,6 +83,14 @@ pub enum CompileError {
         col: usize,
         snippet: Option<String>,
     },
+
+    #[error("SQL transpile error: {message}")]
+    Transpile {
+        message: String,
+        line: usize,
+        col: usize,
+        snippet: Option<String>,
+    },
 }
 
 impl CompileError {
@@ -136,6 +144,17 @@ impl CompileError {
         }
     }
 
+    /// Construct a `Transpile` error carrying a source span. The snippet is
+    /// attached later via `with_snippet` (the transpiler owns the source).
+    pub fn transpile(message: impl Into<String>, span: crate::ast::Span) -> Self {
+        CompileError::Transpile {
+            message: message.into(),
+            line: span.line,
+            col: span.col,
+            snippet: None,
+        }
+    }
+
     pub fn warning(message: impl Into<String>, line: usize, col: usize) -> Self {
         CompileError::Warning {
             message: message.into(),
@@ -179,7 +198,8 @@ impl CompileError {
             | CompileError::Io { line, .. }
             | CompileError::Import { line, .. }
             | CompileError::Internal { line, .. }
-            | CompileError::Warning { line, .. } => *line,
+            | CompileError::Warning { line, .. }
+            | CompileError::Transpile { line, .. } => *line,
         };
 
         if line > 0 {
@@ -194,7 +214,8 @@ impl CompileError {
                 | CompileError::Io { snippet: s, .. }
                 | CompileError::Import { snippet: s, .. }
                 | CompileError::Internal { snippet: s, .. }
-                | CompileError::Warning { snippet: s, .. } => *s = snippet,
+                | CompileError::Warning { snippet: s, .. }
+                | CompileError::Transpile { snippet: s, .. } => *s = snippet,
             }
         }
         self
@@ -211,7 +232,8 @@ impl CompileError {
             | CompileError::Io { col, .. }
             | CompileError::Import { col, .. }
             | CompileError::Internal { col, .. }
-            | CompileError::Warning { col, .. } => *col,
+            | CompileError::Warning { col, .. }
+            | CompileError::Transpile { col, .. } => *col,
         }
     }
 
@@ -219,6 +241,36 @@ impl CompileError {
     /// Used by the driver to print to stderr without halting compilation. #40.
     pub fn is_warning(&self) -> bool {
         matches!(self, CompileError::Warning { .. })
+    }
+
+    /// Human-oriented rendering with the source location and snippet. The
+    /// thiserror `Display` keeps only the label + message (historical
+    /// behavior of the compile paths); the transpiler path uses this to
+    /// report spanned diagnostics (#74).
+    pub fn report(&self) -> String {
+        let (severity, message, line, col, snippet) = match self {
+            CompileError::Warning {
+                message,
+                line,
+                col,
+                snippet,
+            } => ("warning", message, *line, *col, snippet.as_deref()),
+            CompileError::Transpile {
+                message,
+                line,
+                col,
+                snippet,
+            } => ("error", message, *line, *col, snippet.as_deref()),
+            _ => return self.to_string(),
+        };
+        let mut out = format!(
+            "{}: {}\n  --> line {}, column {}\n",
+            severity, message, line, col
+        );
+        if let Some(snippet) = snippet {
+            out.push_str(snippet);
+        }
+        out
     }
 }
 

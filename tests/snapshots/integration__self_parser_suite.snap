@@ -2,4 +2,4 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"compiler/self_parser_suite\")"
 ---
-parsed 136/136 fixtures
+parsed 139/139 fixtures

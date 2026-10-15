@@ -62,9 +62,11 @@ This document outlines the technical path to transform Aion from its current Rus
 2.  **Pipeline Operator (`|>`)** [COMPLETED]
     *   Fluid syntax for data processing (e.g., `data |> filter |> map`).
     *   Improves readability of AI and transformation algorithms.
-3.  **SQL Backend & Interoperability** [IN PROGRESS]
+3.  **SQL Backend & Interoperability** [COMPLETED]
     *   Ability to compile Aion subsets to pure SQL.
     *   Support for IF blocks and complex expressions (Phase 1.5).
+    *   Match/enum/struct lowering, type mapping, spanned diagnostics —
+      see `docs/SPEC_SQL.md` (#74).
 4.  **Data Sandboxing (Safe-Mode)** [COMPLETED]
     *   `unsafe` keyword recognized in Lexer/Parser.
     *   Strict security verification in TypeChecker: `unsafe` function calls are blocked outside of `unsafe { ... }` blocks.

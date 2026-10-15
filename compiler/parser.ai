@@ -75,6 +75,7 @@ impl Parser {
             token.TokenKind::Plus => { return 6; },
             token.TokenKind::Minus => { return 6; },
             token.TokenKind::Caret => { return 5; },
+            token.TokenKind::Range => { return 5; },
             token.TokenKind::Gt => { return 4; },
             token.TokenKind::Lt => { return 4; },
             token.TokenKind::GtEq => { return 4; },
