@@ -40,7 +40,8 @@ declarations all derive from it (#177).
     type_helpers.rs — Type-recovery: get_field_type + get_expr_type_name (phase 7)
     transpiler/   — Transpilation backends
       mod.rs      — Module root
-      sql.rs      — SQL transpiler (Aion → PostgreSQL functions)
+      sql.rs      — SQL transpiler (Aion → PostgreSQL; spanned diagnostics
+                    on unsupported constructs, docs/SPEC_SQL.md) (#74)
 stdlib/           — Aion standard library (written in Aion, .ai files)
   core/           — Core memory primitives (heap.ai, memory.ai)
   std/            — Standard library modules (io, fs, collections, math, etc.)

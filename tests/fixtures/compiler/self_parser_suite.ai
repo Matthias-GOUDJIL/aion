@@ -1,5 +1,5 @@
 // #156 acceptance gate — the self-hosted lexer+parser must parse every
-// fixture end-to-end. The list below is generated (136 files); fixtures
+// fixture end-to-end. The list below is generated (139 files); fixtures
 // that are intentionally invalid at the parse level (the Rust parser
 // reports them too) are excluded. Each FAIL line prints the path and
 // the parser error; the summary prints the parsed/total counts.
@@ -37,7 +37,7 @@ fn parse_source(source: String, label: String) -> i64 {
 }
 
 fn main() {
-    let paths: [String; 136] = [
+    let paths: [String; 139] = [
         "tests/fixtures/language/array_as_param.ai",
         "tests/fixtures/language/array_basic.ai",
         "tests/fixtures/language/array_bounds.ai",
@@ -119,7 +119,9 @@ fn main() {
         "tests/fixtures/stdlib/ptr_deref_member_err.ai",
         "tests/fixtures/stdlib/ptr_memzero_field.ai",
         "tests/fixtures/stdlib/sql_advanced.ai",
+        "tests/fixtures/stdlib/sql_match_enum.ai",
         "tests/fixtures/stdlib/sql_transpile.ai",
+        "tests/fixtures/stdlib/sql_types.ai",
         "tests/fixtures/stdlib/std_fs_read_write.ai",
         "tests/fixtures/stdlib/string_escape_llvm.ai",
         "tests/fixtures/stdlib/string_join.ai",
@@ -174,8 +176,9 @@ fn main() {
         "tests/fixtures/compiler/self_parser_match.ai",
         "tests/fixtures/compiler/self_parser_stmts.ai",
         "tests/fixtures/compiler/self_parser_suite.ai",
+        "tests/fixtures/compiler/sql_error_unsupported.ai",
     ]
-    let total = @sizeof([String; 136]) / 8
+    let total = @sizeof([String; 139]) / 8
     let mut i = 0
     let mut failed = 0
     while i < total {

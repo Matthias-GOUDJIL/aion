@@ -1,0 +1,82 @@
+::intent "SQL transpiler: type mapping and expression coverage (#74)"
+
+fn area(w: f64, h: f64) -> f64 {
+    return w * h
+}
+
+fn escape_demo() -> String {
+    return "It's a \"quoted\" test"
+}
+
+fn concat_demo(name: String, count: i64) -> String {
+    return f"{name} has {count} items"
+}
+
+fn durations() -> Duration {
+    let five = 5s
+    let half = 500ms
+    if half < five {
+        return five
+    }
+    return half
+}
+
+fn dates() -> Date {
+    let start = D2024-01-01
+    let end = D2025-06-30
+    return start
+}
+
+fn integer_ops(a: i64, b: i64) -> i64 {
+    let rem = a % b
+    let xored = a ^ b
+    let bounded = if a inside 0..100 { a } else { 0 }
+    return rem + xored + bounded
+}
+
+fn f64_to_i64(v: f64) -> i64 {
+    let n = v as i64
+    return n
+}
+
+fn i64_to_f64(n: i64) -> f64 {
+    let v = n as f64
+    return v
+}
+
+fn char_demo(c: char) -> String {
+    return aion_char_to_str(65)
+}
+
+fn string_tools(s: String) -> i64 {
+    let n = s.len()
+    let slice = aion_str_substr(s, 0, 3)
+    let code = aion_str_at(s, 0)
+    io.println(slice)
+    return n + code
+}
+
+fn numeric_tools(a: i64, b: i64) -> i64 {
+    let biggest = i64.max(a, b)
+    let smallest = i64.min(a, b)
+    let magnitude = i64.abs(a)
+    return biggest + smallest + magnitude
+}
+
+fn bool_logic(a: bool, b: bool) -> bool {
+    return a && b
+}
+
+fn main() {
+    io.println("types demo")
+    let price = 12.5
+    let qty = 2.0
+    io.println(string.from_float(area(price, qty)))
+    io.println(escape_demo())
+    io.println(concat_demo("cart", 3))
+    io.println(string.from_int(f64_to_i64(9.75)))
+    io.println(string.from_float(i64_to_f64(7)))
+    io.println(string.from_int(string_tools("aion")))
+    io.println(string.from_int(numeric_tools(-5, 10)))
+    io.println(char_demo(65))
+}

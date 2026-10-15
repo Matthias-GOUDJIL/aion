@@ -509,6 +509,72 @@ fn test_ptr_memzero_field() {
     assert_snapshot!(run_aion_test("stdlib/ptr_memzero_field"));
 }
 
+// --- SQL Transpile Tests ---
+
+fn run_aion_transpile(path: &str) -> String {
+    let root = project_root();
+    let tmp_dir = root.join("tests/tmp");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let out_file = tmp_dir.join(format!("{}.sql", path.replace('/', "_")));
+
+    let output = Command::new("cargo")
+        .args([
+            "run",
+            "--quiet",
+            "--",
+            "transpile",
+            &format!("tests/fixtures/{}.ai", path),
+            "-o",
+            out_file.to_str().unwrap(),
+        ])
+        .current_dir(&root)
+        .timeout(std::time::Duration::from_secs(60))
+        .output()
+        .expect("failed to execute cargo run transpile");
+
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if output.status.success() {
+        // Success: snapshot the warnings (stderr) followed by the SQL text.
+        let sql = std::fs::read_to_string(&out_file).unwrap_or_default();
+        let _ = std::fs::remove_file(&out_file);
+        format!("--- stderr ---\n{}\n--- sql ---\n{}", stderr.trim(), sql)
+    } else {
+        // Errors: no SQL file is written; snapshot the spanned reports.
+        stderr.trim().to_string()
+    }
+}
+
+#[test]
+fn test_transpile_sql_transpile() {
+    // #74 — the historical SQL fixture transpiles (warnings allowed, no errors).
+    assert_snapshot!(run_aion_transpile("stdlib/sql_transpile"));
+}
+#[test]
+fn test_transpile_sql_advanced() {
+    // #74 — DECLARE/WHILE/logic fixture transpiles (warnings allowed, no errors).
+    assert_snapshot!(run_aion_transpile("stdlib/sql_advanced"));
+}
+#[test]
+fn test_transpile_sql_match_enum() {
+    // #74 acceptance — enum matches (statement + expression, guarded
+    // defaults), struct composites, while/break/continue, Duration/Date.
+    assert_snapshot!(run_aion_transpile("stdlib/sql_match_enum"));
+}
+#[test]
+fn test_transpile_sql_types() {
+    // #74 — type mapping (BIGINT / DOUBLE PRECISION / TEXT / INTERVAL /
+    // TIMESTAMP), operators (% ^ inside), casts, string escaping, builtin
+    // mappings (len/from_int/abs/max/min).
+    assert_snapshot!(run_aion_transpile("stdlib/sql_types"));
+}
+#[test]
+fn test_transpile_sql_error_unsupported() {
+    // #74 error cases — unsupported constructs (spawn, arrays, payload
+    // enums, tuple destructuring, fs builtins) produce spanned errors and
+    // no SQL is written.
+    assert_snapshot!(run_aion_transpile("compiler/sql_error_unsupported"));
+}
+
 // --- Compiler Tests ---
 
 #[test]

@@ -1,0 +1,124 @@
+::intent "SQL transpiler acceptance: enums, match, structs, control flow (#74)"
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+struct Point {
+    x: i64,
+    y: i64,
+}
+
+fn announce(c: Color) {
+    match c {
+        Color::Red => io.println("warm"),
+        Color::Green => io.println("fresh"),
+        Color::Blue => io.println("cool"),
+    }
+}
+
+fn describe(c: Color) -> String {
+    return match c {
+        Color::Red => "warm",
+        Color::Green => "fresh",
+        Color::Blue => "cool",
+    }
+}
+
+fn score(c: Color) -> i64 {
+    let base = 10
+    let bonus = match c {
+        Color::Red => 5,
+        Color::Green => 10,
+        Color::Blue => 15,
+    }
+    return base + bonus
+}
+
+fn word(n: i64) -> String {
+    return match n {
+        0 => "zero",
+        1..9 => "small",
+        10 | 20 => "round",
+        _ => "big",
+    }
+}
+
+fn grade(n: i64) -> String {
+    return match n {
+        _ if n >= 90 => "high",
+        _ if n >= 50 => "mid",
+        _ => "low",
+    }
+}
+
+fn clamp(n: i64, lo: i64, hi: i64) -> i64 {
+    if n < lo {
+        return lo
+    } else {
+        if n > hi {
+            return hi
+        }
+    }
+    return n
+}
+
+fn sum_to(limit: i64) -> i64 {
+    let mut total = 0
+    let mut i = 0
+    while i <= limit {
+        total = total + i
+        i = i + 1
+    }
+    return total
+}
+
+fn first_past(n: i64, limit: i64) -> i64 {
+    let mut i = 0
+    while true {
+        if i > n {
+            break
+        }
+        if i < 3 {
+            i = i + 1
+            continue
+        }
+        if i > limit {
+            return i
+        }
+        i = i + 1
+    }
+    return i
+}
+
+fn make_point(x: i64, y: i64) -> Point {
+    return Point { x: x, y: y }
+}
+
+fn translate(p: Point, dx: i64, dy: i64) -> Point {
+    return Point { x: p.x + dx, y: p.y + dy }
+}
+
+fn main() {
+    let c = Color::Green
+    announce(c)
+    io.println(describe(c))
+    let s = score(c)
+    io.println(string.from_int(s))
+    io.println(word(15))
+    io.println(grade(75))
+    io.println(string.from_int(clamp(42, 0, 10)))
+    io.println(string.from_int(sum_to(4)))
+    io.println(string.from_int(first_past(10, 5)))
+    let p = make_point(3, 4)
+    let q = translate(p, 10, 20)
+    io.println(string.from_int(q.x))
+    io.println(string.from_int(q.y))
+    let tick = 5s
+    let when = D2024-01-01
+    if tick > 1s {
+        io.println("done")
+    }
+}

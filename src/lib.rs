@@ -12,7 +12,7 @@ pub mod builtins;
 use crate::analysis::checker::TypeChecker;
 use crate::ast::Program;
 use crate::codegen::compiler::Compiler;
-use crate::codegen::transpiler::sql::SqlTranspiler;
+use crate::codegen::transpiler::sql::{SqlTranspiler, TranspileOutput};
 use crate::error::CompileError;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -100,24 +100,27 @@ fn process_imports(
     Ok(())
 }
 
-pub fn transpile_sql(input_path: &str) -> Result<String, CompileError> {
+pub fn transpile_sql(input_path: &str) -> Result<TranspileOutput, CompileError> {
     let source = fs::read_to_string(input_path).map_err(|e| CompileError::io(e.to_string()))?;
     let lexer = Lexer::new(&source);
     let mut parser = Parser::new(lexer);
-    let program = parser.parse_program().map_err(|e| CompileError::Type {
-        message: format!(
-            "Parse errors: {}",
-            e.iter()
-                .map(|e| e.to_string())
-                .collect::<Vec<_>>()
-                .join("; ")
-        ),
-        line: 0,
-        col: 0,
-        snippet: None,
+    let program = parser.parse_program().map_err(|e| {
+        CompileError::Type {
+            message: format!(
+                "Parse errors: {}",
+                e.iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
+            line: 0,
+            col: 0,
+            snippet: None,
+        }
+        .with_snippet(&source)
     })?;
 
-    let mut transpiler = SqlTranspiler::new();
+    let mut transpiler = SqlTranspiler::new(&source);
     Ok(transpiler.transpile(&program))
 }
 

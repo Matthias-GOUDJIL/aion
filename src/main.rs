@@ -156,17 +156,36 @@ fn main() {
         } => {
             if target != "sql" {
                 eprintln!("error: only SQL target is supported for now");
-                return;
+                std::process::exit(1);
             }
 
             match transpile_sql(&input) {
-                Ok(sql) => {
-                    if let Err(e) = fs::write(&output, sql) {
+                Ok(result) => {
+                    // Diagnostics carry their own spans/snippets; errors
+                    // mean no SQL was generated and nothing is written.
+                    for d in &result.diagnostics {
+                        eprint!("{}", d.report());
+                    }
+                    if result.has_errors() {
+                        eprintln!(
+                            "error: {} transpile error(s) — no SQL was generated",
+                            result
+                                .diagnostics
+                                .iter()
+                                .filter(|d| !d.is_warning())
+                                .count()
+                        );
+                        std::process::exit(1);
+                    }
+                    if let Err(e) = fs::write(&output, &result.sql) {
                         eprintln!("error: {}", e);
                         std::process::exit(1);
                     }
                 }
-                Err(e) => eprintln!("error: {}", e),
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
             }
         }
     }

@@ -1,0 +1,49 @@
+---
+source: tests/integration.rs
+expression: "run_aion_transpile(\"compiler/sql_error_unsupported\")"
+---
+error: spawn blocks have no SQL equivalent (SQL is single-threaded)
+  --> line 9, column 5
+      8 | fn use_spawn() {
+ >    9 |     spawn {
+           ^
+     10 |         let x = 1
+error: array literals have no SQL equivalent (#54)
+  --> line 15, column 15
+     14 | fn use_array() -> i64 {
+ >   15 |     let arr = [1, 2, 3]
+                     ^
+     16 |     return arr[0]
+error: array indexing has no SQL equivalent (#54)
+  --> line 16, column 15
+     15 |     let arr = [1, 2, 3]
+ >   16 |     return arr[0]
+                     ^
+     17 | }
+warning: payload enum 'Shape' has no SQL equivalent — JSONB assumed
+  --> line 0, column 0
+error: binding pattern 'Circle' cannot be transpiled — SQL has no payload extraction; match the scrutinee directly
+  --> line 20, column 5
+     19 | fn use_payload(s: Shape) -> i64 {
+ >   20 |     match s {
+           ^
+     21 |         Circle(r) => r,
+error: binding pattern 'Square' cannot be transpiled — SQL has no payload extraction; match the scrutinee directly
+  --> line 20, column 5
+     19 | fn use_payload(s: Shape) -> i64 {
+ >   20 |     match s {
+           ^
+     21 |         Circle(r) => r,
+error: destructuring let (a, b) has no SQL equivalent — bind fields explicitly
+  --> line 27, column 5
+     26 | fn use_tuple() -> i64 {
+ >   27 |     let (a, b) = compute_pair()
+           ^
+     28 |     return a
+error: builtin 'fs_write' has no SQL equivalent (aion_write_file: i64)
+  --> line 36, column 20
+     35 | fn use_fs() -> i64 {
+ >   36 |     return fs_write("log.txt", "hello")
+                          ^
+     37 | }
+error: 7 transpile error(s) — no SQL was generated
