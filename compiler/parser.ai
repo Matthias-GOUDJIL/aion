@@ -1027,6 +1027,7 @@ impl Parser {
                 token.TokenKind::DoubleColon => { dispatch = true; },
                 token.TokenKind::LBrace => { dispatch = true; },
                 token.TokenKind::LBracket => { dispatch = true; },
+                token.TokenKind::Question => { dispatch = true; },
                 _ => { dispatch = false; },
             }
             if !dispatch {
@@ -1050,6 +1051,42 @@ impl Parser {
                         }
                         if is_rb { let _ = self.advance(); }
                         current = ast.Expression::Index(current, idx);
+                    },
+                    token.TokenKind::Question => {
+                        // Error propagation `?` operator (#138): desugars to
+                        // `match expr { Ok(v) => v, Err(e) => return Result::Err(e) }`.
+                        let _ = self.advance();  // consume '?'
+                        let mut arms = vector.Vector<ast.MatchArm>.new();
+                        let mut ok_params = vector.Vector<String>.new();
+                        ok_params.push("__try_val");
+                        let mut ok_body = vector.Vector<ast.Statement>.new();
+                        ok_body.push(ast.Statement::ExpressionStmt(ast.Expression::Identifier("__try_val")));
+                        let ok_arm = ast.MatchArm {
+                            pattern: "Result::Ok",
+                            patterns: vector.Vector<String>.new(),
+                            has_guard: false,
+                            guard: ast.Expression::Integer(0),
+                            params: ok_params,
+                            body: ok_body,
+                        };
+                        arms.push(ok_arm);
+                        let mut err_params = vector.Vector<String>.new();
+                        err_params.push("__try_err");
+                        let mut err_args = vector.Vector<ast.Expression>.new();
+                        err_args.push(ast.Expression::Identifier("__try_err"));
+                        let err_inst = ast.Expression::EnumInst("Result", "Err", vector.Vector<String>.new(), err_args);
+                        let mut err_body = vector.Vector<ast.Statement>.new();
+                        err_body.push(ast.Statement::Return(err_inst, ""));
+                        let err_arm = ast.MatchArm {
+                            pattern: "Result::Err",
+                            patterns: vector.Vector<String>.new(),
+                            has_guard: false,
+                            guard: ast.Expression::Integer(0),
+                            params: err_params,
+                            body: err_body,
+                        };
+                        arms.push(err_arm);
+                        current = ast.Expression::Match(current, arms);
                     },
                     token.TokenKind::Lt => {
                         // Generic type arguments: `Vector<String>`,

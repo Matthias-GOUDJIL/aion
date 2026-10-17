@@ -200,7 +200,7 @@ All B5–B11 are non-issues. Three blockers (B1, B4, B6) MUST land before
 |---|---|---|---|---|
 | #136 | OrderedMap stdlib module | high | #129 | open |
 | #137 | std.fmt.s placeholder formatter | medium | #131 (recommended) | open |
-| #138 | `?` operator for Result<T, E> | low | (deferred) | open |
+| #138 | `?` operator for Result<T, E> | low | (deferred) | closed |
 | #139 | std.string.escape_llvm_c_string | medium | #130 | open |
 | #140 | std.string.join | medium | #130 | open |
 | #141 | Mutual `use` import test | low | #133 | open |

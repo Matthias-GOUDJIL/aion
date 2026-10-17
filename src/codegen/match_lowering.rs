@@ -54,13 +54,37 @@ impl<'ctx> Compiler<'ctx> {
         let exit_bb = self.context.append_basic_block(function, exit_name);
         let mut phis = Vec::new();
 
-        let cbn = if ctn.contains('<') {
-            ctn.split('<')
-                .next()
-                .ok_or_else(|| CompileError::internal("Invalid type name".to_string()))?
-                .to_string()
+        let (cbn, tga) = if let Some(start) = ctn.find('<')
+            && ctn.ends_with('>')
+        {
+            let base = ctn[..start].to_string();
+            let args_str = &ctn[start + 1..ctn.len() - 1];
+            let mut depth = 0i32;
+            let mut cur = String::new();
+            let mut args = Vec::new();
+            for c in args_str.chars() {
+                match c {
+                    '<' | '(' | '[' => {
+                        depth += 1;
+                        cur.push(c);
+                    }
+                    '>' | ')' | ']' => {
+                        depth -= 1;
+                        cur.push(c);
+                    }
+                    ',' if depth == 0 => {
+                        args.push(cur.trim().to_string());
+                        cur.clear();
+                    }
+                    _ => cur.push(c),
+                }
+            }
+            if !cur.trim().is_empty() {
+                args.push(cur.trim().to_string());
+            }
+            (base, args)
         } else {
-            ctn.to_string()
+            (ctn.to_string(), vec![])
         };
         let fen = self
             .resolve_fuzzy_name(&self.enum_types, &cbn)
@@ -170,7 +194,17 @@ impl<'ctx> Compiler<'ctx> {
                                 || arm.pattern.ends_with(&format!(".{}", v.name))
                                 || arm.pattern.ends_with(&format!("::{}", v.name))
                             {
-                                data_types = v.data_types.clone();
+                                data_types = v
+                                    .data_types
+                                    .iter()
+                                    .map(|dt| {
+                                        Self::substitute_generic_params(
+                                            dt,
+                                            &e_decl.generic_params,
+                                            &tga,
+                                        )
+                                    })
+                                    .collect();
                                 break;
                             }
                         }

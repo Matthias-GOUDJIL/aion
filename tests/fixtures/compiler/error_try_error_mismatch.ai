@@ -1,0 +1,14 @@
+use std.result
+
+fn int_err(x: i64) -> result.Result<i64, i64> {
+    return result.Result::Err(x);
+}
+
+fn str_err(x: i64) -> result.Result<i64, String> {
+    let v = int_err(x)?;
+    return result.Result::Ok(v);
+}
+
+fn main() {
+    let _ = str_err(1);
+}

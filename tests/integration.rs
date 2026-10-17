@@ -1015,3 +1015,23 @@ fn test_stdlib_tensor_kernels() {
 fn test_stdlib_tensor_matmul_mismatch() {
     assert_snapshot!(run_aion_test("stdlib/tensor_matmul_mismatch"));
 }
+
+#[test]
+fn test_try_operator() {
+    assert_snapshot!(run_aion_test("language/try_operator"));
+}
+
+#[test]
+fn test_error_try_non_result_value() {
+    assert_snapshot!(run_aion_test("compiler/error_try_non_result_value"));
+}
+
+#[test]
+fn test_error_try_non_result_fn() {
+    assert_snapshot!(run_aion_test("compiler/error_try_non_result_fn"));
+}
+
+#[test]
+fn test_error_try_error_mismatch() {
+    assert_snapshot!(run_aion_test("compiler/error_try_error_mismatch"));
+}

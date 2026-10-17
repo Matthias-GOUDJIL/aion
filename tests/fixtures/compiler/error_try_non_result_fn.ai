@@ -1,0 +1,14 @@
+use std.result
+
+fn fallible(x: i64) -> result.Result<i64, String> {
+    return result.Result::Ok(x);
+}
+
+fn not_result(x: i64) -> i64 {
+    let v = fallible(x)?;
+    return v;
+}
+
+fn main() {
+    let _ = not_result(5);
+}

@@ -1411,6 +1411,54 @@ impl<'ctx> Compiler<'ctx> {
                 let result = self.lower_match(cv, &ctn, arms, variables, function, false)?;
                 Ok(result.unwrap_or(i64_t.const_zero().into()))
             }
+            Expression::Try {
+                expr: inner_expr, ..
+            } => {
+                let cv = self.compile_expr(inner_expr, variables, function)?;
+                let ep = cv.into_pointer_value();
+                let et = self
+                    .resolve_fuzzy_name(&self.enum_types, "Result")
+                    .and_then(|en| self.enum_types.get(&en).copied())
+                    .unwrap_or_else(|| {
+                        self.context.struct_type(
+                            &[i64_t.into(), self.context.i8_type().array_type(512).into()],
+                            false,
+                        )
+                    });
+                let tag_ptr = self.builder.build_struct_gep(et, ep, 0, "try_tagptr")?;
+                let tag = self
+                    .builder
+                    .build_load(i64_t, tag_ptr, "try_tag")?
+                    .into_int_value();
+                let is_ok = self.builder.build_int_compare(
+                    IntPredicate::EQ,
+                    tag,
+                    i64_t.const_zero(),
+                    "try_is_ok",
+                )?;
+                let ok_bb = self.context.append_basic_block(function, "try_ok");
+                let err_bb = self.context.append_basic_block(function, "try_err");
+                self.builder
+                    .build_conditional_branch(is_ok, ok_bb, err_bb)?;
+
+                // Err branch: early-return the Result::Err pointer directly.
+                self.builder.position_at_end(err_bb);
+                self.builder.build_return(Some(&ep))?;
+
+                // Ok branch: extract the payload from field 1 of the enum struct.
+                self.builder.position_at_end(ok_bb);
+                let ok_type_name = self.get_expr_type_name(e, variables);
+                let ok_llvm_type = self.aion_type_to_llvm(&ok_type_name);
+                let data_ptr = self.builder.build_struct_gep(et, ep, 1, "try_dataptr")?;
+                let cast_ptr = self
+                    .builder
+                    .build_bit_cast(data_ptr, pt, "try_datacast")?
+                    .into_pointer_value();
+                let ok_val = self
+                    .builder
+                    .build_load(ok_llvm_type, cast_ptr, "try_ok_val")?;
+                Ok(ok_val)
+            }
             Expression::TupleLiteral { elements, .. } => {
                 // Build an anonymous LLVM struct from the element types,
                 // register it under the tuple type name `(T,U,...)` in

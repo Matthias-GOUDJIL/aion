@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_try_non_result_fn\")"
+---
+Type Error: cannot use '?' operator in a function that returns 'i64' (expected Result)

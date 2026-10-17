@@ -48,7 +48,7 @@ This document outlines the technical path to transform Aion from its current Rus
     *   Implement `std.data.dataframe` with support for multiple column types (using Enums).
 3.  **Real-world I/O**
     *   Implement a native CSV parser in Aion using `std.fs` and `std.string`.
-4.  **Error Handling**
+4.  **Error Handling** [COMPLETED]
     *   Formalize `Result<T, E>` and `?` operator (#138) or pattern matching usage.
 
 ---
