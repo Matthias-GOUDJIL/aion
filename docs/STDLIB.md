@@ -144,17 +144,14 @@ Native Clustering.
 
 ## 6. Artificial Intelligence (Native)
 
-### `std.ai.tensor` **[partial]**
-The core of Aion. Only the constructors are functional today; the math ops
-and autograd are runtime placeholders (see `src/runtime.c:220-235`).
-- `tensor_zeros`, `tensor_ones`, `tensor_rand`: Working constructors.
-- `tensor_move`: Device transfer stub (currently a no-op string swap, not real GPU/TPU).
-- `matmul`, `add`: **Not implemented** — `aion_ai_tensor_matmul` /
-  `aion_ai_tensor_add` are declared (builtins table, #177) and reach the
-  runtime placeholders, which return a zero tensor regardless of input
-  (`// Placeholder: return zeros for now`).
-- `backward()`: **Not implemented** — `aion_ai_tensor_backward` only prints to stdout, no gradient is computed.
-- `to(device)`: See `tensor_move` above; no real device support yet.
+### `std.ai.tensor` **[stable]**
+The core AI tensor module of Aion (`#203`), backed by CPU kernels in `src/runtime.c`.
+- Constructors: `Tensor.zeros(shape)`, `Tensor.ones(shape)`, `Tensor.rand(shape)` (`[0.0, 1.0]` uniform).
+- Element access & reductions: `get(idx) -> f64`, `set(idx, val)`, `len() -> i64`, `sum() -> f64`.
+- Operations:
+  - `add(other: Tensor) -> Tensor`: Element-wise addition (`out[i] = a[i] + b[i]`); traps with an error message on size mismatch.
+  - `matmul(other: Tensor) -> Tensor`: 2D matrix multiplication (`[M, K] x [K, N] -> [M, N]`); traps with an error message on non-2D or incompatible inner dimensions.
+- Device & autograd stubs: `to(device)` updates the `device` tag (`"cpu"`, `"gpu:0"`, `"tpu"`); `backward()` invokes `aion_ai_tensor_backward` when `requires_grad` is set.
 
 ### `std.media`
 - **`image`** **[skeleton]** — Load/Save images, convert to Tensor.

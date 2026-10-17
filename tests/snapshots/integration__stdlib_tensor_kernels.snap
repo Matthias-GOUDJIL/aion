@@ -1,0 +1,7 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/tensor_kernels\")"
+---
+add: len=6, el0=2, el5=2, sum=12
+matmul: len=4, c00=31, c01=19, c10=85, c11=55, sum=190
+edge: uv=14, oob=0, dev=gpu:0, rand_ok=true

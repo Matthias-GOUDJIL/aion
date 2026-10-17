@@ -4,32 +4,47 @@ use std.collections.vector
 use std.string
 
 pub struct Tensor {
-    data: Vector<f64>,
-    shape: Vector<i64>,
-    device: String, // "cpu", "gpu:0", "tpu"
-    requires_grad: bool,
+    pub data: vector.Vector<f64>,
+    pub shape: vector.Vector<i64>,
+    pub device: String, // "cpu", "gpu:0", "tpu"
+    pub requires_grad: bool,
 }
 
 impl Tensor {
-    pub fn zeros(shape: Vector<i64>) -> Tensor {
-        @intrinsic("ai_tensor_zeros", shape)
+    pub fn zeros(shape: vector.Vector<i64>) -> Tensor {
+        return @intrinsic("ai_tensor_zeros", shape);
     }
 
-    pub fn ones(shape: Vector<i64>) -> Tensor {
-        @intrinsic("ai_tensor_ones", shape)
+    pub fn ones(shape: vector.Vector<i64>) -> Tensor {
+        return @intrinsic("ai_tensor_ones", shape);
     }
 
-    pub fn rand(shape: Vector<i64>) -> Tensor {
-        @intrinsic("ai_tensor_rand", shape)
+    pub fn rand(shape: vector.Vector<i64>) -> Tensor {
+        return @intrinsic("ai_tensor_rand", shape);
     }
 
     pub fn matmul(self, other: Tensor) -> Tensor {
-        // Le "dot product" natif, optimisé SIMD/CUDA via l'intrinsèque
-        @intrinsic("ai_tensor_matmul", self, other)
+        return @intrinsic("ai_tensor_matmul", self, other);
     }
 
     pub fn add(self, other: Tensor) -> Tensor {
-        @intrinsic("ai_tensor_add", self, other)
+        return @intrinsic("ai_tensor_add", self, other);
+    }
+
+    pub fn get(self, idx: i64) -> f64 {
+        return @intrinsic("ai_tensor_get", self, idx);
+    }
+
+    pub fn set(self, idx: i64, val: f64) {
+        @intrinsic("ai_tensor_set", self, idx, val);
+    }
+
+    pub fn len(self) -> i64 {
+        return @intrinsic("ai_tensor_len", self);
+    }
+
+    pub fn sum(self) -> f64 {
+        return @intrinsic("ai_tensor_sum", self);
     }
 
     pub fn backward(self) {
@@ -38,7 +53,7 @@ impl Tensor {
             @intrinsic("ai_tensor_backward", self)
         }
     }
-    
+
     pub fn to(mut self, device: String) {
         ::intent "Moves the tensor to the specified device (GPU/TPU)"
         @intrinsic("ai_tensor_move", self, device)

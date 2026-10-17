@@ -212,43 +212,75 @@ long long aion_string_len(const char* s) {
     return s ? strlen(s) : 0;
 }
 
-// AI Tensor Support
+// AI Tensor Support (#203)
 struct AionVector {
     void* ptr;
     long long len;
     long long cap;
 };
 
+// Matches LLVM layout of `pub struct Tensor { data: Vector<f64>, shape: Vector<i64>, device: String, requires_grad: bool }`:
+// composite fields (`data`, `shape`, `device`) are heap pointers (`ptr`).
 struct AionTensor {
-    struct AionVector data;
-    struct AionVector shape;
+    struct AionVector* data;
+    struct AionVector* shape;
     char* device;
     long long requires_grad;
 };
 
+static struct AionVector* aion_clone_shape(struct AionVector* shape) {
+    struct AionVector* s = (struct AionVector*)aion_malloc(sizeof(struct AionVector));
+    if (!shape || shape->len <= 0) {
+        s->ptr = NULL;
+        s->len = 0;
+        s->cap = 0;
+        return s;
+    }
+    long long n = shape->len;
+    long long* buf = (long long*)GC_malloc_atomic(n * sizeof(long long));
+    memcpy(buf, shape->ptr, n * sizeof(long long));
+    s->ptr = buf;
+    s->len = n;
+    s->cap = n;
+    return s;
+}
+
 struct AionTensor* aion_ai_tensor_zeros(struct AionVector* shape) {
     struct AionTensor* t = (struct AionTensor*)aion_malloc(sizeof(struct AionTensor));
-    t->shape = *shape; 
+    t->shape = aion_clone_shape(shape);
     t->device = GC_strdup("cpu");
     t->requires_grad = 0;
-    
+
     long long size = 1;
-    long long* shape_ptr = (long long*)shape->ptr;
-    for (long long i = 0; i < shape->len; i++) {
-        size *= shape_ptr[i];
+    if (shape && shape->len > 0 && shape->ptr) {
+        long long* shape_ptr = (long long*)shape->ptr;
+        for (long long i = 0; i < shape->len; i++) {
+            size *= shape_ptr[i];
+        }
+    } else {
+        size = 0;
     }
-    
-    t->data.ptr = GC_malloc_atomic(size * sizeof(double));
-    t->data.len = size;
-    t->data.cap = size;
-    
+    if (size < 0) size = 0;
+
+    struct AionVector* d = (struct AionVector*)aion_malloc(sizeof(struct AionVector));
+    if (size > 0) {
+        double* buf = (double*)GC_malloc_atomic(size * sizeof(double));
+        memset(buf, 0, size * sizeof(double));
+        d->ptr = buf;
+    } else {
+        d->ptr = NULL;
+    }
+    d->len = size;
+    d->cap = size;
+    t->data = d;
+
     return t;
 }
 
 struct AionTensor* aion_ai_tensor_ones(struct AionVector* shape) {
     struct AionTensor* t = aion_ai_tensor_zeros(shape);
-    double* data_ptr = (double*)t->data.ptr;
-    for (long long i = 0; i < t->data.len; i++) {
+    double* data_ptr = (double*)t->data->ptr;
+    for (long long i = 0; i < t->data->len; i++) {
         data_ptr[i] = 1.0;
     }
     return t;
@@ -256,30 +288,104 @@ struct AionTensor* aion_ai_tensor_ones(struct AionVector* shape) {
 
 struct AionTensor* aion_ai_tensor_rand(struct AionVector* shape) {
     struct AionTensor* t = aion_ai_tensor_zeros(shape);
-    double* data_ptr = (double*)t->data.ptr;
-    for (long long i = 0; i < t->data.len; i++) {
+    double* data_ptr = (double*)t->data->ptr;
+    for (long long i = 0; i < t->data->len; i++) {
         data_ptr[i] = (double)rand() / RAND_MAX;
     }
     return t;
 }
 
 void aion_ai_tensor_backward(struct AionTensor* t) {
-    // Placeholder: prints only, no gradient computation
+    (void)t;
     printf("Called t.backward()\n");
 }
 
 struct AionTensor* aion_ai_tensor_matmul(struct AionTensor* t1, struct AionTensor* t2) {
-    // Placeholder: return zeros for now
-    return aion_ai_tensor_zeros(&t1->shape);
+    if (!t1 || !t2 || !t1->shape || !t2->shape || t1->shape->len != 2 || t2->shape->len != 2) {
+        fprintf(stderr, "error: tensor matmul requires 2D tensors\n");
+        exit(1);
+    }
+    long long* s1 = (long long*)t1->shape->ptr;
+    long long* s2 = (long long*)t2->shape->ptr;
+    long long m = s1[0];
+    long long k1 = s1[1];
+    long long k2 = s2[0];
+    long long n = s2[1];
+    if (k1 != k2) {
+        fprintf(stderr, "error: tensor matmul shape mismatch ([%lld, %lld] vs [%lld, %lld])\n", m, k1, k2, n);
+        exit(1);
+    }
+    struct AionVector out_shape;
+    long long dims[2] = { m, n };
+    out_shape.ptr = dims;
+    out_shape.len = 2;
+    out_shape.cap = 2;
+    struct AionTensor* out = aion_ai_tensor_zeros(&out_shape);
+    double* a = (double*)t1->data->ptr;
+    double* b = (double*)t2->data->ptr;
+    double* c = (double*)out->data->ptr;
+    for (long long i = 0; i < m; i++) {
+        for (long long j = 0; j < n; j++) {
+            double sum = 0.0;
+            for (long long p = 0; p < k1; p++) {
+                sum += a[i * k1 + p] * b[p * n + j];
+            }
+            c[i * n + j] = sum;
+        }
+    }
+    return out;
 }
 
 struct AionTensor* aion_ai_tensor_add(struct AionTensor* t1, struct AionTensor* t2) {
-    // Placeholder: return zeros for now
-    return aion_ai_tensor_zeros(&t1->shape);
+    if (!t1 || !t2 || !t1->data || !t2->data || t1->data->len != t2->data->len) {
+        fprintf(stderr, "error: tensor add size mismatch\n");
+        exit(1);
+    }
+    struct AionTensor* out = aion_ai_tensor_zeros(t1->shape);
+    double* a = (double*)t1->data->ptr;
+    double* b = (double*)t2->data->ptr;
+    double* c = (double*)out->data->ptr;
+    for (long long i = 0; i < out->data->len; i++) {
+        c[i] = a[i] + b[i];
+    }
+    return out;
 }
 
 void aion_ai_tensor_move(struct AionTensor* t, const char* device) {
-    t->device = GC_strdup(device);
+    if (t && device) {
+        t->device = GC_strdup(device);
+    }
+}
+
+double aion_ai_tensor_get(struct AionTensor* t, long long idx) {
+    if (!t || !t->data || idx < 0 || idx >= t->data->len) {
+        return 0.0;
+    }
+    double* d = (double*)t->data->ptr;
+    return d[idx];
+}
+
+void aion_ai_tensor_set(struct AionTensor* t, long long idx, double val) {
+    if (!t || !t->data || idx < 0 || idx >= t->data->len) {
+        return;
+    }
+    double* d = (double*)t->data->ptr;
+    d[idx] = val;
+}
+
+long long aion_ai_tensor_len(struct AionTensor* t) {
+    if (!t || !t->data) return 0;
+    return t->data->len;
+}
+
+double aion_ai_tensor_sum(struct AionTensor* t) {
+    if (!t || !t->data) return 0.0;
+    double* d = (double*)t->data->ptr;
+    double s = 0.0;
+    for (long long i = 0; i < t->data->len; i++) {
+        s += d[i];
+    }
+    return s;
 }
 
 char* aion_char_to_str(long long c) {

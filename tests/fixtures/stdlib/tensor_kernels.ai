@@ -1,0 +1,61 @@
+use std.ai.tensor
+use std.collections.vector
+use std.io
+
+fn main() -> i64 {
+    // 1. Nominal: ones + ones and sum/len/get/set
+    let mut s23 = vector.Vector<i64>.new()
+    s23.push(2)
+    s23.push(3)
+
+    let t1 = tensor.Tensor.ones(s23)
+    let t2 = tensor.Tensor.ones(s23)
+    let t_sum = t1.add(t2)
+    io.println(f"add: len={t_sum.len()}, el0={t_sum.get(0)}, el5={t_sum.get(5)}, sum={t_sum.sum()}")
+
+    // 2. Nominal: 2D matmul [2, 3] x [3, 2] -> [2, 2]
+    // A = [[1, 2, 3], [4, 5, 6]]
+    let a = tensor.Tensor.zeros(s23)
+    a.set(0, 1.0)
+    a.set(1, 2.0)
+    a.set(2, 3.0)
+    a.set(3, 4.0)
+    a.set(4, 5.0)
+    a.set(5, 6.0)
+
+    // B = [[7, 8], [9, 1], [2, 3]]
+    let mut s32 = vector.Vector<i64>.new()
+    s32.push(3)
+    s32.push(2)
+    let b = tensor.Tensor.zeros(s32)
+    b.set(0, 7.0)
+    b.set(1, 8.0)
+    b.set(2, 9.0)
+    b.set(3, 1.0)
+    b.set(4, 2.0)
+    b.set(5, 3.0)
+
+    // C = A x B = [[1*7+2*9+3*2, 1*8+2*1+3*3], [4*7+5*9+6*2, 4*8+5*1+6*3]]
+    //   = [[31, 19], [85, 55]]
+    let c = a.matmul(b)
+    io.println(f"matmul: len={c.len()}, c00={c.get(0)}, c01={c.get(1)}, c10={c.get(2)}, c11={c.get(3)}, sum={c.sum()}")
+
+    // 3. Edge cases: 1x1 matmul, rectangular [2, 3] x [3, 1], OOB get/set, rand range, device transfer
+    let mut s11 = vector.Vector<i64>.new()
+    s11.push(1)
+    s11.push(1)
+    let u = tensor.Tensor.ones(s11)
+    u.set(0, 3.5)
+    let v = tensor.Tensor.ones(s11)
+    v.set(0, 4.0)
+    let uv = u.matmul(v)
+    let oob_val = uv.get(99)
+    uv.set(99, 123.0)
+    uv.to("gpu:0")
+    let r = tensor.Tensor.rand(s11)
+    let rv = r.get(0)
+    let r_ok = rv >= 0.0 && rv <= 1.0
+    io.println(f"edge: uv={uv.get(0)}, oob={oob_val}, dev={uv.device}, rand_ok={r_ok}")
+
+    return 0
+}

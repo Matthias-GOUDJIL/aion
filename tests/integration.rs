@@ -1005,3 +1005,13 @@ fn test_stdlib_math_random() {
 fn test_stdlib_process_os_flags() {
     assert_snapshot!(run_aion_test("stdlib/process_os_flags"));
 }
+
+#[test]
+fn test_stdlib_tensor_kernels() {
+    assert_snapshot!(run_aion_test("stdlib/tensor_kernels"));
+}
+
+#[test]
+fn test_stdlib_tensor_matmul_mismatch() {
+    assert_snapshot!(run_aion_test("stdlib/tensor_matmul_mismatch"));
+}

@@ -1,0 +1,6 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/tensor_matmul_mismatch\")"
+---
+error: tensor matmul shape mismatch ([2, 3] vs [4, 2])
+error: process exited with code: 1
