@@ -66,6 +66,7 @@ fn main() {
             let bin_file = format!("./aion_app_{}", run_id);
 
             if let Err(e) = compile_file(&input, &ir_file) {
+                let _ = fs::remove_file(&ir_file);
                 eprintln!("{}", e);
                 std::process::exit(1);
             }
@@ -82,9 +83,13 @@ fn main() {
                 .status();
 
             if let Err(e) = llc_status {
+                let _ = fs::remove_file(&ir_file);
+                let _ = fs::remove_file(&obj_file);
                 eprintln!("error: llc failed: {}", e);
                 std::process::exit(1);
             } else if !llc_status.unwrap().success() {
+                let _ = fs::remove_file(&ir_file);
+                let _ = fs::remove_file(&obj_file);
                 eprintln!("error: llc failed with non-zero exit");
                 std::process::exit(1);
             }
@@ -108,14 +113,20 @@ fn main() {
                         ])
                         .status();
                     if let Err(e) = gcc_status {
+                        let _ = fs::remove_file(&ir_file);
+                        let _ = fs::remove_file(&obj_file);
                         eprintln!("error: gcc failed: {}", e);
                         std::process::exit(1);
                     } else if !gcc_status.unwrap().success() {
+                        let _ = fs::remove_file(&ir_file);
+                        let _ = fs::remove_file(&obj_file);
                         eprintln!("error: gcc failed with non-zero exit");
                         std::process::exit(1);
                     }
                 }
                 Err(LinkError::Failed(e)) => {
+                    let _ = fs::remove_file(&ir_file);
+                    let _ = fs::remove_file(&obj_file);
                     eprintln!("error: link failed: {}", e);
                     std::process::exit(1);
                 }
@@ -229,6 +240,7 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
         }
     };
 
+    let cached_tmp = std::path::Path::new("/tmp/aion_runtime_cached.bc");
     let runtime_bc = std::env::var("AION_RUNTIME_BC")
         .ok()
         .filter(|p| is_fresh(std::path::Path::new(p)))
@@ -236,17 +248,21 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
             let opt = std::path::Path::new("/opt/aion_runtime.bc");
             if is_fresh(opt) {
                 Some(opt.to_string_lossy().into_owned())
+            } else if is_fresh(cached_tmp) {
+                Some(cached_tmp.to_string_lossy().into_owned())
             } else {
                 None
             }
         });
 
-    let (runtime_bc, cleanup_bc) = match runtime_bc {
-        Some(p) => (p, false),
+    let runtime_bc = match runtime_bc {
+        Some(p) => p,
         None => {
             // On-the-fly bitcode compile (non-Docker dev or updated runtime.c).
-            // Use a temp file scoped to this run so concurrent runs don't clobber each other.
-            let tmp = format!("aion_runtime_{}.bc", std::process::id());
+            // Compile to a PID-scoped temp file then atomically rename to
+            // `/tmp/aion_runtime_cached.bc` so concurrent/subsequent invocations
+            // reuse the compiled bitcode (#206).
+            let pid_tmp = format!("/tmp/aion_runtime_{}.bc", std::process::id());
             let status = Command::new(&clang)
                 .args([
                     "-c",
@@ -255,17 +271,22 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
                     "-I/usr/include",
                     "src/runtime.c",
                     "-o",
-                    &tmp,
+                    &pid_tmp,
                 ])
                 .status()
                 .map_err(|e| LinkError::Failed(format!("clang bitcode compile: {}", e)))?;
             if !status.success() {
+                let _ = std::fs::remove_file(&pid_tmp);
                 return Err(LinkError::Failed(format!(
                     "clang bitcode compile exited with {}",
                     status.code().unwrap_or(-1)
                 )));
             }
-            (tmp, true)
+            if std::fs::rename(&pid_tmp, cached_tmp).is_ok() {
+                cached_tmp.to_string_lossy().into_owned()
+            } else {
+                pid_tmp
+            }
         }
     };
 
@@ -279,13 +300,8 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
             "-lpthread",
             "-lgc",
         ])
-        .status();
-
-    if cleanup_bc {
-        let _ = std::fs::remove_file(&runtime_bc);
-    }
-
-    let status = status.map_err(|e| LinkError::Failed(format!("lld link: {}", e)))?;
+        .status()
+        .map_err(|e| LinkError::Failed(format!("lld link: {}", e)))?;
 
     if !status.success() {
         return Err(LinkError::Failed(format!(

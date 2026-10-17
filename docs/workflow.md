@@ -4,7 +4,7 @@
 |--------|---------|
 | Build + run a file | `./aion build <file.ai> && ./output` |
 | Compile + run (all-in-one) | `./aion run <file.ai>` |
-| Run test suite | `docker run --rm -v "$(pwd)":/workspace -w /workspace aion-compiler cargo test -- --test-threads=1` |
+| Run test suite | `docker run --rm -v "$(pwd)":/workspace -w /workspace aion-compiler cargo test` |
 | Generate documentation | `./aion doc <file.ai>` |
 | Transpile to SQL | `./aion transpile <file.ai>` |
 | Lint docs for drift | `bash scripts/docs-check.sh` |
