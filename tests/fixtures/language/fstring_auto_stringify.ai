@@ -1,0 +1,32 @@
+// #205 — nominal and edge cases for auto-stringifying primitive expressions in f-strings.
+use std.io
+use std.string
+
+fn add(a: i64, b: i64) -> i64 {
+    return a + b
+}
+
+fn main() {
+    // Nominal: i64, f64, bool, and String variables
+    let name = "Aion"
+    let score = 42
+    let ratio = 3.5
+    let ok = true
+    let fail = false
+    io.println(f"Lang: {name}, score: {score}, ratio: {ratio}, ok: {ok}, fail: {fail}")
+
+    // Edge cases: 0, negative integers, i32 width, expression-first f-string, adjacent interpolations
+    let zero = 0
+    let neg = 0 - 99
+    let small: i32 = 17
+    io.println(f"{zero}")
+    io.println(f"{neg}")
+    io.println(f"{small}")
+    io.println(f"{score}{ok}{neg}")
+
+    // Nested arithmetic and comparison expressions inside {...}
+    io.println(f"sum={add(10, 25)}, gt={score > 10}, eq={score == 0}")
+
+    // Backwards compatibility with explicit string.from_int / string.from_float
+    io.println(f"explicit={string.from_int(score)}/{string.from_float(ratio)}")
+}

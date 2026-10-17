@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_fstring_struct\")"
+---
+Incompatible operator Plus for types String and Struct { name: "Point" }

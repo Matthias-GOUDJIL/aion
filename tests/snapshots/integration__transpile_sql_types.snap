@@ -27,7 +27,7 @@ CREATE OR REPLACE FUNCTION "concat_demo"("name" TEXT, "count" BIGINT)
 RETURNS TEXT
 AS $$
 BEGIN
-    RETURN ((("name" || ' has ') || "count") || ' items');
+    RETURN (((('' || "name") || ' has ') || "count") || ' items');
 END;
 $$ LANGUAGE plpgsql;
 

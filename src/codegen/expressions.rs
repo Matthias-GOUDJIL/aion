@@ -681,19 +681,50 @@ impl<'ctx> Compiler<'ctx> {
                             })
                         }
                         TokenKind::Plus if lhs.is_pointer_value() && rhs.is_int_value() => {
-                            let c2s =
-                                self.module
-                                    .get_function("aion_char_to_str")
-                                    .ok_or_else(|| {
+                            let rtn = self.get_expr_type_name(right, variables);
+                            let mut r_int = rhs.into_int_value();
+                            let bw = r_int.get_type().get_bit_width();
+                            if bw < 64 {
+                                if rtn.starts_with('u') || rtn == "bool" {
+                                    r_int = self
+                                        .builder
+                                        .build_int_z_extend(r_int, i64_t, "str_zext")?;
+                                } else {
+                                    r_int = self
+                                        .builder
+                                        .build_int_s_extend(r_int, i64_t, "str_sext")?;
+                                }
+                            }
+                            let s2 = if rtn == "bool" {
+                                let is_true = self.builder.build_int_compare(
+                                    IntPredicate::NE,
+                                    r_int,
+                                    i64_t.const_zero(),
+                                    "bool_cond",
+                                )?;
+                                let t_str = self
+                                    .builder
+                                    .build_global_string_ptr("true\0", "str_true")?
+                                    .as_basic_value_enum();
+                                let f_str = self
+                                    .builder
+                                    .build_global_string_ptr("false\0", "str_false")?
+                                    .as_basic_value_enum();
+                                self.builder
+                                    .build_select(is_true, t_str, f_str, "bool2str")?
+                            } else {
+                                let i2s = self.module.get_function("aion_int_to_str").ok_or_else(
+                                    || {
                                         CompileError::internal(
-                                            "aion_char_to_str not found".to_string(),
+                                            "aion_int_to_str not found".to_string(),
                                         )
-                                    })?;
-                            let s2 = self
-                                .builder
-                                .build_call(c2s, &[rhs.into()], "char2str")?
-                                .try_as_basic_value()
-                                .unwrap_basic();
+                                    },
+                                )?;
+                                self.builder
+                                    .build_call(i2s, &[r_int.into()], "int2str")?
+                                    .try_as_basic_value()
+                                    .unwrap_basic()
+                            };
                             let fnc =
                                 self.module.get_function("aion_str_concat").ok_or_else(|| {
                                     CompileError::internal("aion_str_concat not found".to_string())
@@ -713,6 +744,33 @@ impl<'ctx> Compiler<'ctx> {
                             operator.kind
                         ))),
                     }
+                } else if lhs.is_pointer_value()
+                    && rhs.is_float_value()
+                    && operator.kind == TokenKind::Plus
+                {
+                    let lp = lhs.into_pointer_value();
+                    let rf = rhs.into_float_value();
+                    let f2s = self
+                        .module
+                        .get_function("aion_float_to_str")
+                        .ok_or_else(|| {
+                            CompileError::internal("aion_float_to_str not found".to_string())
+                        })?;
+                    let s2 = self
+                        .builder
+                        .build_call(f2s, &[rf.into()], "float2str")?
+                        .try_as_basic_value()
+                        .unwrap_basic();
+                    let fnc = self.module.get_function("aion_str_concat").ok_or_else(|| {
+                        CompileError::internal("aion_str_concat not found".to_string())
+                    })?;
+                    let call =
+                        self.builder
+                            .build_call(fnc, &[lp.into(), s2.into()], "strconcat")?;
+                    Ok(match call.try_as_basic_value() {
+                        ValueKind::Basic(v) => v,
+                        _ => i64_t.const_zero().into(),
+                    })
                 } else {
                     Err(CompileError::internal("Type mismatch".to_string()))
                 }
