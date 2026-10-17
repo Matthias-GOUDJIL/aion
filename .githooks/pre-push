@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Local pre-push hook: runs scripts/docs-check.sh before pushing any branch so
+# documentation drift is caught locally before opening or updating a PR (#207).
+
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+echo "🔍 Running pre-push documentation freshness check (scripts/docs-check.sh)..."
+bash scripts/docs-check.sh

@@ -11,15 +11,21 @@
 
 **CRITICAL**: The `./aion` wrapper and `cargo test` run inside a Docker container (`aion-compiler` image based on Ubuntu 22.04 with LLVM 15). The wrapper caches `target/` and `cargo/registry` in Docker volumes to avoid full rebuilds.
 
-### Doc Freshness (enforced in CI)
+### Doc Freshness (enforced locally & in CI)
 
-Any PR that changes compiler/stdlib behavior must update `docs/SPEC.md` (or the relevant `docs/SPEC_*.md` / `stdlib/.../SPEC.md`) in the same PR. The `docs-check` CI job runs `scripts/docs-check.sh` and fails the PR when:
+Any PR that changes compiler/stdlib behavior must update `docs/SPEC.md` (or the relevant `docs/SPEC_*.md` / `stdlib/.../SPEC.md` / `docs/STDLIB.md` / `docs/architecture.md`) in the same PR. Three layers guard against drift (#75, #112, #207):
 
-- `docs/SPEC.md` header version differs from `ROADMAP.md` "Current State" version.
-- `README.md` revives the inaccurate "without GC" or "linear type system" wording.
-- `docs/STDLIB.md` is missing the implementation-status legend.
-
-Run `bash scripts/docs-check.sh` locally before pushing to catch drift early. #75.
+1. **Structural checks (`bash scripts/docs-check.sh`)**:
+   - `docs/SPEC.md` header version matches `ROADMAP.md` "Current State" version.
+   - `README.md` does not revive inaccurate "without GC" or "linear type system" wording.
+   - `docs/STDLIB.md` keeps the implementation-status legend, documents every `stdlib/**/*.ai` module, and `[stable]` modules only reference implemented runtime intrinsics (`scripts/docs-check-intrinsics.sh`).
+   - Every `src/**/*.{rs,c}` and `compiler/*.ai` file is listed in `docs/architecture.md` (and no deleted file remains in its tree).
+   - The enum payload size (`array_type(N)` in `src/codegen/compiler.rs`) matches `[N x i8]` in `docs/SPEC.md`, `docs/architecture.md`, and `ROADMAP.md`.
+2. **PR Diff & Issue-Closure Gate (`.github/workflows/ci.yml`)**:
+   - Any PR touching `src/`, `compiler/`, or `stdlib/` must either modify at least one documentation file or check `- [x] No doc impact: <reason>` in the PR body.
+   - Any issue referenced via `Closes #N` must be checked off (`- [x]`) in `ROADMAP.md` and removed from the unchecked table in `AGENTS.md`.
+3. **Local Git `pre-push` Hook (`.githooks/pre-push`)**:
+   - Automatically configured via `git config core.hooksPath .githooks` when running `./aion` or `scripts/docs-check.sh`; runs `scripts/docs-check.sh` before every `git push`.
 
 ## Git Workflow
 

@@ -3,6 +3,11 @@
 # Aion Universal Compiler Wrapper
 IMAGE_NAME="aion-compiler"
 
+# Ensure local git hooks (.githooks/pre-push) are active (#207)
+if [[ -d .git && -d .githooks ]]; then
+    git config core.hooksPath .githooks 2>/dev/null || true
+fi
+
 # Proactive cleanup (disabled by default for speed, only run if image is missing)
 # docker ps -q --filter "ancestor=$IMAGE_NAME" | xargs -r docker stop > /dev/null 2>&1
 
