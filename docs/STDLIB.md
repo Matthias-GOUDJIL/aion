@@ -16,9 +16,13 @@ organized by domain.
 
 Fundamental building blocks of the language.
 
-### `core.heap` **[stable]**
-Low-level memory management intrinsics.
-- `alloc`, `dealloc`, `realloc`, `null`.
+### `core.heap` **[stable]** & `core.memory` **[stable]**
+Low-level memory management intrinsics (`alloc`, `dealloc`, `realloc`, `null`, `copy`).
+
+### `std.option` **[stable]** & `std.result` **[stable]**
+Algebraic error and optionality types:
+- `Option<T>` (`Some(T)`, `None`, `is_some`, `is_none`, `unwrap`, `unwrap_or`, `expect`).
+- `Result<T, E>` (`Ok(T)`, `Err(E)`, `is_ok`, `is_err`, `unwrap`, `unwrap_or`, `unwrap_err`, `expect`).
 
 ### `std.mem` **[stub]**
 Memory utilities.

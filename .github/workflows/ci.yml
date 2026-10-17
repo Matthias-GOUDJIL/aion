@@ -77,6 +77,67 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Guard against documentation drift
         run: bash scripts/docs-check.sh
+
+      - name: Enforce PR doc-touch & issue-closure freshness (#207)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Changed files in PR:"
+          echo "$changed"
+
+          code_touched=0
+          doc_touched=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              src/*|compiler/*|stdlib/*.ai|stdlib/**/*.ai)
+                code_touched=1
+                ;;
+            esac
+            case "$f" in
+              docs/*.md|README.md|ROADMAP.md|AGENTS.md|stdlib/*SPEC.md|stdlib/**/*SPEC.md)
+                doc_touched=1
+                ;;
+            esac
+          done <<< "$changed"
+
+          if [ "$code_touched" -eq 1 ] && [ "$doc_touched" -eq 0 ]; then
+            # Strip HTML comments before checking for a non-empty 'No doc impact:' justification
+            clean_body=$(printf '%s\n' "$PR_BODY" | sed 's/<!--.*-->//g')
+            if printf '%s\n' "$clean_body" | grep -qiE '^[[:space:]]*-[[:space:]]*\[[xX]\][[:space:]]*No doc impact:[[:space:]]*[A-Za-z0-9]'; then
+              echo "ok: PR modifies code without doc changes, but explicitly justifies 'No doc impact'"
+            else
+              echo "error: PR modifies files in src/, compiler/, or stdlib/ without updating any documentation file."
+              echo "       Either update the relevant doc (docs/SPEC.md, docs/STDLIB.md, docs/architecture.md, ROADMAP.md)"
+              echo "       OR check '- [x] No doc impact: <reason>' in the PR description."
+              exit 1
+            fi
+          else
+            echo "ok: PR doc-touch gate satisfied (code_touched=$code_touched, doc_touched=$doc_touched)"
+          fi
+
+          # Check that any issue closed by this PR ('Closes #N') is not left unchecked in ROADMAP.md or AGENTS.md
+          closed_nums=$(printf '%s\n' "$PR_BODY" | grep -oiE '(closes|fixes|resolves)[[:space:]]+#[0-9]+' | grep -oE '[0-9]+' || true)
+          for num in $closed_nums; do
+            if grep -nE "^[[:space:]]*-[[:space:]]*\[[[:space:]]\].*#${num}\b" ROADMAP.md; then
+              echo "error: PR closes #$num, but ROADMAP.md still has an unchecked '- [ ]' item referencing #$num."
+              echo "       Check off '- [x]' in ROADMAP.md in this PR."
+              exit 1
+            fi
+            if grep -nE "\|[[:space:]]*#${num}[[:space:]]*\|" AGENTS.md; then
+              echo "error: PR closes #$num, but AGENTS.md still lists #$num in the unchecked ROADMAP cross-reference table."
+              echo "       Remove #$num from the AGENTS.md table in this PR."
+              exit 1
+            fi
+          done
+          echo "ok: issue-closure freshness check passed"
