@@ -1,0 +1,14 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/json_complex\")"
+---
+parsed_ok=true
+roundtrip={"name":"Aion","version":0.6,"active":true,"meta":null,"tags":["ai","systems"],"nested":{"count":42,"neg":-3.5}}
+root_len=6
+tags_len=2, tag0="ai", tag1="systems", cnt=42
+empty_arr=[] (len=0), empty_obj={} (len=0)
+dup_obj={"a":99,"b":2}
+esc_roundtrip={"msg":"line1\nline2\t\"quoted\"\\slash/end"}
+raw_msg_len=30
+oob_none=true
+errors_none=true

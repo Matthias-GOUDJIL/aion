@@ -247,6 +247,31 @@ impl TypeChecker {
         tok.clear();
     }
 
+    fn substitute_receiver_generics(
+        &self,
+        full_target: &str,
+        receiver_type: &Type,
+        return_type: &Type,
+    ) -> Type {
+        if let Type::GenericInstance(_, g_args) = receiver_type
+            && !g_args.is_empty()
+        {
+            let g_params = match self.decls.get(full_target) {
+                Some(Declaration::Struct(s)) => s.generic_params.clone(),
+                Some(Declaration::Enum(e)) => e.generic_params.clone(),
+                _ => vec![],
+            };
+            if !g_params.is_empty() {
+                let ret_str = return_type.name();
+                let sub = Self::substitute_generics(&ret_str, &g_params, g_args);
+                if sub != ret_str {
+                    return self.resolve_type(&sub);
+                }
+            }
+        }
+        return_type.clone()
+    }
+
     fn register_builtins(&mut self) {
         // Builtin functions backed by the C runtime/libc: derived from the
         // single `BUILTINS` table in `src/builtins.rs` (shared with the
@@ -844,7 +869,11 @@ impl TypeChecker {
                                     for arg in arguments {
                                         self.check_expression(arg)?;
                                     }
-                                    return Ok(*return_type.clone());
+                                    return Ok(self.substitute_receiver_generics(
+                                        &full,
+                                        &rt,
+                                        return_type,
+                                    ));
                                 }
                             }
                         }
@@ -1066,7 +1095,7 @@ impl TypeChecker {
                             ));
                         }
                     }
-                    Ok(*return_type.clone())
+                    Ok(self.substitute_receiver_generics(&full, &rt, return_type))
                 } else {
                     Err(self.err(format!("'{}' is not a function", cand_colon), &method_expr))
                 }

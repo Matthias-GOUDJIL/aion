@@ -2,34 +2,72 @@ module std.json
 
 use std.string
 use std.option
+use std.collections.vector
+use std.collections.ordered_map
 
 pub enum Value {
     Null,
     Bool(bool),
     Number(f64),
     String(String),
+    Array(vector.Vector<Value>),
+    Object(ordered_map.OrderedMap<Value>),
 }
 
-pub fn parse(json: String) -> option.Option {
-    let result = parse_value(json, 0)
-    match result {
-        option.Option::Some(v) => return option.Option::Some(v),
-        option.Option::None => return option.Option::None,
+struct ParseStep {
+    ok: bool,
+    value: std.json.Value,
+    next_pos: i64,
+}
+
+struct StringStep {
+    ok: bool,
+    text: String,
+    next_pos: i64,
+}
+
+fn ok_step(val: Value, next_pos: i64) -> ParseStep {
+    std.json.ParseStep {
+        ok: true,
+        value: val,
+        next_pos: next_pos,
     }
 }
 
-fn parse_value(input: String, pos: i64) -> option.Option {
+fn fail_step(pos: i64) -> ParseStep {
+    std.json.ParseStep {
+        ok: false,
+        value: Value::Null,
+        next_pos: pos,
+    }
+}
+
+pub fn parse(json: String) -> option.Option<Value> {
+    let step = parse_value_step(json, 0)
+    if !step.ok {
+        return option.Option::None
+    }
+    let end_p = skip_ws(json, step.next_pos)
+    if end_p != string.len(json) {
+        return option.Option::None
+    }
+    return option.Option::Some(step.value)
+}
+
+fn parse_value_step(input: String, pos: i64) -> ParseStep {
     let p = skip_ws(input, pos)
     let len = string.len(input)
-    if p >= len { return option.Option::None }
+    if p >= len { return fail_step(p) }
     let c = string.at(input, p)
 
-    if c == 34 { return parse_string_value(input, p) }
-    if c == 110 { return parse_null(input, p) }
-    if c == 116 { return parse_true(input, p) }
-    if c == 102 { return parse_false(input, p) }
-    if c == 45 || (c >= 48 && c <= 57) { return parse_number(input, p) }
-    return option.Option::None
+    if c == 34 { return parse_string_step(input, p) }
+    if c == 110 { return parse_null_step(input, p) }
+    if c == 116 { return parse_true_step(input, p) }
+    if c == 102 { return parse_false_step(input, p) }
+    if c == 45 || (c >= 48 && c <= 57) { return parse_number_step(input, p) }
+    if c == 91 { return parse_array_step(input, p) }
+    if c == 123 { return parse_object_step(input, p) }
+    return fail_step(p)
 }
 
 fn skip_ws(input: String, pos: i64) -> i64 {
@@ -47,40 +85,42 @@ fn skip_ws(input: String, pos: i64) -> i64 {
     return p
 }
 
-fn parse_null(input: String, pos: i64) -> option.Option {
+fn parse_null_step(input: String, pos: i64) -> ParseStep {
     let len = string.len(input)
-    if pos + 4 > len { return option.Option::None }
+    if pos + 4 > len { return fail_step(pos) }
     let chunk = string.substr(input, pos, 4)
     if string.equals(chunk, "null") {
-        return option.Option::Some(Value::Null)
+        return ok_step(Value::Null, pos + 4)
     }
-    return option.Option::None
+    return fail_step(pos)
 }
 
-fn parse_true(input: String, pos: i64) -> option.Option {
+fn parse_true_step(input: String, pos: i64) -> ParseStep {
     let len = string.len(input)
-    if pos + 4 > len { return option.Option::None }
+    if pos + 4 > len { return fail_step(pos) }
     let chunk = string.substr(input, pos, 4)
     if string.equals(chunk, "true") {
-        return option.Option::Some(Value::Bool(true))
+        return ok_step(Value::Bool(true), pos + 4)
     }
-    return option.Option::None
+    return fail_step(pos)
 }
 
-fn parse_false(input: String, pos: i64) -> option.Option {
+fn parse_false_step(input: String, pos: i64) -> ParseStep {
     let len = string.len(input)
-    if pos + 5 > len { return option.Option::None }
+    if pos + 5 > len { return fail_step(pos) }
     let chunk = string.substr(input, pos, 5)
     if string.equals(chunk, "false") {
-        return option.Option::Some(Value::Bool(false))
+        return ok_step(Value::Bool(false), pos + 5)
     }
-    return option.Option::None
+    return fail_step(pos)
 }
 
-fn parse_string_value(input: String, pos: i64) -> option.Option {
+fn parse_raw_string(input: String, pos: i64) -> StringStep {
     let len = string.len(input)
     let mut p = pos
-    if p >= len || string.at(input, p) != 34 { return option.Option::None }
+    if p >= len || string.at(input, p) != 34 {
+        return std.json.StringStep { ok: false, text: "", next_pos: p }
+    }
     p = p + 1
     let mut result = ""
     let mut done = false
@@ -88,38 +128,192 @@ fn parse_string_value(input: String, pos: i64) -> option.Option {
         let c = string.at(input, p)
         if c == 34 {
             done = true
+            p = p + 1
+        } else if c == 92 {
+            p = p + 1
+            if p >= len {
+                return std.json.StringStep { ok: false, text: "", next_pos: p }
+            }
+            let esc = string.at(input, p)
+            if esc == 34 {
+                result = string.concat(result, @intrinsic("char_to_str", 34))
+            } else if esc == 92 {
+                result = string.concat(result, @intrinsic("char_to_str", 92))
+            } else if esc == 47 {
+                result = string.concat(result, "/")
+            } else if esc == 110 {
+                result = string.concat(result, @intrinsic("char_to_str", 10))
+            } else if esc == 114 {
+                result = string.concat(result, @intrinsic("char_to_str", 13))
+            } else if esc == 116 {
+                result = string.concat(result, @intrinsic("char_to_str", 9))
+            } else if esc == 98 {
+                result = string.concat(result, @intrinsic("char_to_str", 8))
+            } else if esc == 102 {
+                result = string.concat(result, @intrinsic("char_to_str", 12))
+            } else {
+                return std.json.StringStep { ok: false, text: "", next_pos: p }
+            }
+            p = p + 1
         } else {
             let ch_str = string.substr(input, p, 1)
             result = string.concat(result, ch_str)
+            p = p + 1
         }
-        p = p + 1
     }
-    if !done { return option.Option::None }
-    return option.Option::Some(Value::String(result))
+    if !done {
+        return std.json.StringStep { ok: false, text: "", next_pos: p }
+    }
+    return std.json.StringStep { ok: true, text: result, next_pos: p }
 }
 
-fn parse_number(input: String, pos: i64) -> option.Option {
+fn parse_string_step(input: String, pos: i64) -> ParseStep {
+    let s = parse_raw_string(input, pos)
+    if !s.ok {
+        return fail_step(s.next_pos)
+    }
+    return ok_step(Value::String(s.text), s.next_pos)
+}
+
+fn parse_number_step(input: String, pos: i64) -> ParseStep {
     let len = string.len(input)
     let mut p = pos
-    let mut start = pos
-    let mut done = false
+    let start = pos
     if p < len && string.at(input, p) == 45 { p = p + 1 }
+    let int_start = p
+    let mut done = false
     while p < len && !done {
         let c = string.at(input, p)
         if c >= 48 && c <= 57 { p = p + 1 } else { done = true }
     }
+    if p == int_start {
+        return fail_step(pos)
+    }
     if p < len && string.at(input, p) == 46 {
         p = p + 1
+        let frac_start = p
         done = false
         while p < len && !done {
             let c = string.at(input, p)
             if c >= 48 && c <= 57 { p = p + 1 } else { done = true }
         }
+        if p == frac_start {
+            return fail_step(pos)
+        }
     }
-    if p == start { return option.Option::None }
     let num_str = string.substr(input, start, p - start)
     let num_val = string.to_float(num_str)
-    return option.Option::Some(Value::Number(num_val))
+    return ok_step(Value::Number(num_val), p)
+}
+
+fn parse_array_step(input: String, pos: i64) -> ParseStep {
+    let len = string.len(input)
+    let mut items = vector.Vector<Value>.new()
+    let mut cur = skip_ws(input, pos + 1)
+    if cur >= len { return fail_step(cur) }
+    if string.at(input, cur) == 93 {
+        return ok_step(Value::Array(items), cur + 1)
+    }
+    while cur < len {
+        let elem_step = parse_value_step(input, cur)
+        if !elem_step.ok {
+            return fail_step(elem_step.next_pos)
+        }
+        items.push(elem_step.value)
+        cur = skip_ws(input, elem_step.next_pos)
+        if cur >= len {
+            return fail_step(cur)
+        }
+        let sep = string.at(input, cur)
+        if sep == 93 {
+            return ok_step(Value::Array(items), cur + 1)
+        }
+        if sep == 44 {
+            cur = skip_ws(input, cur + 1)
+            if cur >= len || string.at(input, cur) == 93 {
+                return fail_step(cur)
+            }
+        } else {
+            return fail_step(cur)
+        }
+    }
+    return fail_step(cur)
+}
+
+fn parse_object_step(input: String, pos: i64) -> ParseStep {
+    let len = string.len(input)
+    let mut map = ordered_map.OrderedMap<Value>.new()
+    let mut cur = skip_ws(input, pos + 1)
+    if cur >= len { return fail_step(cur) }
+    if string.at(input, cur) == 125 {
+        return ok_step(Value::Object(map), cur + 1)
+    }
+    while cur < len {
+        cur = skip_ws(input, cur)
+        if cur >= len || string.at(input, cur) != 34 {
+            return fail_step(cur)
+        }
+        let key_step = parse_raw_string(input, cur)
+        if !key_step.ok {
+            return fail_step(key_step.next_pos)
+        }
+        cur = skip_ws(input, key_step.next_pos)
+        if cur >= len || string.at(input, cur) != 58 {
+            return fail_step(cur)
+        }
+        let val_step = parse_value_step(input, cur + 1)
+        if !val_step.ok {
+            return fail_step(val_step.next_pos)
+        }
+        map.insert(key_step.text, val_step.value)
+        cur = skip_ws(input, val_step.next_pos)
+        if cur >= len {
+            return fail_step(cur)
+        }
+        let sep = string.at(input, cur)
+        if sep == 125 {
+            return ok_step(Value::Object(map), cur + 1)
+        }
+        if sep == 44 {
+            cur = skip_ws(input, cur + 1)
+            if cur >= len || string.at(input, cur) == 125 {
+                return fail_step(cur)
+            }
+        } else {
+            return fail_step(cur)
+        }
+    }
+    return fail_step(cur)
+}
+
+fn escape_json_string(s: String) -> String {
+    let q = @intrinsic("char_to_str", 34)
+    let bs = @intrinsic("char_to_str", 92)
+    let mut out = q
+    let n = string.len(s)
+    let mut i = 0
+    while i < n {
+        let c = string.at(s, i)
+        if c == 34 {
+            out = string.concat(out, string.concat(bs, q))
+        } else if c == 92 {
+            out = string.concat(out, string.concat(bs, bs))
+        } else if c == 10 {
+            out = string.concat(out, string.concat(bs, "n"))
+        } else if c == 13 {
+            out = string.concat(out, string.concat(bs, "r"))
+        } else if c == 9 {
+            out = string.concat(out, string.concat(bs, "t"))
+        } else if c == 8 {
+            out = string.concat(out, string.concat(bs, "b"))
+        } else if c == 12 {
+            out = string.concat(out, string.concat(bs, "f"))
+        } else {
+            out = string.concat(out, string.substr(s, i, 1))
+        }
+        i = i + 1
+    }
+    return string.concat(out, q)
 }
 
 pub fn stringify(value: Value) -> String {
@@ -130,6 +324,66 @@ pub fn stringify(value: Value) -> String {
             return "false"
         },
         Value::Number(n) => return string.from_float(n),
-        Value::String(s) => return s,
+        Value::String(s) => return escape_json_string(s),
+        Value::Array(items) => {
+            let mut out = "["
+            let n = (items).len()
+            let mut i = 0
+            while i < n {
+                if i > 0 {
+                    out = string.concat(out, ",")
+                }
+                let elem = (items).get(i).unwrap() as std.json.Value
+                out = string.concat(out, stringify(elem))
+                i = i + 1
+            }
+            return string.concat(out, "]")
+        },
+        Value::Object(map) => {
+            let mut out = "{"
+            let keys = (map).keys_in_order()
+            let vals = (map).values_in_order()
+            let n = (keys).len()
+            let mut i = 0
+            while i < n {
+                if i > 0 {
+                    out = string.concat(out, ",")
+                }
+                let k = (keys).get(i).unwrap()
+                let v = (vals).get(i).unwrap() as std.json.Value
+                let entry = string.concat(escape_json_string(k), string.concat(":", stringify(v)))
+                out = string.concat(out, entry)
+                i = i + 1
+            }
+            return string.concat(out, "}")
+        },
+    }
+}
+
+pub fn array_len(value: Value) -> i64 {
+    match value {
+        Value::Array(items) => return (items).len(),
+        _ => return 0,
+    }
+}
+
+pub fn array_get(value: Value, index: i64) -> option.Option<Value> {
+    match value {
+        Value::Array(items) => return (items).get(index),
+        _ => return option.Option::None,
+    }
+}
+
+pub fn object_len(value: Value) -> i64 {
+    match value {
+        Value::Object(map) => return (map).len(),
+        _ => return 0,
+    }
+}
+
+pub fn object_get(value: Value, key: String) -> option.Option<Value> {
+    match value {
+        Value::Object(map) => return (map).get(key),
+        _ => return option.Option::None,
     }
 }

@@ -51,7 +51,7 @@ Common imports (`Option`, `Result`, `String`, `Vector`, `print`, `println`).
 
 ### `std.string` **[stable]** & `std.char` **[stable]**
 Full string and character manipulation suite (`len`, `concat`, `from_int`,
-`from_float`, `to_float`, `at`, `substr`, `contains`, `starts_with`,
+`from_char`, `from_float`, `to_float`, `at`, `substr`, `contains`, `starts_with`,
 `ends_with`, `find`, `trim`, `to_upper`, `to_lower`, `replace`,
 `escape_llvm_c_string`, `join`, `to_int`). Must be paired with a single
 NUL terminator appended by the caller — `str_len` stops at `\0`, so
@@ -167,9 +167,11 @@ and autograd are runtime placeholders (see `src/runtime.c:220-235`).
   `filter`).
 - **`series`** **[partial]** — Typed column arrays.
 
-### `std.json` **[partial]**
-JSON parsing and stringification. Primitives only — array/object parsing
-blocked by type checker (see `stdlib/std/json_SPEC.md`).
+### `std.json` **[stable]**
+JSON parsing and stringification (`#200`).
+- `Value` enum: `Null`, `Bool(bool)`, `Number(f64)`, `String(String)`, `Array(Vector<Value>)`, `Object(OrderedMap<Value>)`.
+- `parse(json: String) -> Option<Value>` and `stringify(value: Value) -> String` with full escape support (`\"`, `\\`, `\/`, `\n`, `\r`, `\t`, `\b`, `\f`) and strict syntax validation.
+- Safe accessors: `array_len`, `array_get`, `object_len`, `object_get`.
 
 ### `std.encoding`
 - **`hex`** **[stub]** — Hex encoding.

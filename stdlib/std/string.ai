@@ -14,6 +14,10 @@ pub fn from_int(n: i64) -> String {
     @intrinsic("int_to_str", n)
 }
 
+pub fn from_char(c: i64) -> String {
+    @intrinsic("char_to_str", c)
+}
+
 pub fn from_float(f: f64) -> String {
     @intrinsic("float_to_str", f)
 }
