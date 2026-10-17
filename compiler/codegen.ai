@@ -1421,6 +1421,11 @@ impl Codegen {
         else if std.string.equals(name, "math_ceil") { cname = "aion_math_ceil"; ret = "double"; }
         else if std.string.equals(name, "math_fabs") { cname = "aion_math_fabs"; ret = "double"; }
         else if std.string.equals(name, "random_get") { cname = "aion_random_get"; ret = "i64"; }
+        else if std.string.equals(name, "os_exit") { cname = "aion_os_exit"; ret = "void"; }
+        else if std.string.equals(name, "os_cpu_count") { cname = "aion_os_cpu_count"; ret = "i64"; }
+        else if std.string.equals(name, "os_name") { cname = "aion_os_name"; ret = "ptr"; }
+        else if std.string.equals(name, "process_run") { cname = "aion_process_run"; ret = "i64"; }
+        else if std.string.equals(name, "process_output") { cname = "aion_process_output"; ret = "ptr"; }
         if std.string.len(cname) == 0 {
             // Unknown intrinsic — safe zero placeholder (extends per
             // need; the Rust table lives in intrinsics.rs).

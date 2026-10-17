@@ -1,0 +1,10 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/process_os_flags\")"
+---
+os: name=linux, cpus_ok=true
+proc: code0=0, out=hello_aion_process
+cmd: ok=true, stdout=builder_works
+proc_fail: code_fail=7, fail_ok=true
+flags: out=app.ll, target=sql, verbose=true, quiet=false, pos_cnt=2, pos0=main.ai, pos1=extra.ai
+flags_edge: def_host=localhost, missing_empty=true, oob_pos=true, dangling=true

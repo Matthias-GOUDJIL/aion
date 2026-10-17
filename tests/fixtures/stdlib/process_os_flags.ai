@@ -1,0 +1,79 @@
+use std.io
+use std.os
+use std.process
+use std.flags
+use std.string
+use std.collections.vector
+
+fn main() -> i64 {
+    // 1. std.os nominal checks
+    let os_nm = os.name()
+    let cpus = os.cpu_count()
+    let cpus_ok = cpus >= 1
+    io.println(f"os: name={os_nm}, cpus_ok={cpus_ok}")
+
+    // 2. std.process nominal checks
+    let code0 = process.run("true")
+    let out_raw = process.output("echo hello_aion_process")
+    let out_trimmed = string.trim(out_raw)
+    io.println(f"proc: code0={code0}, out={out_trimmed}")
+
+    let cmd = process.Command.new("echo")
+    cmd.arg("builder_works")
+    let res = cmd.output()
+    let st = res.status
+    let ok = st.success()
+    let b_out = string.trim(res.stdout)
+    io.println(f"cmd: ok={ok}, stdout={b_out}")
+
+    // 3. std.process error / non-zero exit code propagation
+    let code_fail = process.run("exit 7")
+    let cmd_fail = process.Command.new("false")
+    let st_fail = cmd_fail.status()
+    let fail_ok = !st_fail.success()
+    io.println(f"proc_fail: code_fail={code_fail}, fail_ok={fail_ok}")
+
+    // 4. std.flags nominal: --key value, --key=value, boolean --flag, positionals
+    let parser = flags.FlagParser.new()
+    parser.string("output", "default.ll", "Output file")
+    parser.string("target", "llvm", "Target backend")
+    parser.bool_flag("verbose", false, "Verbose output")
+    parser.bool_flag("quiet", false, "Quiet mode")
+
+    let mut argv = vector.Vector<String>.new()
+    argv.push("--output")
+    argv.push("app.ll")
+    argv.push("--target=sql")
+    argv.push("--verbose")
+    argv.push("main.ai")
+    argv.push("extra.ai")
+    parser.parse_from(argv)
+
+    let out_flag = parser.get_string("output")
+    let tgt_flag = parser.get_string("target")
+    let verb_flag = parser.get_bool("verbose")
+    let quiet_flag = parser.get_bool("quiet")
+    let pos_cnt = parser.positional_count()
+    let pos0 = parser.positional(0).unwrap()
+    let pos1 = parser.positional(1).unwrap()
+    io.println(f"flags: out={out_flag}, target={tgt_flag}, verbose={verb_flag}, quiet={quiet_flag}, pos_cnt={pos_cnt}, pos0={pos0}, pos1={pos1}")
+
+    // 5. std.flags edge cases: empty args, defaults preserved, trailing flag without value, OOB positional
+    let p_empty = flags.FlagParser.new()
+    p_empty.string("host", "localhost", "Host")
+    p_empty.bool_flag("debug", false, "Debug")
+    let mut empty_args = vector.Vector<String>.new()
+    p_empty.parse_from(empty_args)
+    let def_host = p_empty.get_string("host")
+    let missing_key = p_empty.get_string("nonexistent")
+    let oob_pos = p_empty.positional(0).is_none()
+
+    let mut trail_args = vector.Vector<String>.new()
+    trail_args.push("-- standalone")
+    trail_args.push("--dangling")
+    p_empty.parse_from(trail_args)
+    let dangling_as_bool = p_empty.get_bool("dangling")
+    io.println(f"flags_edge: def_host={def_host}, missing_empty={string.len(missing_key) == 0}, oob_pos={oob_pos}, dangling={dangling_as_bool}")
+
+    return 0
+}
