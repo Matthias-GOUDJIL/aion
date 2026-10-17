@@ -975,3 +975,18 @@ fn test_function_pointer() {
 fn test_function_as_param() {
     assert_snapshot!(run_aion_test("language/function_as_param"));
 }
+
+#[test]
+fn test_div_rem_checked() {
+    assert_snapshot!(run_aion_test("language/div_rem_checked"));
+}
+
+#[test]
+fn test_div_by_zero_trap() {
+    assert_snapshot!(run_aion_test("language/div_by_zero_trap"));
+}
+
+#[test]
+fn test_rem_by_zero_trap() {
+    assert_snapshot!(run_aion_test("language/rem_by_zero_trap"));
+}

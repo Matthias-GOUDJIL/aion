@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <string.h>
+#define GC_THREADS
 #include <gc.h>
 
 void* spark_entry_point(void* func_ptr) {
@@ -54,6 +55,12 @@ void aion_runtime_init(void) {
 /* Runtime bounds-check trap for array indexing. #54. */
 void aion_array_oob(long long idx, long long len) {
     fprintf(stderr, "error: array index %lld out of bounds (len %lld)\n", idx, len);
+    exit(1);
+}
+
+/* Runtime trap for integer division or modulo by zero. #204. */
+void aion_div_zero(void) {
+    fprintf(stderr, "error: division by zero\n");
     exit(1);
 }
 

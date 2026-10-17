@@ -1,0 +1,13 @@
+// #204 — dividing an integer by zero traps cleanly with aion_div_zero().
+use std.io
+use std.string
+
+fn compute(a: i64, b: i64) -> i64 {
+    return a / b
+}
+
+fn main() {
+    let z = 0
+    let res = compute(10, z)
+    io.println(string.from_int(res))
+}

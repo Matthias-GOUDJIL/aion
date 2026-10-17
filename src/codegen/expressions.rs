@@ -504,6 +504,24 @@ impl<'ctx> Compiler<'ctx> {
                         TokenKind::Minus => Ok(self.builder.build_int_sub(l, r, "sub")?.into()),
                         TokenKind::Star => Ok(self.builder.build_int_mul(l, r, "mul")?.into()),
                         TokenKind::Slash => {
+                            let is_zero = self.builder.build_int_compare(
+                                IntPredicate::EQ,
+                                r,
+                                i64_t.const_zero(),
+                                "div_zero_chk",
+                            )?;
+                            let trap_bb = self.context.append_basic_block(function, "div_zero");
+                            let ok_bb = self.context.append_basic_block(function, "div_ok");
+                            self.builder
+                                .build_conditional_branch(is_zero, trap_bb, ok_bb)?;
+                            self.builder.position_at_end(trap_bb);
+                            let trap_fn =
+                                self.module.get_function("aion_div_zero").ok_or_else(|| {
+                                    CompileError::internal("aion_div_zero not found".to_string())
+                                })?;
+                            self.builder.build_call(trap_fn, &[], "")?;
+                            self.builder.build_unreachable()?;
+                            self.builder.position_at_end(ok_bb);
                             Ok(self.builder.build_int_signed_div(l, r, "div")?.into())
                         }
                         TokenKind::EqEq => Ok(self
@@ -561,6 +579,24 @@ impl<'ctx> Compiler<'ctx> {
                             )?
                             .into()),
                         TokenKind::Percent => {
+                            let is_zero = self.builder.build_int_compare(
+                                IntPredicate::EQ,
+                                r,
+                                i64_t.const_zero(),
+                                "rem_zero_chk",
+                            )?;
+                            let trap_bb = self.context.append_basic_block(function, "rem_zero");
+                            let ok_bb = self.context.append_basic_block(function, "rem_ok");
+                            self.builder
+                                .build_conditional_branch(is_zero, trap_bb, ok_bb)?;
+                            self.builder.position_at_end(trap_bb);
+                            let trap_fn =
+                                self.module.get_function("aion_div_zero").ok_or_else(|| {
+                                    CompileError::internal("aion_div_zero not found".to_string())
+                                })?;
+                            self.builder.build_call(trap_fn, &[], "")?;
+                            self.builder.build_unreachable()?;
+                            self.builder.position_at_end(ok_bb);
                             Ok(self.builder.build_int_unsigned_rem(l, r, "rem")?.into())
                         }
                         TokenKind::Caret => Ok(self.builder.build_xor(l, r, "xor")?.into()),

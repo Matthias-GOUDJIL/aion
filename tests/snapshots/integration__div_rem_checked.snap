@@ -1,0 +1,17 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/div_rem_checked\")"
+---
+7
+7
+1
+0
+0
+0
+99
+0
+-3
+-3
+5
+12
+4

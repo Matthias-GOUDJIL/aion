@@ -365,6 +365,11 @@ impl<'ctx> Compiler<'ctx> {
             None,
         );
         self.module.add_function(
+            "aion_div_zero",
+            self.context.void_type().fn_type(&[], false),
+            None,
+        );
+        self.module.add_function(
             "aion_spawn",
             self.context.void_type().fn_type(&[pt.into()], false),
             None,
