@@ -18,14 +18,14 @@ This document outlines the technical path to transform Aion from its current Rus
 - [x] **`std.env`**: Command-line argument management.
 
 ### **v0.6: Native Runtime (End of C Runtime)**
-- [x] **Enums Implementation**: `{ i64, [64 x i8] }` layout completed.
+- [x] **Enums Implementation**: `{ i64, [512 x i8] }` layout completed.
 - [x] **PIC Support**: LLVM Relocation model set to PIC for modern Linux.
 - [x] **Global Args**: `aion_argc` and `aion_argv` accessible via `std.env`.
 - [x] **Memory Management**: Integration of Boehm GC for automatic cleanup.
 - [x] **Compiler Optimization**: Pass manager integration for performance.
-- [ ] **Self-Hosting Path**: Identify remaining blockers for `aionc.ai`.
-- [ ] **Self-Runtime**: Rewrite `aion_spawn` and the thread scheduler in Aion via `syscalls`.
-- [ ] **GCC/Clang Removal**: Aion will only depend on LLVM for the final binary.
+- [x] **Self-Hosting Path**: Identify remaining blockers for `aionc.ai` (`docs/codegen_blockers.md`, #128).
+- [ ] **Self-Runtime**: Rewrite `aion_spawn` and the thread scheduler in Aion via `syscalls` (#72).
+- [x] **GCC Removal**: Pure-LLVM link path (`clang-15 -fuse-ld=lld` against `/opt/aion_runtime.bc`, `gcc` removed from Docker image — #73, #100).
 
 ---
 
@@ -34,7 +34,7 @@ This document outlines the technical path to transform Aion from its current Rus
 
 1.  **Method Chaining** [COMPLETED]
 2.  **Short-circuiting Logic** [COMPLETED]
-3.  **AI Tensor Core** [COMPLETED]
+3.  **AI Tensor Core** [COMPLETED — constructors working, math/autograd placeholders]
 4.  **Garbage Collection** [COMPLETED]
 
 ---
@@ -43,13 +43,13 @@ This document outlines the technical path to transform Aion from its current Rus
 *Goal: Stress-test Aion by building high-performance data structures.*
 
 1.  **Generic Data Structures** [COMPLETED]
-    *   Expand `Vector` and `HashMap` with more utilities (`map`, `filter`).
+    *   Expand `Vector` and `HashMap` with more utilities (`contains`, `keys`, `values`, `remove`, `OrderedMap`).
 2.  **The DataFrame Core** [COMPLETED]
     *   Implement `std.data.dataframe` with support for multiple column types (using Enums).
 3.  **Real-world I/O**
     *   Implement a native CSV parser in Aion using `std.fs` and `std.string`.
 4.  **Error Handling**
-    *   Formalize `Result<T, E>` and `?` operator (if possible) or pattern matching usage.
+    *   Formalize `Result<T, E>` and `?` operator (#138) or pattern matching usage.
 
 ---
 
@@ -73,7 +73,7 @@ This document outlines the technical path to transform Aion from its current Rus
 
 ---
 
-## 🔄 Phase 2: The Great Port (v0.7 - v0.9)
+## 🔄 Phase 2: The Great Port (v0.7 - v0.9) [COMPLETED]
 *Goal: Rewrite the compiler core (currently in Rust) in the Aion language.*
 
 ### **v0.7: Aion Lexer**
@@ -87,18 +87,14 @@ This document outlines the technical path to transform Aion from its current Rus
       epoch-day computation, char literals, line/block/doc comments, all
       32 Rust keywords. `hello.ai` now lexes with 0 `Illegal` tokens
       (verified by `tests/fixtures/compiler/self_lexer_hello.ai`).
-      Fractional durations (`1.5ms`) deferred to #151 (broken `f64 as i64`
-      cast upstream). Workaround for #152 (`let v: T = match` segfault)
-      applied — block-form `let mut v: T = default; match` used instead.
+      Upstream #151 (`f64 as i64` truncation cast) and #152
+      (`let v: T = match` with explicit type) are now resolved and closed.
 
 ### **v0.8: Aion Parser**
 - [x] `parser.ai` implementation. AST manipulation via Aion `struct` and `match`.
-- [ ] **v0.8.1 — Parser Gap Closure (depending on #147)**: `parser.ai`
-      structurally handles all AST types in `ast.ai`, but needs fitness
-      verification on every `tests/fixtures/language/*.ai` (55 files)
-      now that the lexer is at feature parity. Issue to open once we
-      confirm whether the parser is functionally complete or needs
-      porting work for statements the v0.8 skeleton skipped.
+- [x] **v0.8.1 — Parser Gap Closure (#156)**: `parser.ai` parses 139/139
+      non-error test fixtures across `language/`, `stdlib/`, and
+      `compiler/` (verified by `tests/fixtures/compiler/self_parser_suite.ai`).
 
 ### **v0.9: Aion LLVM Backend**
 - [x] Direct generation of `.ll` (LLVM IR) text files from the AST

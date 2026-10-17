@@ -6,36 +6,27 @@ use std.collections.ordered_map
 use std.option
 use compiler.ast
 
-// `compiler/codegen.ai` — Aion self-hosted LLVM IR emitter. #9.1 / #129.
+// `compiler/codegen.ai` — Aion self-hosted LLVM IR emitter (#9 / #129–#135).
 //
-// Aims: take a `compiler.ast.Program` and emit a textual `.ll` (LLVM 15
-// IR) string. Mirrors `src/codegen/` (Rust, 5 110 LOC) at a structural
-// level: every Rust helper has an Aion counterpart, but the codegen
-// state lives in a single Codegen struct for now (the planned split
-// into `compiler/codegen/expressions.ai` + `compiler/codegen/lvalues.ai`
-// is tracked by the audit in `docs/codegen_blockers.md` §B9 → #141,
-// which proves mutual `use` works).
+// Takes a `compiler.ast.Program` and emits a textual `.ll` (LLVM 15 IR
+// with opaque pointers) string. Mirrors `src/codegen/` at a structural
+// level:
+// - #129: module skeleton, extern runtime declarations, primitive types.
+// - #130: struct/enum type definitions (`{ i64, [512 x i8] }`) and
+//   escaped string literal globals.
+// - #131: SSA expression lowering (literals, params, arithmetic,
+//   comparisons, casts, member access, struct/enum instantiation).
+// - #132: control flow (`let`, assignment, `if`/`else`, `while`,
+//   `break`/`continue`, short-circuit `&&`/`||` phis, `spawn`, `unsafe`).
+// - #133: function calls, builtin mapping, and deterministic worklist
+//   generic monomorphization.
+// - #134: `match` lowering (tag switch, positional payload extraction,
+//   guards, typed result phis), `@intrinsic`, f-strings, pointer deref.
+// - #135: end-to-end binary stdout parity with the Rust backend
+//   (`test_self_codegen_parity`).
 //
-// Phase 2 v0.9 sub-issue #129 — skeleton + primitive type lowering
-// only. All expression & statement variants come in later sub-issues
-// (#9.3/#131 expressions, #9.4/#132 control flow, #9.5/#133 calls &
-// generics, #9.6/#134 aggregate types & match, #9.7/#135 Ouroboros).
-//
-// Known limitations of this skeleton slice:
-//
-// - Only `ast.Statement::Return(expr, ty)` and
-//   `ast.Expression::Integer(n)` are lowered. Every other variant
-//   lowers to a placeholder `i64 0` literal so the `.ll` text is still
-//   syntactically valid. The full lowering is the subject of #131/#132.
-// - Only `ast.Declaration::Function` is processed. `Struct`/`Enum`/
-//   `Impl`/`Interface` are skipped for now — #134 covers aggregates.
-// - `_`/`N`/`Self` token handling issues deferred to #156 (parser gap).
-// - `let`/`if`/`while`/`for`/`match` are NOT lowered yet (#132).
-//
-// Determinism: this struct uses `OrderedMap` (stdlib/std/collections/
-// ordered_map.ai, #136) for struct/enum name -> signature storage so
-// that the emitted IR is byte-identical across runs (no `HashMap`'s
-// randomized iteration order). Snapshot tests rely on this.
+// Determinism: uses `OrderedMap` (`stdlib/std/collections/ordered_map.ai`,
+// #136) so that emitted IR is byte-identical across runs.
 
 pub struct Codegen {
     module_name: String,

@@ -49,6 +49,13 @@ Aion is a system programming language for AI-native apps. The compiler (`aionc`)
 - **Commits**: Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`, `style:`, `perf:`, `build:`, `ci:`)
 - **CI**: GitHub Actions runs tests on every push/PR
 
+### GitHub Workflow (mandatory)
+1. **Never commit directly on `main`** — create a feature branch (`type/issue-N-short-desc`, e.g. `refactor/match-lowering-dedup`) from `main` first.
+2. Push the branch, then open a PR with the template filled; the body must include `Closes #N`.
+3. **Watch the CI checks**; merge **only when all checks are green** (squash merge — repo history is linear).
+4. **Never close an issue manually** — issues close automatically when the `Closes #N` PR merges. If an issue has no merged PR, it stays open.
+5. After merge: pull `main`, delete the local and remote feature branch.
+
 ### Issue & PR Templates
 - New issues use GitHub templates (`.github/ISSUE_TEMPLATE/`): bug report or feature request. Both enforce sections: Problem/Motivation, Proposed Fix/API, Acceptance, Tests required, Related.
 - PRs use `.github/PULL_REQUEST_TEMPLATE.md`: Summary, Changes (by area), Tests (checkboxes), Docs (checkboxes), Closes #N.
@@ -67,21 +74,18 @@ When asked to "pick the next task" or "what should I work on":
 3. **Prefer bugs over features** at equal priority — a `type-bug` at `priority-high` is more urgent than a `type-feature` at `priority-high`.
 4. **Prefer smaller scope** when priorities are equal — a fix touching one file is preferable to a refactor touching the whole codegen, because it lands faster and unblocks others.
 5. **Never start a new feature if existing ones are incomplete or untested** (see Coding Standards — Completion first).
-6. **Check the "Status" section** in the issue body — some issues are already FIXED and waiting for a PR merge (e.g. #29, #62). Do not re-implement.
+6. **Check the "Status" section** in the issue body before starting work so you do not re-implement an already-fixed issue.
 
 ### ROADMAP ↔ Issue Cross-Reference
 The ROADMAP (`ROADMAP.md`) lists phases. Each unchecked ROADMAP item has a corresponding GitHub issue:
 
 | ROADMAP item | Issue | Phase |
 |---|---|---|
-| Self-Hosting Path (identify blockers) | (not yet opened) | Phase 1.6 |
 | Self-Runtime (rewrite aion_spawn in Aion) | #72 | Phase 1.6 |
-| GCC/Clang Removal | #73 | Phase 1.6 |
-| SQL Backend & Interoperability | #74 | Phase 1.5 |
-| Phase 2 v0.9 — LLVM Backend in Aion | #9 | Phase 2 |
+| `?` operator for `Result<T, E>` | #138 | Phase 1.8 |
 | Phase 3 — LSP server | #10 | Phase 3 |
 | Phase 3 — MCP server (LLM agent tooling) | #82 | Phase 3 |
-| Phase 3 — Full self-hosting (Ouroboros) | (blocked by #9) | Phase 3 |
+| Phase 3 — Full self-hosting loop (Ouroboros standalone binary) | (next after #9/#135) | Phase 3 |
 
 When a ROADMAP item has no issue yet and you are asked to work on it, **open the issue first** (using the template), then start.
 
@@ -106,6 +110,7 @@ When a ROADMAP item has no issue yet and you are asked to work on it, **open the
 | `docs/SPEC.md` | Core language (types, memory, codegen, robustness) |
 | `docs/SPEC_TIME.md` | `Duration` and `Date` primitives |
 | `docs/SPEC_SANDBOX.md` | `unsafe` keyword and sandbox enforcement |
+| `docs/SPEC_SQL.md` | PostgreSQL (`PL/pgSQL`) transpiler |
 
 **Naming convention**: `docs/SPEC_{FEATURE}.md` — uppercase, underscore-separated, one feature per file.
 

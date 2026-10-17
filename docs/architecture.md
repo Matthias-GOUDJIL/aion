@@ -7,9 +7,8 @@ src/              — Rust compiler (lexer → parser → type checker → LLVM 
   error.rs        — CompileError enum (Type, Unsafe, NotFound, NotFunction, InvalidOperator, Inkwell, Io, Import, Internal)
   runtime.c       — C runtime: I/O, string ops, GC init, FFI builtins
   lexer/          — Tokenizer (char → token stream)
-    mod.rs        — Re-exports Token, TokenKind, Lexer
+    mod.rs        — Lexer implementation + re-exports Token, TokenKind
     token.rs      — Token and TokenKind definitions
-    lexer.rs      — Lexer implementation
   ast/            — AST node definitions
     mod.rs        — Re-exports + Span struct
     expr.rs       — Expression enum
@@ -24,7 +23,7 @@ src/              — Rust compiler (lexer → parser → type checker → LLVM 
     environment.rs — Scoped symbol table for type checker
   codegen/        — LLVM IR generation via inkwell (Rust bindings for LLVM)
     mod.rs        — Re-exports Compiler
-    compiler.rs   — Compiler struct, compile_function, module entry + lowerings (split in progress, see #113)
+    compiler.rs   — Compiler struct, compile_function, module entry + lowerings
     intrinsics.rs — Builtin/intrinsic registration + token-aware generic substitution (phase 1)
     types.rs      — AionType → LLVM type lowering (phase 2)
 
@@ -53,7 +52,7 @@ tests/
     compiler/     — Compiler tests (self-hosting, optimization, FFI, etc.)
   snapshots/      — insta snapshot files (committed to git)
   tmp/            — Temporary test artifacts (gitignored)
-compiler/         — Self-hosting compiler (lexer.ai, token.ai, ast.ai, parser.ai)
+compiler/         — Self-hosting compiler (token.ai, lexer.ai, ast.ai, parser.ai, codegen.ai, mut_a.ai, mut_b.ai)
 examples/         — Example Aion programs
 editors/          — Editor integrations (vscode/)
 ```
@@ -64,7 +63,7 @@ editors/          — Editor integrations (vscode/)
 
 ## Architectural Invariants
 
-- **Enum layout**: compiled as `{ i64, [64 x i8] }`. Index 0 = Tag, Index 1 = Payload. Tags: `Some/Ok = 0`, `None/Err = 1`
+- **Enum layout**: compiled as `{ i64, [512 x i8] }`. Index 0 = Tag, Index 1 = Payload (512 bytes, up to 64 8-byte slots). Tags follow declaration order, with fallback `Some/Ok = 0`, `None/Err = 1`
 - **Global args**: `argc`/`argv` stored in global LLVM variables `aion_argc`/`aion_argv`, set in `main`
 - **`io.println`** only accepts `String`. Convert non-string types with `string.from_int`, `string.from_float`, etc.
 - **Block termination**: every LLVM basic block in `compiler.rs` must be terminated. Check `builder.get_insert_block().unwrap().get_terminator().is_none()` before adding default returns

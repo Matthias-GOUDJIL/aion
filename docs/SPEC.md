@@ -56,8 +56,10 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   taken from the target type-name `i*`/`u*`); integer→float converts
   numerically (`sitofp`/`uitofp` — signedness taken from the source
   type-name). `as` is a converting cast, never a bit reinterpretation
-  (#151). Cast validity (String/composite targets) is not yet enforced
-  by the checker (#173).
+  (#151). Cast validity is enforced by the checker: only numeric↔numeric,
+  numeric↔pointer, and pointer↔boxed-composite casts are permitted;
+  casting to or from `String`, structs, enums, arrays, or tuples is a
+  compile-time `Type Error` (#173).
 - Type system is **monomorphic at codegen**: each integer keeps its width,
   `f64`, `bool`,
   `String`, `Duration`, `Date` exist at the LLVM level. All composite
@@ -65,8 +67,9 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
 
 ### Composite
 - `Struct`, `Enum` (tagged unions), `Interface`, `Impl` blocks.
-- **Enums** compile as `{ i64, [64 x i8] }` — index 0 = Tag, index 1 =
-  Payload (64 bytes). Tags: `Some/Ok = 0`, `None/Err = 1`.
+- **Enums** compile as `{ i64, [512 x i8] }` — index 0 = Tag, index 1 =
+  Payload (512 bytes, up to 64 pointer/i64 slots). Tags follow declaration
+  order (0, 1, ...), with fallback `Some/Ok = 0`, `None/Err = 1`.
 - **Generics**: monomorphization at compile time. Full type substitution
   before LLVM generation. Generic params are substituted via token-aware
   identifier matching (`substitute_type_string`) to avoid corrupting
@@ -121,9 +124,7 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   destructors, no linear types yet (tracked in ROADMAP).
 - **All structs/enums/strings lower to opaque `ptr`** at the LLVM level.
   Field access uses GEP with the LLVM struct type for offset calculation,
-  but every field slot is pointer-sized (8 bytes). Known limitation:
-  `@intrinsic("mem_zero")` writes only 8 bytes — it cannot zero a
-  multi-field struct (issue #62).
+  and every field slot is 8 bytes (pointer or scalar).
 - **Strings**: C-style `char*`. Escape sequences in regular strings:
   `\n`, `\t`, `\r`, `\\`, `\"`, `\0`.
 - **f-strings** (v0.6): `f"Hello {name}!"` is syntax sugar for
@@ -137,7 +138,7 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   via `aion_char_to_str` — do not use this for integer formatting.
 - **Comparison**: `==` and `!=` compare string content via `aion_str_eq`
   when both operands are `String`; otherwise pointer comparison.
-- **`mem_zero`**: `@intrinsic("mem_zero")` (no argument) returns a null pointer (8 bytes) — used to null-init pointer slots. `@intrinsic("mem_zero", Type)` returns the zero value of `Type` in the language's native representation: for struct/enum types it returns a **boxed pointer** to a freshly heap-allocated, zeroed struct/enum (same convention as `StructInst`/`EnumInst`), so `*p = @intrinsic("mem_zero", T)` then `(*p).field` is consistent; for pointer types it returns a null pointer; for primitives it returns the zero value of that type.
+- **`mem_zero`**: `@intrinsic("mem_zero")` (no argument) returns a null pointer (8 bytes) — used to null-init pointer slots. `@intrinsic("mem_zero", Type)` returns the zero value of `Type` in the language's native representation: for struct/enum types it returns a **boxed pointer** to a freshly heap-allocated, zeroed struct/enum (same convention as `StructInst`/`EnumInst`), so `*p = @intrinsic("mem_zero", T)` then `(*p).field` is consistent; for pointer types it returns a null pointer; for primitives it returns the zero value of that type (#62, #87).
 - **`mem_zero_ptr`**: `@intrinsic("mem_zero_ptr", ptr, size)` calls `aion_memzero` to zero `size` bytes of existing memory. Used for in-place zeroing of bucket arrays and reusable buffers.
 - **`mem_is_null`**: `@intrinsic("mem_is_null", ptr)` returns `true` if the pointer is null.
 - **`sizeof`**: `@intrinsic("sizeof", Type)` returns the LLVM size of the type in bytes. Works on both variable instances and type names.
@@ -147,16 +148,15 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
 
 First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 
-- **Duration literals**: `5s`, `500ms`, `10us`, `2ns`, `2h`, `30m`.
-  Internally stored as `i64` milliseconds.
+- **Duration literals**: `5s`, `500ms`, `10us`, `2ns`, `2h`, `30m`, `1d`.
+  Internally stored as `i64` milliseconds (sub-millisecond literals `us`/`ns` truncate to `0` at millisecond resolution).
 - **Date literals**: `D2024-01-01` → `i64` millisecond timestamp.
 - **Arithmetic**: `Date + Duration → Date`, `Date - Duration → Date`,
   `Duration + Duration → Duration`, `Duration / Duration → float`.
 
 ## 5. Compiler Robustness
 
-- **Error handling**: zero `unwrap()` in production paths. All compiler
-  stages return `Result<T, CompileError>` with typed variants: `Type`,
+- **Error handling**: almost all compiler stages return `Result<T, CompileError>` with typed variants: `Type`,
   `Unsafe`, `NotFound`, `NotFunction`, `InvalidOperator`, `Inkwell`,
   `Io`, `Import`, `Internal`, `Warning`. Every variant carries `line`,
   `col`, and `snippet` (snippets are populated when the location is
@@ -199,7 +199,7 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
   branches of `if`/`match` expressions must agree on a common type
   (Unit branches contribute nothing); unresolved generics
   (`Unknown`/`Placeholder`) lose to concrete branch types.
-- **Debug hygiene**: no `println!`/`eprintln!` in production builds.
+- **Debug hygiene**: no `println!`/`eprintln!` in production builds (except opt-in `AION_DEBUG_TYPES` tracing).
 - **Span tracking**: all AST nodes carry `Span` (line, col) for precise
   error reporting.
 - **Recursion**: full self- and mutual-recursion. Two-pass compilation
@@ -228,11 +228,11 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
   checker rejects captures by name (#176). The runtime joins all spawned
   threads at process exit (atexit handler) so sparks always run to
   completion. Rewriting `aion_spawn` and the scheduler in Aion is a
-  ROADMAP item (Self-Runtime).
+  ROADMAP item (Self-Runtime, #72).
 - **AI Tensors**: first-class `std.ai.tensor`. Constructors `zeros`,
   `ones`, `rand` are functional; `matmul`, `add` and `backward` (autograd)
   are runtime placeholders, not yet implemented (see `docs/STDLIB.md` and
-  `src/runtime.c:220-235`).
+  `src/runtime.c:255-268`).
 - **Intents**: `::intent "..."` syntax for AI-guided compilation hints.
   Handled as a `NoOp` statement (not an expression).
 - **Short-circuiting**: `&&` and `||` use lazy evaluation via
@@ -255,7 +255,8 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 ## 8. Environment & Build
 
 - **Docker-first**: LLVM 15 dependencies are isolated in the
-  `aion-compiler` Docker image (Ubuntu 22.04 base).
+  `aion-compiler` Docker image (Ubuntu 22.04 base, pure-LLVM toolchain
+  without `gcc` — `clang-15` + `lld-15`).
 - **Wrapper**: `./aion` is the primary entry point for `build`, `run`,
   `doc`, `transpile` subcommands.
 - **Testing**: `cargo test` with `insta` snapshots + `assert_cmd` CLI
@@ -269,12 +270,15 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 
 The Aion-written compiler lives in `compiler/`:
 
-- `lexer.ai`, `token.ai` — Aion lexer (v0.7, validated against the
-  Rust bootstrap compiler).
-- `parser.ai`, `ast.ai` — Aion parser (v0.8, AST manipulation via Aion
-  `struct` and `match`).
-- **v0.9 (open)**: direct generation of `.ll` text files from the AST,
-  in Aion. Tracked by issue #9.
+- `lexer.ai`, `token.ai` — Aion lexer (v0.7 / v0.7.1, #147: full token
+  coverage validated against the Rust bootstrap compiler).
+- `parser.ai`, `ast.ai` — Aion parser (v0.8 / v0.8.1, #156: parses
+  139/139 test fixtures end-to-end).
+- `codegen.ai` — Aion LLVM 15 IR backend (v0.9, #9 / #129–#135: lowers
+  AST to textual `.ll` passing `opt-15 --opaque-pointers -verify`, with
+  binary stdout parity against the Rust backend proven by
+  `test_self_codegen_parity`).
+- `mut_a.ai`, `mut_b.ai` — Mutual `use` import test modules (#141).
 
 ## 10. Known Limitations
 
