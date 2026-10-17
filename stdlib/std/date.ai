@@ -2,7 +2,6 @@ module std.date
 
 use std.time
 use std.string
-use std.fmt
 
 pub struct Date {
     year: i32,
@@ -11,37 +10,53 @@ pub struct Date {
 }
 
 pub struct DateTime {
-    date: Date,
+    date: std.date.Date,
     hour: u8,
     minute: u8,
     second: u8,
     nanosecond: u32,
 }
 
+fn pad2(n: i64) -> String {
+    if n < 10 {
+        return f"0{n}";
+    }
+    return f"{n}";
+}
+
 impl DateTime {
-    pub fn now() -> DateTime {
-        let ts = std.time::now();
-        // Placeholder conversion logic (requires complex leap year math)
-        // Mapping to intrinsic for simplicity
+    pub fn from_timestamp(ts: i64) -> Self {
         let year = @intrinsic("date_year", ts) as i32;
         let month = @intrinsic("date_month", ts) as u8;
         let day = @intrinsic("date_day", ts) as u8;
         let hour = @intrinsic("date_hour", ts) as u8;
         let min = @intrinsic("date_min", ts) as u8;
         let sec = @intrinsic("date_sec", ts) as u8;
-        
-        DateTime {
-            date: Date { year: year, month: month, day: day },
+        let nanos = (((ts % 1000) + 1000) % 1000) * 1000000;
+
+        let d = std.date.Date { year: year, month: month, day: day };
+        std.date.DateTime {
+            date: d,
             hour: hour,
             minute: min,
             second: sec,
-            nanosecond: 0,
+            nanosecond: nanos as u32,
         }
     }
 
+    pub fn now() -> Self {
+        let ts = std.time.now();
+        std.date.DateTime.from_timestamp(ts)
+    }
+
     pub fn to_string(self) -> String {
-        // ISO 8601 format YYYY-MM-DDTHH:MM:SS
-        // Simplified formatting
-        std.fmt::format("{}-{}-{}T{}:{}:{}", std.collections.vector::Vector::new()) 
+        let y = self.date.year as i64;
+        let m = pad2(self.date.month as i64);
+        let d = pad2(self.date.day as i64);
+        let h = pad2(self.hour as i64);
+        let min = pad2(self.minute as i64);
+        let s = pad2(self.second as i64);
+        f"{y}-{m}-{d}T{h}:{min}:{s}"
     }
 }
+

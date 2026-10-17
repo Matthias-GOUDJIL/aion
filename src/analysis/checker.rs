@@ -112,6 +112,13 @@ impl TypeChecker {
                 return t;
             }
         }
+        if trimmed != "Date"
+            && trimmed != "Duration"
+            && let Some(full) = self.resolve_fuzzy_name(&self.decls, trimmed)
+            && let Some(t) = self.env.get(&full)
+        {
+            return t;
+        }
         Type::parse(trimmed)
     }
 
@@ -329,6 +336,37 @@ impl TypeChecker {
         self.current_module = program.module_name.clone();
         for decl in &program.declarations {
             match decl {
+                Declaration::Enum(e) => {
+                    self.decls.insert(e.name.clone(), decl.clone());
+                    self.env.set(
+                        e.name.clone(),
+                        Type::Enum {
+                            name: e.name.clone(),
+                        },
+                    );
+                }
+                Declaration::Struct(s) => {
+                    self.decls.insert(s.name.clone(), decl.clone());
+                    self.env.set(
+                        s.name.clone(),
+                        Type::Struct {
+                            name: s.name.clone(),
+                        },
+                    );
+                }
+                _ => {}
+            }
+        }
+        for decl in &program.declarations {
+            if let Declaration::Struct(s) = decl {
+                for (f_name, f_type) in &s.fields {
+                    self.env
+                        .set(format!("{}.{}", s.name, f_name), self.resolve_type(f_type));
+                }
+            }
+        }
+        for decl in &program.declarations {
+            match decl {
                 Declaration::Function(f) => {
                     self.decls.insert(f.name.clone(), decl.clone());
                     let is_unsafe = f.modifiers.iter().any(|m| m.kind == TokenKind::Unsafe);
@@ -347,28 +385,7 @@ impl TypeChecker {
                         },
                     );
                 }
-                Declaration::Enum(e) => {
-                    self.decls.insert(e.name.clone(), decl.clone());
-                    self.env.set(
-                        e.name.clone(),
-                        Type::Enum {
-                            name: e.name.clone(),
-                        },
-                    );
-                }
-                Declaration::Struct(s) => {
-                    self.decls.insert(s.name.clone(), decl.clone());
-                    self.env.set(
-                        s.name.clone(),
-                        Type::Struct {
-                            name: s.name.clone(),
-                        },
-                    );
-                    for (f_name, f_type) in &s.fields {
-                        self.env
-                            .set(format!("{}.{}", s.name, f_name), self.resolve_type(f_type));
-                    }
-                }
+                Declaration::Enum(_) | Declaration::Struct(_) => {}
                 Declaration::Impl(i) => {
                     let mut full_target = i.target_name.clone();
                     if !i.generic_params.is_empty() {
@@ -740,7 +757,7 @@ impl TypeChecker {
                 if let Some(t) = self.env.get(name) {
                     return Ok(t);
                 }
-                if let Some((var, field)) = name.split_once('.')
+                if let Some((var, field)) = name.rsplit_once('.')
                     && let Ok(rt) = self
                         .check_expression(&Expression::Identifier(var.to_string(), Span::zero()))
                 {
@@ -968,7 +985,8 @@ impl TypeChecker {
                 let tn = match rt {
                     Type::GenericInstance(ref n, _)
                     | Type::Struct { name: ref n }
-                    | Type::Enum { name: ref n } => n.clone(),
+                    | Type::Enum { name: ref n }
+                    | Type::Placeholder(ref n) => n.clone(),
                     Type::Integer { .. } => "i64".to_string(),
                     Type::String => "String".to_string(),
                     _ => {
@@ -1572,15 +1590,29 @@ impl TypeChecker {
                 return Ok(t1.clone());
             }
             Type::Date => {
-                // SPEC §4: Date + Duration -> Date, Date - Duration -> Date.
+                // SPEC §4: Date + Duration -> Date, Date - Duration -> Date,
+                // Date comparisons -> bool.
                 if t2 == Type::Duration && matches!(op.kind, TokenKind::Plus | TokenKind::Minus) {
                     return Ok(Type::Date);
+                }
+                if t2 == Type::Date
+                    && matches!(
+                        op.kind,
+                        TokenKind::EqEq
+                            | TokenKind::NotEq
+                            | TokenKind::Lt
+                            | TokenKind::Gt
+                            | TokenKind::LtEq
+                            | TokenKind::GtEq
+                    )
+                {
+                    return Ok(Type::Boolean);
                 }
             }
             Type::Duration => {
                 // SPEC §4: Duration + Duration -> Duration,
-                // Duration - Duration -> Duration, Duration / Duration -> float.
-                // Previously documented but rejected by the checker.
+                // Duration - Duration -> Duration, Duration / Duration -> float,
+                // Duration comparisons -> bool.
                 if t2 == Type::Duration {
                     if matches!(op.kind, TokenKind::Plus | TokenKind::Minus) {
                         return Ok(Type::Duration);
@@ -1588,7 +1620,15 @@ impl TypeChecker {
                     if op.kind == TokenKind::Slash {
                         return Ok(Type::Float);
                     }
-                    if matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq) {
+                    if matches!(
+                        op.kind,
+                        TokenKind::EqEq
+                            | TokenKind::NotEq
+                            | TokenKind::Lt
+                            | TokenKind::Gt
+                            | TokenKind::LtEq
+                            | TokenKind::GtEq
+                    ) {
                         return Ok(Type::Boolean);
                     }
                 }
@@ -1653,6 +1693,13 @@ impl TypeChecker {
             (Type::Placeholder(_), _) | (_, Type::Placeholder(_)) => true,
             (Type::Unit, _) | (_, Type::Unit) => true,
             (Type::Integer { .. }, Type::Integer { .. }) => true,
+            // Duration and Date are i64 milliseconds at the LLVM level
+            // (SPEC_TIME.md §1), so `time.sleep(10ms)` and
+            // `DateTime.from_timestamp(D2024-01-01)` unify with `i64`. #199.
+            (Type::Integer { .. }, Type::Duration)
+            | (Type::Duration, Type::Integer { .. })
+            | (Type::Integer { .. }, Type::Date)
+            | (Type::Date, Type::Integer { .. }) => true,
             // Aion bool is a 0/1 i64 at the LLVM level (see type_to_llvm);
             // `-> bool` functions returning i64-typed intrinsics (e.g.
             // std.fs.exists) rely on this interchangeability.

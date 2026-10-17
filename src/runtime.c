@@ -3,6 +3,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>
 #define GC_THREADS
 #define GC_NO_THREAD_REDIRECTS
 #include <gc.h>
@@ -302,3 +303,64 @@ char* aion_str_substr(const char* s, long long start, long long len) {
     buf[len] = 0;
     return buf;
 }
+
+// Time & Date Support (#199)
+long long aion_time_now(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_REALTIME, &ts) != 0) {
+        return 0;
+    }
+    return (long long)ts.tv_sec * 1000LL + (long long)(ts.tv_nsec / 1000000L);
+}
+
+void aion_time_sleep(long long millis) {
+    if (millis <= 0) return;
+    struct timespec req;
+    req.tv_sec = (time_t)(millis / 1000LL);
+    req.tv_nsec = (long)((millis % 1000LL) * 1000000L);
+    nanosleep(&req, NULL);
+}
+
+static void aion_ts_to_tm(long long ts_ms, struct tm* out) {
+    long long sec_ll = ts_ms >= 0 ? (ts_ms / 1000LL) : ((ts_ms - 999LL) / 1000LL);
+    time_t sec = (time_t)sec_ll;
+    memset(out, 0, sizeof(struct tm));
+    gmtime_r(&sec, out);
+}
+
+long long aion_date_year(long long ts_ms) {
+    struct tm tm_val;
+    aion_ts_to_tm(ts_ms, &tm_val);
+    return (long long)(tm_val.tm_year + 1900);
+}
+
+long long aion_date_month(long long ts_ms) {
+    struct tm tm_val;
+    aion_ts_to_tm(ts_ms, &tm_val);
+    return (long long)(tm_val.tm_mon + 1);
+}
+
+long long aion_date_day(long long ts_ms) {
+    struct tm tm_val;
+    aion_ts_to_tm(ts_ms, &tm_val);
+    return (long long)tm_val.tm_mday;
+}
+
+long long aion_date_hour(long long ts_ms) {
+    struct tm tm_val;
+    aion_ts_to_tm(ts_ms, &tm_val);
+    return (long long)tm_val.tm_hour;
+}
+
+long long aion_date_min(long long ts_ms) {
+    struct tm tm_val;
+    aion_ts_to_tm(ts_ms, &tm_val);
+    return (long long)tm_val.tm_min;
+}
+
+long long aion_date_sec(long long ts_ms) {
+    struct tm tm_val;
+    aion_ts_to_tm(ts_ms, &tm_val);
+    return (long long)tm_val.tm_sec;
+}
+

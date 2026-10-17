@@ -40,3 +40,6 @@ let d1 = D2024-01-01 // UTC date literal
     *   `Duration` stored as milliseconds in `i64`.
     *   `Date` stored as millisecond timestamp in `i64`.
     *   SQL transpiler lowers `Duration` to `INTERVAL` and `Date` to `TIMESTAMP`.
+- [x] **Runtime & Stdlib (`std.time`, `std.date`)**:
+    *   `aion_time_now()`, `aion_time_sleep(ms)`, and `aion_date_{year,month,day,hour,min,sec}(ts_ms)` implemented in `src/runtime.c` and registered in `src/builtins.rs` (`#199`).
+

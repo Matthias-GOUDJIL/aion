@@ -984,3 +984,8 @@ fn test_fstring_auto_stringify() {
 fn test_error_fstring_struct() {
     assert_snapshot!(run_aion_test("compiler/error_fstring_struct"));
 }
+
+#[test]
+fn test_stdlib_time_date_runtime() {
+    assert_snapshot!(run_aion_test("stdlib/time_date_runtime"));
+}
