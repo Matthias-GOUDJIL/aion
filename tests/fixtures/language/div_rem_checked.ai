@@ -1,0 +1,36 @@
+// #204 — nominal and edge cases for checked integer division and remainder.
+use std.io
+use std.string
+
+fn div_i64(a: i64, b: i64) -> i64 {
+    return a / b
+}
+
+fn rem_i64(a: i64, b: i64) -> i64 {
+    return a % b
+}
+
+fn main() {
+    // Nominal i64 division & remainder
+    io.println(string.from_int(div_i64(42, 6)))
+    io.println(string.from_int(div_i64(43, 6)))
+    io.println(string.from_int(rem_i64(43, 6)))
+    io.println(string.from_int(rem_i64(42, 6)))
+
+    // Edge cases: 0 dividend, divisor 1, negative dividend/divisor
+    io.println(string.from_int(div_i64(0, 7)))
+    io.println(string.from_int(rem_i64(0, 7)))
+    io.println(string.from_int(div_i64(99, 1)))
+    io.println(string.from_int(rem_i64(99, 1)))
+    io.println(string.from_int(div_i64(0 - 15, 4)))
+    io.println(string.from_int(div_i64(15, 0 - 4)))
+    io.println(string.from_int(div_i64(0 - 15, 0 - 3)))
+
+    // Width variation: i32 local arithmetic
+    let a32: i32 = 100
+    let b32: i32 = 8
+    let q32 = a32 / b32
+    let r32 = a32 % b32
+    io.println(string.from_int(q32))
+    io.println(string.from_int(r32))
+}

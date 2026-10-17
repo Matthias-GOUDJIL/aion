@@ -46,7 +46,11 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   signed/unsigned mixing (`i64 ^ u64`) is allowed, result takes the LHS.
   `&&`/`||` are logical short-circuit operators and require boolean
   operands; `%` is integer-only; operator/type pairs without a codegen
-  lowering are checker errors, never ICEs (#181).
+  lowering are checker errors, never ICEs (#181). Integer division (`/`)
+  and remainder (`%`) emit a runtime divisor-zero check before `sdiv` /
+  `urem`; dividing or taking the remainder by `0` calls the
+  `aion_div_zero()` trap (`error: division by zero` on stderr + `exit(1)`)
+  instead of triggering LLVM undefined behavior (#204).
 - `f64` (float), `bool`, `String` (pointer to C-string), `Duration` (i64
   millis), `Date` (i64 millis timestamp).
 - Char literals: `'a'` → integer char code.

@@ -1,0 +1,6 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/div_by_zero_trap\")"
+---
+error: division by zero
+error: process exited with code: 1

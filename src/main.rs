@@ -210,24 +210,42 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
         None => return Err(LinkError::GccFallback),
     };
 
-    // Resolve the pre-compiled runtime bitcode.
+    // Resolve the pre-compiled runtime bitcode, unless src/runtime.c has been
+    // modified more recently than the pre-baked bitcode (#204).
+    let src_runtime = std::path::Path::new("src/runtime.c");
+    let src_mtime = std::fs::metadata(src_runtime)
+        .and_then(|m| m.modified())
+        .ok();
+    let is_fresh = |bc_path: &std::path::Path| -> bool {
+        if !bc_path.exists() {
+            return false;
+        }
+        match (
+            src_mtime,
+            std::fs::metadata(bc_path).and_then(|m| m.modified()).ok(),
+        ) {
+            (Some(s), Some(b)) => b >= s,
+            _ => true,
+        }
+    };
+
     let runtime_bc = std::env::var("AION_RUNTIME_BC")
         .ok()
-        .filter(|p| std::path::Path::new(p).exists())
+        .filter(|p| is_fresh(std::path::Path::new(p)))
         .or_else(|| {
             let opt = std::path::Path::new("/opt/aion_runtime.bc");
-            if opt.exists() {
+            if is_fresh(opt) {
                 Some(opt.to_string_lossy().into_owned())
             } else {
                 None
             }
         });
 
-    let runtime_bc = match runtime_bc {
-        Some(p) => p,
+    let (runtime_bc, cleanup_bc) = match runtime_bc {
+        Some(p) => (p, false),
         None => {
-            // On-the-fly bitcode compile (non-Docker dev). Use a temp file
-            // scoped to this run so concurrent runs don't clobber each other.
+            // On-the-fly bitcode compile (non-Docker dev or updated runtime.c).
+            // Use a temp file scoped to this run so concurrent runs don't clobber each other.
             let tmp = format!("aion_runtime_{}.bc", std::process::id());
             let status = Command::new(&clang)
                 .args([
@@ -247,7 +265,7 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
                     status.code().unwrap_or(-1)
                 )));
             }
-            tmp
+            (tmp, true)
         }
     };
 
@@ -261,8 +279,13 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
             "-lpthread",
             "-lgc",
         ])
-        .status()
-        .map_err(|e| LinkError::Failed(format!("lld link: {}", e)))?;
+        .status();
+
+    if cleanup_bc {
+        let _ = std::fs::remove_file(&runtime_bc);
+    }
+
+    let status = status.map_err(|e| LinkError::Failed(format!("lld link: {}", e)))?;
 
     if !status.success() {
         return Err(LinkError::Failed(format!(
