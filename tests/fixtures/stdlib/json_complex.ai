@@ -1,0 +1,58 @@
+use std.json
+use std.option
+use std.string
+
+fn main() {
+    // 1. Nominal: nested objects and arrays round-trip
+    let input = "{\"name\":\"Aion\",\"version\":0.6,\"active\":true,\"meta\":null,\"tags\":[\"ai\",\"systems\"],\"nested\":{\"count\":42,\"neg\":-3.5}}"
+    let parsed = json.parse(input)
+    io.println(f"parsed_ok={parsed.is_some()}")
+    let root = parsed.unwrap()
+    io.println(f"roundtrip={json.stringify(root)}")
+
+    // 2. Accessors: object_len, object_get, array_len, array_get
+    io.println(f"root_len={json.object_len(root)}")
+    let tags = json.object_get(root, "tags").unwrap()
+    let tag0 = json.array_get(tags, 0).unwrap()
+    let tag1 = json.array_get(tags, 1).unwrap()
+    let nested = json.object_get(root, "nested").unwrap()
+    let cnt = json.object_get(nested, "count").unwrap()
+    io.println(f"tags_len={json.array_len(tags)}, tag0={json.stringify(tag0)}, tag1={json.stringify(tag1)}, cnt={json.stringify(cnt)}")
+
+    // 3. Edge cases: empty array [], empty object {}, whitespace variations, duplicate keys
+    let empty_arr = json.parse("  [ \n\t ]  ").unwrap()
+    let empty_obj = json.parse("  { \n\t }  ").unwrap()
+    let dup_obj = json.parse("{\"a\":1,\"b\":2,\"a\":99}").unwrap()
+    io.println(f"empty_arr={json.stringify(empty_arr)} (len={json.array_len(empty_arr)}), empty_obj={json.stringify(empty_obj)} (len={json.object_len(empty_obj)})")
+    io.println(f"dup_obj={json.stringify(dup_obj)}")
+
+    // 4. Edge cases: escape sequences (\", \\, \n, \t, \r, \/)
+    let esc_in = "{\"msg\":\"line1\\nline2\\t\\\"quoted\\\"\\\\slash\\/end\"}"
+    let esc_val = json.parse(esc_in).unwrap()
+    let msg_val = json.object_get(esc_val, "msg").unwrap()
+    io.println(f"esc_roundtrip={json.stringify(esc_val)}")
+    match msg_val {
+        json.Value::String(s) => {
+            io.println(f"raw_msg_len={string.len(s)}")
+        },
+        _ => io.println("unexpected"),
+    }
+
+    // 5. Edge cases: out-of-bounds array_get / missing key object_get / wrong type accessors
+    let oob_neg = json.array_get(tags, -1)
+    let oob_hi = json.array_get(tags, 99)
+    let missing_key = json.object_get(root, "nonexistent")
+    let wrong_type = json.array_get(root, 0)
+    io.println(f"oob_none={oob_neg.is_none() && oob_hi.is_none() && missing_key.is_none() && wrong_type.is_none()}")
+
+    // 6. Error cases: malformed JSON inputs return Option::None
+    let e1 = json.parse("[1, 2")
+    let e2 = json.parse("{\"a\": 1")
+    let e3 = json.parse("\"unclosed")
+    let e4 = json.parse("[1,]")
+    let e5 = json.parse("{\"a\":1,}")
+    let e6 = json.parse("-")
+    let e7 = json.parse("true false")
+    let e8 = json.parse("")
+    io.println(f"errors_none={e1.is_none() && e2.is_none() && e3.is_none() && e4.is_none() && e5.is_none() && e6.is_none() && e7.is_none() && e8.is_none()}")
+}

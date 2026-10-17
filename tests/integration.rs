@@ -989,3 +989,8 @@ fn test_error_fstring_struct() {
 fn test_stdlib_time_date_runtime() {
     assert_snapshot!(run_aion_test("stdlib/time_date_runtime"));
 }
+
+#[test]
+fn test_stdlib_json_complex() {
+    assert_snapshot!(run_aion_test("stdlib/json_complex"));
+}
