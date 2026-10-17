@@ -24,33 +24,49 @@ impl<'ctx> Compiler<'ctx> {
         let pt = self.context.ptr_type(AddressSpace::default());
         match e {
             Expression::Identifier(name, _) => {
-                if let Some((vn, fnm)) = name.split_once('.')
-                    && let Some((vptr, vt, vtn)) = variables.get(vn)
-                {
-                    let btn = if vtn.contains('<') {
-                        vtn.split('<').next().ok_or_else(|| {
-                            CompileError::internal("Invalid type name".to_string())
-                        })?
-                    } else {
-                        vtn
-                    };
-                    let ftn = self
-                        .resolve_fuzzy_name(&self.struct_types, btn)
-                        .unwrap_or(btn.to_string());
-                    if let Some(flds) = self.struct_fields.get(ftn.as_str())
-                        && let Some(&idx) = flds.get(fnm)
-                    {
-                        let st = *self.struct_types.get(&ftn).ok_or_else(|| {
-                            CompileError::internal(format!("LLVM struct type '{}' not found", ftn))
-                        })?;
-                        let st_ptr = self
-                            .builder
-                            .build_load(*vt, *vptr, "st_load")?
-                            .into_pointer_value();
-                        return Ok((
-                            self.builder.build_struct_gep(st, st_ptr, idx, "fldptr")?,
-                            self.aion_type_to_llvm(&self.get_field_type(vtn, fnm)),
-                        ));
+                if name.contains('.') {
+                    let parts: Vec<&str> = name.split('.').collect();
+                    if let Some((vptr, vt, vtn)) = variables.get(parts[0]) {
+                        let mut cur_ptr = *vptr;
+                        let mut cur_llvm = *vt;
+                        let mut cur_tn = vtn.clone();
+                        let mut matched_all = true;
+                        for &fnm in &parts[1..] {
+                            let btn = if cur_tn.contains('<') {
+                                cur_tn.split('<').next().ok_or_else(|| {
+                                    CompileError::internal("Invalid type name".to_string())
+                                })?
+                            } else {
+                                cur_tn.as_str()
+                            };
+                            let ftn = self
+                                .resolve_fuzzy_name(&self.struct_types, btn)
+                                .unwrap_or_else(|| btn.to_string());
+                            if let Some(flds) = self.struct_fields.get(ftn.as_str())
+                                && let Some(&idx) = flds.get(fnm)
+                            {
+                                let st = *self.struct_types.get(&ftn).ok_or_else(|| {
+                                    CompileError::internal(format!(
+                                        "LLVM struct type '{}' not found",
+                                        ftn
+                                    ))
+                                })?;
+                                let st_ptr = self
+                                    .builder
+                                    .build_load(cur_llvm, cur_ptr, "st_load")?
+                                    .into_pointer_value();
+                                cur_ptr =
+                                    self.builder.build_struct_gep(st, st_ptr, idx, "fldptr")?;
+                                cur_tn = self.get_field_type(&cur_tn, fnm);
+                                cur_llvm = self.aion_type_to_llvm(&cur_tn);
+                            } else {
+                                matched_all = false;
+                                break;
+                            }
+                        }
+                        if matched_all {
+                            return Ok((cur_ptr, cur_llvm));
+                        }
                     }
                 }
                 if let Some((ptr, vt, _)) = variables.get(name) {

@@ -89,6 +89,8 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Char(_, _) => "i64".to_string(),
             Expression::Boolean(_, _) => "bool".to_string(),
             Expression::String(_, _) => "String".to_string(),
+            Expression::Duration(_, _, _) => "Duration".to_string(),
+            Expression::Date(_, _) => "Date".to_string(),
             Expression::Infix {
                 left,
                 operator,

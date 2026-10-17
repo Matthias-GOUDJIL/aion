@@ -256,20 +256,16 @@ Universally Unique Identifiers.
 
 ## 11. Time & Date
 
-### `std.time` **[partial]**
-Duration works (constructors, `as_secs`/`as_millis`, arithmetic — exercised by
-`duration_literal`). `now()` and `sleep()` are **not implemented**: their
-`@intrinsic("time_now")` / `@intrinsic("time_sleep")` resolve to
-`aion_time_now` / `aion_time_sleep`, which are not builtins (#177) and are
-absent from `src/runtime.c` — calling them is a compile-time
-`internal error: Intrinsic not found`. Add both before re-promoting
-to [stable].
+### `std.time` **[stable]**
+Monotonic and wall-clock utilities backed by POSIX `clock_gettime(CLOCK_REALTIME)` and `nanosleep` (`#199`).
+- `Duration`: `new(secs, nanos)`, `from_secs(secs)`, `from_millis(millis)`, `as_secs()`, `as_millis()`.
+- `now() -> i64`: Current UTC epoch timestamp in milliseconds (`aion_time_now`).
+- `sleep(millis: i64)`: Sleeps the current thread for `millis` milliseconds (`aion_time_sleep`); accepts `Duration` literals (`time.sleep(10ms)`) and treats `<= 0` as a no-op.
 
-### `std.date` **[partial]**
-The `Date` struct and date-literal arithmetic work (exercised by
-`date_arithmetic`). `DateTime::now()` is **not implemented**: its
-`date_year`/`date_month`/`date_day`/`date_hour`/`date_min`/`date_sec`
-intrinsics resolve to `aion_date_*` symbols that are not builtins (#177)
-and absent from `src/runtime.c` (compile-time
-`internal error: Intrinsic not found`). Add both before re-promoting
-to [stable].
+### `std.date` **[stable]**
+UTC calendar date and timestamp decomposition backed by `gmtime_r` (`#199`).
+- `Date { year: i32, month: u8, day: u8 }` and `DateTime { date: Date, hour: u8, minute: u8, second: u8, nanosecond: u32 }`.
+- `DateTime.from_timestamp(ts: i64) -> DateTime`: Decomposes an epoch-millisecond timestamp (or `Date` literal) into UTC components (`aion_date_year`, `aion_date_month`, `aion_date_day`, `aion_date_hour`, `aion_date_min`, `aion_date_sec`).
+- `DateTime.now() -> DateTime`: Current UTC `DateTime` (`DateTime.from_timestamp(time.now())`).
+- `DateTime.to_string(self) -> String`: Formats as zero-padded ISO-8601 `YYYY-MM-DDTHH:MM:SS`.
+

@@ -379,6 +379,9 @@ impl<'a> Parser<'a> {
         while self.current_token.kind != TokenKind::RBrace
             && self.current_token.kind != TokenKind::EOF
         {
+            if self.current_token.kind == TokenKind::Pub {
+                self.next_token();
+            }
             if let TokenKind::Identifier(f_name) = &self.current_token.kind {
                 let f_name = f_name.clone();
                 self.next_token();
@@ -386,6 +389,10 @@ impl<'a> Parser<'a> {
                     self.next_token();
                     fields.push((f_name, self.parse_type_name()));
                 }
+            } else if self.current_token.kind != TokenKind::Comma
+                && self.current_token.kind != TokenKind::RBrace
+            {
+                self.next_token();
             }
             if self.current_token.kind == TokenKind::Comma {
                 self.next_token();

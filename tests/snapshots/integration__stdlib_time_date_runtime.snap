@@ -1,0 +1,11 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/time_date_runtime\")"
+---
+now_valid=true, monotonic=true
+sleep_edge=ok
+d1=2s/2500ms, d2=3000ms, d3=1s/1250ms
+leap=2024-02-29T12:44:56, nanos=123000000
+epoch=1970-01-01T00:00:00, lit=2024-01-01T02:30:00
+now_dt_ok=true
+cmp=true

@@ -1,0 +1,46 @@
+use std.time
+use std.date
+use std.string
+
+fn main() {
+    // 1. Nominal: time.now() and time.sleep(5ms)
+    let t0 = time.now()
+    time.sleep(5ms)
+    let t1 = time.now()
+    io.println(f"now_valid={t0 > 1700000000000}, monotonic={t1 >= t0}")
+
+    // 2. Edge cases: sleep(0ms) and negative duration no-op
+    time.sleep(0ms)
+    time.sleep(-10)
+    io.println("sleep_edge=ok")
+
+    // 3. std.time.Duration struct constructors and methods
+    let d1 = time.Duration.new(2, 500000000)
+    let d2 = time.Duration.from_secs(3)
+    let d3 = time.Duration.from_millis(1250)
+    io.println(f"d1={d1.as_secs()}s/{d1.as_millis()}ms, d2={d2.as_millis()}ms, d3={d3.as_secs()}s/{d3.as_millis()}ms")
+
+    // 4. Deterministic DateTime.from_timestamp (leap day 2024-02-29T12:44:56.123Z)
+    let dt_leap = date.DateTime.from_timestamp(1709210696123)
+    io.println(f"leap={dt_leap.to_string()}, nanos={dt_leap.nanosecond}")
+
+    // 5. Edge case: epoch 0 (1970-01-01T00:00:00Z) and Date literal D2024-01-01
+    let dt_epoch = date.DateTime.from_timestamp(0)
+    let dt_lit = date.DateTime.from_timestamp(D2024-01-01 + 2h + 30m)
+    io.println(f"epoch={dt_epoch.to_string()}, lit={dt_lit.to_string()}")
+
+    // 6. Live DateTime.now() range validation
+    let now_dt = date.DateTime.now()
+    let y_ok = (now_dt.date.year as i64) >= 2026
+    let m_ok = (now_dt.date.month as i64) >= 1 && (now_dt.date.month as i64) <= 12
+    let d_ok = (now_dt.date.day as i64) >= 1 && (now_dt.date.day as i64) <= 31
+    let h_ok = (now_dt.hour as i64) <= 23
+    let min_ok = (now_dt.minute as i64) <= 59
+    let s_ok = (now_dt.second as i64) <= 60
+    let iso_str = now_dt.to_string()
+    let len_ok = string.len(iso_str) == 19
+    io.println(f"now_dt_ok={y_ok && m_ok && d_ok && h_ok && min_ok && s_ok && len_ok}")
+
+    // 7. Duration and Date relational comparisons
+    io.println(f"cmp={5s > 500ms && D2024-01-01 < (D2024-01-01 + 1d)}")
+}
