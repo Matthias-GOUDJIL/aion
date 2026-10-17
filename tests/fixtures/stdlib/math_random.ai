@@ -1,0 +1,61 @@
+use std.io
+use std.math
+use std.math.complex
+use std.random
+
+fn main() -> i64 {
+    // 1. Nominal integer math
+    io.println(f"int: max={math.max(10, 25)}, min={math.min(10, 25)}, abs={math.abs(-42)}, clamp={math.clamp(150, 0, 100)}")
+
+    // 2. Nominal floating-point math
+    let s16 = math.sqrt(16.0)
+    let p2_10 = math.pow(2.0, 10.0)
+    let fl = math.floor(3.7)
+    let cl = math.ceil(3.2)
+    let af = math.abs_f64(-12.5)
+    io.println(f"float: sqrt16={s16}, pow={p2_10}, floor={fl}, ceil={cl}, abs={af}")
+
+    // 3. Trig & exp/log identities
+    let sin0 = math.sin(0.0)
+    let cos0 = math.cos(0.0)
+    let tan0 = math.tan(0.0)
+    let exp0 = math.exp(0.0)
+    let log1 = math.log(1.0)
+    let log_e_ok = math.abs_f64(math.log(math.e()) - 1.0) < 0.0001
+    let cos_pi_ok = math.abs_f64(math.cos(math.pi()) + 1.0) < 0.0001
+    io.println(f"trig_exp: sin0={sin0}, cos0={cos0}, tan0={tan0}, exp0={exp0}, log1={log1}, log_e_ok={log_e_ok}, cos_pi_ok={cos_pi_ok}")
+
+    // 4. Complex numbers (3 + 4i norm == 5.0)
+    let c1 = complex.Complex.new(3.0, 4.0)
+    let c2 = complex.Complex.new(1.0, -2.0)
+    let c_sum = c1.add(c2)
+    let c_norm = c1.norm()
+    io.println(f"complex: sum=({c_sum.re},{c_sum.im}), norm={c_norm}")
+
+    // 5. Edge cases: 0.0, negative floor/ceil, clamp boundaries
+    let fl_neg = math.floor(-2.3)
+    let cl_neg = math.ceil(-2.3)
+    let sqrt0 = math.sqrt(0.0)
+    io.println(f"edge_math: fl_neg={fl_neg}, cl_neg={cl_neg}, sqrt0={sqrt0}")
+
+    // 6. Deterministic seeded PRNG
+    let rng1 = random.Rng.new(12345)
+    let rng2 = random.Rng.new(12345)
+    let a1 = rng1.range(10, 100)
+    let a2 = rng1.range(10, 100)
+    let b1 = rng2.range(10, 100)
+    let b2 = rng2.range(10, 100)
+    let det_ok = a1 == b1 && a2 == b2 && a1 >= 10 && a1 < 100 && a2 >= 10 && a2 < 100
+    io.println(f"rng_det_ok={det_ok}")
+
+    // 7. Edge cases on PRNG: seed 0 fallback, range(x, x + 1), range(x, x)
+    let rng0 = random.Rng.new(0)
+    let v0 = rng0.next_i64()
+    let single = rng0.range(42, 43)
+    let empty_span = rng0.range(77, 77)
+    let g_val = random.range(5, 15)
+    let g_ok = g_val >= 5 && g_val < 15 && v0 > 0
+    io.println(f"rng_edge: single={single}, empty_span={empty_span}, g_ok={g_ok}")
+
+    return 0
+}

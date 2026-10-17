@@ -1,0 +1,11 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/math_random\")"
+---
+int: max=25, min=10, abs=42, clamp=100
+float: sqrt16=4, pow=1024, floor=3, ceil=4, abs=12.5
+trig_exp: sin0=0, cos0=1, tan0=0, exp0=1, log1=0, log_e_ok=true, cos_pi_ok=true
+complex: sum=(4,2), norm=5
+edge_math: fl_neg=-3, cl_neg=-2, sqrt0=0
+rng_det_ok=true
+rng_edge: single=42, empty_span=77, g_ok=true

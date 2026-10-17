@@ -110,6 +110,7 @@ fn main() {
                             &bin_file,
                             "-lpthread",
                             "-lgc",
+                            "-lm",
                         ])
                         .status();
                     if let Err(e) = gcc_status {
@@ -299,6 +300,7 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
             bin_file,
             "-lpthread",
             "-lgc",
+            "-lm",
         ])
         .status()
         .map_err(|e| LinkError::Failed(format!("lld link: {}", e)))?;

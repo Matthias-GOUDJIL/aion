@@ -193,17 +193,21 @@ Text templating engine (Jinja-like).
 
 ## 8. Math & Cryptography
 
-### `std.math` **[stub]**
-Basic math.
-- **`complex`** **[stub]** — Complex numbers.
+### `std.math` **[stable]**
+Integer and IEEE-754 `f64` math primitives backed by `libm` (`#201`).
+- Integer: `max`, `min`, `abs`, `clamp`.
+- Floating-point (`f64`): `sqrt`, `sin`, `cos`, `tan`, `pow`, `exp`, `log`, `floor`, `ceil`, `abs_f64` / `fabs`, `max_f64`, `min_f64`, `pi()`, `e()`.
+- **`complex`** **[stable]** — Complex numbers (`Complex::new`, `add`, `sub`, `mul`, `norm`).
 - **`big`** **[stub]** — Big integers (arbitrary precision).
 
 ### `std.crypto`
 - **`sha256`** **[skeleton]** — Hashing.
 - **`aes`** **[skeleton]** — Symmetric encryption (CBC/GCM).
 
-### `std.random` **[stub]**
-Pseudo-random number generation.
+### `std.random` **[stable]**
+Pseudo-random number generation (`#201`).
+- `Rng`: Deterministic seedable 64-bit LCG (`Rng.new(seed)`, `next_u64()`, `next_i64()`, `range(min, max)`, `next_bool()`).
+- Global helpers backed by `aion_random_get`: `random() -> i64`, `range(min, max) -> i64`.
 
 ---
 

@@ -1410,6 +1410,17 @@ impl Codegen {
         else if std.string.equals(name, "date_hour") { cname = "aion_date_hour"; ret = "i64"; }
         else if std.string.equals(name, "date_min") { cname = "aion_date_min"; ret = "i64"; }
         else if std.string.equals(name, "date_sec") { cname = "aion_date_sec"; ret = "i64"; }
+        else if std.string.equals(name, "math_sqrt") { cname = "aion_math_sqrt"; ret = "double"; }
+        else if std.string.equals(name, "math_sin") { cname = "aion_math_sin"; ret = "double"; }
+        else if std.string.equals(name, "math_cos") { cname = "aion_math_cos"; ret = "double"; }
+        else if std.string.equals(name, "math_tan") { cname = "aion_math_tan"; ret = "double"; }
+        else if std.string.equals(name, "math_pow") { cname = "aion_math_pow"; ret = "double"; }
+        else if std.string.equals(name, "math_exp") { cname = "aion_math_exp"; ret = "double"; }
+        else if std.string.equals(name, "math_log") { cname = "aion_math_log"; ret = "double"; }
+        else if std.string.equals(name, "math_floor") { cname = "aion_math_floor"; ret = "double"; }
+        else if std.string.equals(name, "math_ceil") { cname = "aion_math_ceil"; ret = "double"; }
+        else if std.string.equals(name, "math_fabs") { cname = "aion_math_fabs"; ret = "double"; }
+        else if std.string.equals(name, "random_get") { cname = "aion_random_get"; ret = "i64"; }
         if std.string.len(cname) == 0 {
             // Unknown intrinsic — safe zero placeholder (extends per
             // need; the Rust table lives in intrinsics.rs).
