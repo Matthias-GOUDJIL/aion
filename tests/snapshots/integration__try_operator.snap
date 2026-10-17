@@ -1,0 +1,17 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/try_operator\")"
+---
+Ok(31)
+Err(negative input)
+Err(overflow limit)
+Ok(28)
+Err(negative input)
+Ok(33)
+Err(negative input)
+Ok(17)
+Err(overflow limit)
+Ok(hello Aion!)
+Err(empty name)
+Ok(30)
+Err(bad point)

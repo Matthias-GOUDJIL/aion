@@ -535,8 +535,11 @@ impl TypeChecker {
                 // mismatch (e.g. annotating an i64 expression as String) is a
                 // type error.
                 let final_type = if let Some(et) = explicit_type {
-                    let annotated = Type::parse(et);
-                    if val_type == annotated || (annotated.is_integer() && val_type.is_integer()) {
+                    let annotated = self.resolve_type(et);
+                    if val_type == annotated
+                        || (annotated.is_integer() && val_type.is_integer())
+                        || Self::types_unify(&annotated, &val_type)
+                    {
                         annotated
                     } else {
                         return Err(self.err(
@@ -1202,13 +1205,35 @@ impl TypeChecker {
                     .collect();
                 if !type_args.is_empty()
                     && let Some(Declaration::Enum(enum_decl)) = self.decls.get(&full)
-                    && enum_decl
+                    && let Some(v) = enum_decl
                         .variants
                         .iter()
-                        .any(|v| v.name == *variant && !v.data_types.is_empty())
-                    && type_args.len() == enum_decl.generic_params.len()
+                        .find(|v| v.name == *variant && !v.data_types.is_empty())
                 {
-                    return Ok(Type::GenericInstance(full, type_args));
+                    if type_args.len() == enum_decl.generic_params.len() {
+                        return Ok(Type::GenericInstance(full, type_args));
+                    }
+                    // Multi-param generic enum (e.g. Result<T, E>) where a
+                    // variant carries a subset of generic params (Ok(T) or Err(E)):
+                    // map each declared generic param to the matching payload
+                    // argument type, or Type::Unknown if absent in this variant.
+                    if !enum_decl.generic_params.is_empty() {
+                        let mut inferred = Vec::with_capacity(enum_decl.generic_params.len());
+                        let mut any_bound = false;
+                        for gp in &enum_decl.generic_params {
+                            if let Some(pos) = v.data_types.iter().position(|dt| dt.trim() == gp)
+                                && let Some(arg_ty) = type_args.get(pos)
+                            {
+                                inferred.push(arg_ty.clone());
+                                any_bound = true;
+                            } else {
+                                inferred.push(Type::Unknown);
+                            }
+                        }
+                        if any_bound {
+                            return Ok(Type::GenericInstance(full, inferred));
+                        }
+                    }
                 }
                 Ok(Type::Enum { name: full })
             }
@@ -1504,6 +1529,82 @@ impl TypeChecker {
                         },
                     )),
                 }
+            }
+            Expression::Try { expr: inner, span } => {
+                let inner_ty = self.check_expression(inner)?;
+                let try_expr = Expression::Try {
+                    expr: inner.clone(),
+                    span: *span,
+                };
+                let (inner_args, ok_ty) = match &inner_ty {
+                    Type::GenericInstance(name, args) if Self::base_names_match(name, "Result") => {
+                        let ok = match args.first() {
+                            Some(Type::Unknown) | None => Type::Unknown,
+                            Some(t) => self.resolve_type(&t.name()),
+                        };
+                        (args.clone(), ok)
+                    }
+                    Type::Enum { name } if Self::base_names_match(name, "Result") => {
+                        (vec![], Type::Unknown)
+                    }
+                    _ => {
+                        return Err(self.err(
+                            format!(
+                                "cannot apply '?' operator to non-Result type '{}'",
+                                inner_ty.name()
+                            ),
+                            &try_expr,
+                        ));
+                    }
+                };
+                let ret_args = match &self.current_return_type {
+                    Some(Type::GenericInstance(ret_name, rargs))
+                        if Self::base_names_match(ret_name, "Result") =>
+                    {
+                        rargs.clone()
+                    }
+                    Some(Type::Enum { name: ret_name })
+                        if Self::base_names_match(ret_name, "Result") =>
+                    {
+                        vec![]
+                    }
+                    other => {
+                        let ret_name = other
+                            .as_ref()
+                            .map(|t| t.name())
+                            .unwrap_or_else(|| "void".to_string());
+                        return Err(self.err(
+                            format!(
+                                "cannot use '?' operator in a function that returns '{}' (expected Result)",
+                                ret_name
+                            ),
+                            &try_expr,
+                        ));
+                    }
+                };
+                if let (Some(e_inner), Some(e_outer)) = (inner_args.get(1), ret_args.get(1)) {
+                    let e_in_res = if *e_inner == Type::Unknown {
+                        Type::Unknown
+                    } else {
+                        self.resolve_type(&e_inner.name())
+                    };
+                    let e_out_res = if *e_outer == Type::Unknown {
+                        Type::Unknown
+                    } else {
+                        self.resolve_type(&e_outer.name())
+                    };
+                    if !Self::types_unify(&e_out_res, &e_in_res) {
+                        return Err(self.err(
+                            format!(
+                                "'?' operator cannot convert error type '{}' to function error type '{}'",
+                                e_in_res.name(),
+                                e_out_res.name()
+                            ),
+                            &try_expr,
+                        ));
+                    }
+                }
+                Ok(ok_ty)
             }
             _ => Err(CompileError::internal(format!(
                 "Unsupported expression {:?}",
@@ -2004,7 +2105,9 @@ impl TypeChecker {
                     self.collect_spawn_names(eb, bound, free);
                 }
             }
-            Expression::Deref { expr, .. } | Expression::Cast { expr, .. } => {
+            Expression::Deref { expr, .. }
+            | Expression::Cast { expr, .. }
+            | Expression::Try { expr, .. } => {
                 self.walk_spawn_expr(expr, bound, free);
             }
             Expression::Intrinsic { arguments, .. } => {

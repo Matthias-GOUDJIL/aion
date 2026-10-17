@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_try_non_result_value\")"
+---
+Type Error: cannot apply '?' operator to non-Result type 'i64'

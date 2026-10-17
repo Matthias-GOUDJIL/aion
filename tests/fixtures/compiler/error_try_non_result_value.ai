@@ -1,0 +1,10 @@
+use std.result
+
+fn bad(x: i64) -> result.Result<i64, String> {
+    let y = x?;
+    return result.Result::Ok(y);
+}
+
+fn main() {
+    let _ = bad(10);
+}

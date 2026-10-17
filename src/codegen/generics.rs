@@ -160,6 +160,9 @@ impl<'ctx> Compiler<'ctx> {
                     self.substitute_types_in_body(&mut arm.body, ph, conc);
                 }
             }
+            Expression::Try { expr, .. } => {
+                self.substitute_types_in_expr(expr, ph, conc);
+            }
             _ => {}
         }
     }

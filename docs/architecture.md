@@ -33,9 +33,9 @@ declarations all derive from it (#177).
     generics.rs   — Generic function instantiation + body/expr substitution (phase 3)
     control_flow.rs — Statement-level codegen: compile_block (let/return/if/while/match/unsafe) (phase 4)
     lvalues.rs      — Assignment-target lowering: compile_lvalue (field/index/deref) (phase 5)
-    expressions.rs  — Expression-level codegen: compile_expr (literals/calls/structs/enum/match/...) (phase 6)
+    expressions.rs  — Expression-level codegen: compile_expr (literals/calls/structs/enum/match/try) (phase 6)
     match_lowering.rs — Shared match lowering: enum + primitive (i64/String/range) arms,
-      guards and param binding for both `Statement::Match` and `Expression::Match` (#183)
+      guards and generic-substituted param binding for both `Statement::Match` and `Expression::Match` (#183, #138)
     type_helpers.rs — Type-recovery: get_field_type + get_expr_type_name (phase 7)
     transpiler/   — Transpilation backends
       mod.rs      — Module root

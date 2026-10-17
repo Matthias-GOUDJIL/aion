@@ -423,6 +423,34 @@ impl<'ctx> Compiler<'ctx> {
                 };
                 format!("[{}; {}]", elem_tn, elements.len())
             }
+            Expression::Try { expr, .. } => {
+                let inner = self.get_expr_type_name(expr, variables);
+                if let Some(start) = inner.find('<')
+                    && inner.ends_with('>')
+                {
+                    let args_str = &inner[start + 1..inner.len() - 1];
+                    let mut depth = 0i32;
+                    let mut first_arg = String::new();
+                    for c in args_str.chars() {
+                        match c {
+                            '<' | '(' | '[' => {
+                                depth += 1;
+                                first_arg.push(c);
+                            }
+                            '>' | ')' | ']' => {
+                                depth -= 1;
+                                first_arg.push(c);
+                            }
+                            ',' if depth == 0 => break,
+                            _ => first_arg.push(c),
+                        }
+                    }
+                    if !first_arg.is_empty() {
+                        return first_arg.trim().replace(" ", "");
+                    }
+                }
+                "i64".to_string()
+            }
             _ => "unknown".to_string(),
         };
         res.replace(" ", "")

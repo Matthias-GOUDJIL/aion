@@ -524,7 +524,9 @@ impl SqlTranspiler {
             Expression::Range { .. } => "i64".to_string(),
             Expression::Intrinsic { .. } | Expression::TypeRef { .. } => "i64".to_string(),
             Expression::TupleLiteral { .. } | Expression::TupleAccess { .. } => "JSONB".to_string(),
-            Expression::ArrayLiteral { .. } | Expression::Index { .. } => "JSONB".to_string(),
+            Expression::ArrayLiteral { .. } | Expression::Index { .. } | Expression::Try { .. } => {
+                "JSONB".to_string()
+            }
         }
     }
 
@@ -1202,6 +1204,10 @@ impl SqlTranspiler {
             }
             Expression::Index { .. } => {
                 self.error(expr.span(), "array indexing has no SQL equivalent (#54)");
+                self.buffer.push_str("NULL");
+            }
+            Expression::Try { .. } => {
+                self.error(expr.span(), "'?' operator has no SQL equivalent (#138)");
                 self.buffer.push_str("NULL");
             }
         }

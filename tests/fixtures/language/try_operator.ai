@@ -1,0 +1,124 @@
+use std.io
+use std.result
+
+struct Point {
+    x: i64,
+    y: i64,
+}
+
+fn step1(x: i64) -> result.Result<i64, String> {
+    if x < 0 {
+        return result.Result::Err("negative input");
+    }
+    return result.Result::Ok(x + 10);
+}
+
+fn step2(x: i64) -> result.Result<i64, String> {
+    if x > 100 {
+        return result.Result::Err("overflow limit");
+    }
+    return result.Result::Ok(x * 2);
+}
+
+// Nominal: depth-2 ? chain
+fn pipeline(x: i64) -> result.Result<i64, String> {
+    let a = step1(x)?;
+    let b = step2(a)?;
+    return result.Result::Ok(b + 1);
+}
+
+// Edge case: ? on the last expression of a function
+fn double_step1(x: i64) -> result.Result<i64, String> {
+    return result.Result::Ok(step1(x)? * 2);
+}
+
+// Edge case: ? inside if and while
+fn sum_checked(limit: i64, bad_at: i64) -> result.Result<i64, String> {
+    let mut i = 0;
+    let mut total = 0;
+    while i < limit {
+        if i == bad_at {
+            let v = step1(-1)?;
+            total = total + v;
+        } else {
+            let v = step1(i)?;
+            total = total + v;
+        }
+        i = i + 1;
+    }
+    return result.Result::Ok(total);
+}
+
+// Edge case: ? inside a match arm
+fn match_try(mode: i64, x: i64) -> result.Result<i64, String> {
+    let v = match mode {
+        0 => step1(x)?,
+        1 => step2(x)?,
+        _ => 0,
+    };
+    return result.Result::Ok(v);
+}
+
+// Type variations: String and Struct payloads with ?
+fn greet_non_empty(name: String) -> result.Result<String, String> {
+    if name == "" {
+        return result.Result::Err("empty name");
+    }
+    return result.Result::Ok(f"hello {name}");
+}
+
+fn shout_greeting(name: String) -> result.Result<String, String> {
+    let g = greet_non_empty(name)?;
+    return result.Result::Ok(f"{g}!");
+}
+
+fn make_point(x: i64, y: i64) -> result.Result<Point, String> {
+    if x < 0 {
+        return result.Result::Err("bad point");
+    }
+    return result.Result::Ok(Point { x: x, y: y });
+}
+
+fn point_sum(x: i64, y: i64) -> result.Result<i64, String> {
+    let p = make_point(x, y)?;
+    return result.Result::Ok(p.x + p.y);
+}
+
+fn show_res(r: result.Result<i64, String>) {
+    match r {
+        result.Result::Ok(v) => io.println(f"Ok({v})"),
+        result.Result::Err(e) => io.println(f"Err({e})"),
+    }
+}
+
+fn show_str_res(r: result.Result<String, String>) {
+    match r {
+        result.Result::Ok(v) => io.println(f"Ok({v})"),
+        result.Result::Err(e) => io.println(f"Err({e})"),
+    }
+}
+
+fn main() {
+    // 1. Nominal depth-2 chain: happy path, fail at step1, fail at step2
+    show_res(pipeline(5));
+    show_res(pipeline(-3));
+    show_res(pipeline(95));
+
+    // 2. Last expression of a fn
+    show_res(double_step1(4));
+    show_res(double_step1(-1));
+
+    // 3. Inside if/while
+    show_res(sum_checked(3, 99));
+    show_res(sum_checked(3, 1));
+
+    // 4. Inside match arm
+    show_res(match_try(0, 7));
+    show_res(match_try(1, 200));
+
+    // 5. String and Struct payloads
+    show_str_res(shout_greeting("Aion"));
+    show_str_res(shout_greeting(""));
+    show_res(point_sum(10, 20));
+    show_res(point_sum(-5, 20));
+}

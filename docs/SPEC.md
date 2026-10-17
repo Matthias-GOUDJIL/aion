@@ -74,6 +74,19 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
 - **Enums** compile as `{ i64, [512 x i8] }` — index 0 = Tag, index 1 =
   Payload (512 bytes, up to 64 pointer/i64 slots). Tags follow declaration
   order (0, 1, ...), with fallback `Some/Ok = 0`, `None/Err = 1`.
+- **`?` operator (`expr?`)**: postfix error propagation on `Result<T, E>`
+  (#138). Evaluates `expr`; if `Result::Ok(v)` (tag `0`), extracts and
+  yields `v` of type `T`; if `Result::Err(e)` (tag `1`), early-returns
+  `Result::Err(e)` from the enclosing function. The type checker enforces
+  that (1) the operand is `Result<T, E>`, (2) the enclosing function
+  returns `Result<_, E_outer>`, and (3) `E` unifies with `E_outer`.
+  ```aion
+  fn pipeline(x: i64) -> result.Result<i64, String> {
+      let a = step1(x)?;
+      let b = step2(a)?;
+      return result.Result::Ok(b + 1);
+  }
+  ```
 - **Generics**: monomorphization at compile time. Full type substitution
   before LLVM generation. Generic params are substituted via token-aware
   identifier matching (`substitute_type_string`) to avoid corrupting

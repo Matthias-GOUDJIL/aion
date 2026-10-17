@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_try_error_mismatch\")"
+---
+Type Error: '?' operator cannot convert error type 'i64' to function error type 'String'

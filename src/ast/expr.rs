@@ -112,6 +112,11 @@ pub enum Expression {
         index: Box<Expression>,
         span: Span,
     },
+    /// Error propagation postfix operator: `expr?`. #138.
+    Try {
+        expr: Box<Expression>,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -142,7 +147,8 @@ impl Expression {
             | Expression::TupleLiteral { span: s, .. }
             | Expression::TupleAccess { span: s, .. }
             | Expression::ArrayLiteral { span: s, .. }
-            | Expression::Index { span: s, .. } => *s,
+            | Expression::Index { span: s, .. }
+            | Expression::Try { span: s, .. } => *s,
         }
     }
 }

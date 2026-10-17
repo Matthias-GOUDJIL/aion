@@ -1783,6 +1783,14 @@ impl<'a> Parser<'a> {
                         break;
                     }
                 }
+                TokenKind::Question => {
+                    let q_span = Span::from_token(&self.current_token);
+                    self.next_token();
+                    expr = Expression::Try {
+                        expr: Box::new(expr),
+                        span: q_span,
+                    };
+                }
                 _ => break,
             }
         }
