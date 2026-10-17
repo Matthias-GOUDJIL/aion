@@ -1,0 +1,12 @@
+// #205 — interpolating a struct without conversion produces a clear InvalidOperator error.
+use std.io
+
+struct Point {
+    x: i64,
+    y: i64,
+}
+
+fn main() {
+    let p = Point { x: 1, y: 2 }
+    io.println(f"point={p}")
+}

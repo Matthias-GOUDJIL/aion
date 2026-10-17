@@ -132,14 +132,19 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
 - **Strings**: C-style `char*`. Escape sequences in regular strings:
   `\n`, `\t`, `\r`, `\\`, `\"`, `\0`.
 - **f-strings** (v0.6): `f"Hello {name}!"` is syntax sugar for
-  left-associative string concatenation. Each `{expr}` segment is parsed
-  as a full Aion expression and joined with `+`. Non-String expressions
-  must be explicitly converted with `string.from_int`,
-  `string.from_float`, etc. — Aion does not yet auto-stringify at
-  interpolation sites.
+  left-associative string concatenation anchored at `""` when the first
+  segment is an `{expr}`. Each `{expr}` segment is parsed as a full Aion
+  expression and joined with `+`. Primitive expressions (`i8..i64`,
+  `u8..u64`, `f64`, `bool`) are automatically stringified (`aion_int_to_str`,
+  `aion_float_to_str`, `"true"`/`"false"`) without requiring manual
+  `string.from_*` calls (#205); explicit `string.from_int` /
+  `string.from_float` calls continue to work unchanged. Composite types
+  (structs, enums, tuples, arrays) require explicit formatting.
 - **Concat**: `String + String` lowers to `aion_str_concat` (allocates a
-  new buffer). `String + i64` treats the integer as a single char code
-  via `aion_char_to_str` — do not use this for integer formatting.
+  new buffer). `String + <int>` formats the integer in decimal via
+  `aion_int_to_str`; `String + f64` formats via `aion_float_to_str`;
+  `String + bool` formats as `"true"` or `"false"` (#205). For single-byte
+  ASCII code point conversion, use `@intrinsic("char_to_str", c)`.
 - **Comparison**: `==` and `!=` compare string content via `aion_str_eq`
   when both operands are `String`; otherwise pointer comparison.
 - **`mem_zero`**: `@intrinsic("mem_zero")` (no argument) returns a null pointer (8 bytes) — used to null-init pointer slots. `@intrinsic("mem_zero", Type)` returns the zero value of `Type` in the language's native representation: for struct/enum types it returns a **boxed pointer** to a freshly heap-allocated, zeroed struct/enum (same convention as `StructInst`/`EnumInst`), so `*p = @intrinsic("mem_zero", T)` then `(*p).field` is consistent; for pointer types it returns a null pointer; for primitives it returns the zero value of that type (#62, #87).

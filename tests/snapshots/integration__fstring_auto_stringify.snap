@@ -1,0 +1,11 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/fstring_auto_stringify\")"
+---
+Lang: Aion, score: 42, ratio: 3.5, ok: true, fail: false
+0
+-99
+17
+42true-99
+sum=35, gt=true, eq=false
+explicit=42/3.5

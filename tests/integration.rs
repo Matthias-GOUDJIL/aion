@@ -974,3 +974,13 @@ fn test_div_by_zero_trap() {
 fn test_rem_by_zero_trap() {
     assert_snapshot!(run_aion_test("language/rem_by_zero_trap"));
 }
+
+#[test]
+fn test_fstring_auto_stringify() {
+    assert_snapshot!(run_aion_test("language/fstring_auto_stringify"));
+}
+
+#[test]
+fn test_error_fstring_struct() {
+    assert_snapshot!(run_aion_test("compiler/error_fstring_struct"));
+}

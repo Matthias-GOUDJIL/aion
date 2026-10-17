@@ -1824,7 +1824,11 @@ impl<'a> Parser<'a> {
         }
 
         let plus_tok = Token::new(TokenKind::Plus, span.line, span.col);
-        let mut result: Option<Expression> = None;
+        let mut result: Option<Expression> = if matches!(segments.first(), Some(Seg::Expr(_))) {
+            Some(Expression::String(String::new(), span))
+        } else {
+            None
+        };
         for seg in segments {
             let part = match seg {
                 Seg::Lit(lit) => Expression::String(lit, span),

@@ -1556,7 +1556,12 @@ impl TypeChecker {
                 }
             }
             Type::String => {
-                if (t2 == Type::String || t2.is_integer()) && op.kind == TokenKind::Plus {
+                if (t2 == Type::String
+                    || t2.is_integer()
+                    || t2 == Type::Float
+                    || t2 == Type::Boolean)
+                    && op.kind == TokenKind::Plus
+                {
                     return Ok(Type::String);
                 }
                 if t2 == Type::String && matches!(op.kind, TokenKind::EqEq | TokenKind::NotEq) {

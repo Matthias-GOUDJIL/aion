@@ -89,6 +89,50 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Char(_, _) => "i64".to_string(),
             Expression::Boolean(_, _) => "bool".to_string(),
             Expression::String(_, _) => "String".to_string(),
+            Expression::Infix {
+                left,
+                operator,
+                right,
+                ..
+            } => {
+                use crate::lexer::token::TokenKind;
+                match operator.kind {
+                    TokenKind::EqEq
+                    | TokenKind::NotEq
+                    | TokenKind::Lt
+                    | TokenKind::Gt
+                    | TokenKind::LtEq
+                    | TokenKind::GtEq
+                    | TokenKind::And
+                    | TokenKind::Or
+                    | TokenKind::Inside => "bool".to_string(),
+                    TokenKind::Plus => {
+                        let lt = self.get_expr_type_name(left, variables);
+                        if lt == "String" {
+                            "String".to_string()
+                        } else {
+                            let rt = self.get_expr_type_name(right, variables);
+                            if rt == "String" {
+                                "String".to_string()
+                            } else if lt == "f64" || rt == "f64" {
+                                "f64".to_string()
+                            } else if lt != "unknown" {
+                                lt
+                            } else {
+                                "i64".to_string()
+                            }
+                        }
+                    }
+                    _ => {
+                        let lt = self.get_expr_type_name(left, variables);
+                        if lt != "unknown" {
+                            lt
+                        } else {
+                            "i64".to_string()
+                        }
+                    }
+                }
+            }
             Expression::Identifier(name, _) => {
                 let parts: Vec<&str> = name.split('.').collect();
                 if parts.len() > 1 {
