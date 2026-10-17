@@ -1,55 +1,42 @@
 # Aion Specification: Time & Duration
 
-## 1. The `Duration` Type
-Aion introduces a first-class `Duration` primitive type representing a span of time.
+## 1. The `Duration` and `Date` Types
+Aion provides first-class `Duration` (a span of time) and `Date` (a calendar timestamp) primitive types.
 
-### Internal Representation
-Under the hood, `Duration` is a 128-bit structure (to avoid Y2038 issues and allow nanosecond precision for thousands of years).
-```rust
-struct Duration {
-    secs: u64,
-    nanos: u32
-}
-```
+### Internal Representation (Current Implementation)
+Both `Duration` and `Date` are represented at the AST (`Expression::Duration(i64, Span)`, `Expression::Date(i64, Span)`) and LLVM IR levels as signed 64-bit integers (`i64`) storing **milliseconds**:
+- `Duration`: signed `i64` milliseconds (`1s` = `1000`, `2m` = `120000`, `1h` = `3600000`, `1d` = `86400000`). Sub-millisecond suffixes (`us`, `ns`) are recognized by the lexer and currently truncate to `0` at millisecond resolution.
+- `Date`: signed `i64` epoch milliseconds at midnight UTC (`D2024-01-01`).
+
+*(Note: A future 128-bit `{ secs: u64, nanos: u32 }` representation is planned if nanosecond precision is required.)*
 
 ### Syntax (Literals)
-Aion supports suffixed literals for creating durations directly.
+Aion supports suffixed literals for creating durations and `DYYYY-MM-DD` literals for dates directly:
 ```aion
-let t1 = 5s      // 5 seconds
-let t2 = 500ms   // 500 milliseconds
-let t3 = 10us    // 10 microseconds
-let t4 = 2h      // 2 hours
-let t5 = 30m     // 30 minutes
+let t1 = 5s          // 5 seconds (5000 ms)
+let t2 = 500ms       // 500 milliseconds
+let t3 = 10us        // 10 microseconds (truncates to 0 ms in v0.6)
+let t4 = 2h          // 2 hours
+let t5 = 30m         // 30 minutes
+let t6 = 1d          // 1 day
+let d1 = D2024-01-01 // UTC date literal
 ```
 
 ### Operations
 | Left | Op | Right | Result | Description |
 |---|---|---|---|---|
 | `Duration` | `+` | `Duration` | `Duration` | Sum of spans |
-| `Duration` | `-` | `Duration` | `Duration` | Difference (saturating at 0) |
-| `Duration` | `*` | `int/float` | `Duration` | Scaling |
-| `Duration` | `/` | `int/float` | `Duration` | Scaling |
-| `Duration` | `/` | `Duration` | `float` | Ratio (how many X in Y) |
-| `Duration` | `==` | `Duration` | `bool` | Equality |
-| `Duration` | `>` | `Duration` | `bool` | Comparison |
+| `Duration` | `-` | `Duration` | `Duration` | Difference |
+| `Duration` | `/` | `Duration` | `f64` | Ratio (`sitofp` + `fdiv`) |
+| `Duration` | `==`, `!=`, `<`, `>`, `<=`, `>=` | `Duration` | `bool` | Comparison |
+| `Date` | `+` | `Duration` | `Date` | Offset date forward |
+| `Date` | `-` | `Duration` | `Date` | Offset date backward |
 
-## 2. The `Time` Type (Future)
-Represents a point in time (Timestamp).
-*   `Time + Duration -> Time`
-*   `Time - Duration -> Time`
-*   `Time - Time -> Duration`
-
-## 3. Elo Compatibility
-To support Elo's ISO8601 strings, the standard library will provide:
-```aion
-io.println(Duration("P1DT2H")) // Parses string at runtime
-```
-
-## 4. Implementation Status
-- [x] **Lexer**: Recognize suffixes `s`, `ms`, `us`, `ns`, `m`, `h` and `DYYYY-MM-DD`.
-- [x] **AST**: Add `Expression::Duration(u64, u32)` and `Expression::Date(i64)`.
-- [x] **Type Checker**: Support for `Date + Duration` arithmetic.
+## 2. Implementation Status
+- [x] **Lexer**: Recognize suffixes `s`, `ms`, `us`, `ns`, `m`, `h`, `d` and `DYYYY-MM-DD` (in both Rust `src/lexer/mod.rs` and self-hosted `compiler/lexer.ai`).
+- [x] **AST**: `Expression::Duration(i64, Span)` and `Expression::Date(i64, Span)`.
+- [x] **Type Checker**: Support for `Date` and `Duration` arithmetic and comparisons.
 - [x] **Codegen**:
     *   `Duration` stored as milliseconds in `i64`.
     *   `Date` stored as millisecond timestamp in `i64`.
-    *   Arithmetic intrinsics implemented in `src/lib.rs` (orchestration layer).
+    *   SQL transpiler lowers `Duration` to `INTERVAL` and `Date` to `TIMESTAMP`.

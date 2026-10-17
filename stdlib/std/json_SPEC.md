@@ -82,15 +82,12 @@ Using a recursive descent parser with explicit position tracking (returning `Par
 
 ### Number Parsing
 
-Currently returns `Value::Number(0.0)` as placeholder because:
-- Aion's `string.to_float()` may not exist or may be inaccurate
-- Need to implement `atof`-style parsing manually, or
-- Add `string.to_float()` to the stdlib
+`parse_number` scans optional leading `-`, integer digits, and optional fractional `.digits`, then converts the slice via `string.to_float(num_str)` (`aion_str_to_float` in `src/runtime.c`) and wraps it in `Value::Number(num_val)`.
 
 ## Known Limitations
 
-1. **No float parsing**: `parse_number` returns `0.0` for all numbers. Need `string.from_float` reverse function.
-2. **No unicode escape**: `\uXXXX` parsing returns code point as integer, not proper UTF-8 character.
+1. **No array or object parsing yet**: `Value` currently only defines `Null`, `Bool`, `Number`, `String` until recursive composite `Vector<Value>` handling is wired in `std.json`.
+2. **No unicode escape**: `\uXXXX` and escape sequences inside string literals are not unescaped yet.
 3. **No error positions**: Parser returns `Option::None` without indicating where the error occurred.
 4. **No streaming**: Parser loads entire input into memory. Fine for most JSON, but not for huge files.
 
