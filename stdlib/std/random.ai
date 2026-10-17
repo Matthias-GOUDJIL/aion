@@ -1,31 +1,54 @@
 module std.random
 
 pub struct Rng {
-    state: i64,
+    pub state: i64,
 }
 
 impl Rng {
     pub fn new(seed: i64) -> Rng {
-        Rng { state: seed }
+        let mut s = seed;
+        if s == 0 {
+            s = 88172645463325252;
+        }
+        return std.random.Rng { state: s };
     }
 
     pub fn next_u64(mut self) -> i64 {
-        // Linear Congruential Generator (LCG) constants (Mixer/Murmur3-like)
-        self.state = self.state * 6364136223846793005 + 1;
-        self.state
+        // Linear Congruential Generator (LCG) constants (PCG/MMIX 64-bit multiplier)
+        self.state = self.state * 6364136223846793005 + 1442695040888963407;
+        return self.state;
+    }
+
+    pub fn next_i64(mut self) -> i64 {
+        let r = self.next_u64();
+        if r < 0 {
+            let neg = 0 - r;
+            if neg < 0 { return 0; }
+            return neg;
+        }
+        return r;
     }
 
     pub fn range(mut self, min: i64, max: i64) -> i64 {
-        let r = self.next_u64();
+        if max <= min { return min; }
         let span = max - min;
-        if span == 0 { return min; }
-        // Absolute value for modulo
-        let val = if r < 0 { 0 - r } else { r };
-        min + (val % span)
+        let val = self.next_i64();
+        return min + (val % span);
+    }
+
+    pub fn next_bool(mut self) -> bool {
+        return self.range(0, 2) == 1;
     }
 }
 
 pub fn random() -> i64 {
-    ::intent "Returns a random number using a global thread-local RNG"
-    @intrinsic("random_get")
+    ::intent "Returns a non-negative random integer using the global runtime RNG"
+    return @intrinsic("random_get");
+}
+
+pub fn range(min: i64, max: i64) -> i64 {
+    if max <= min { return min; }
+    let span = max - min;
+    let r = @intrinsic("random_get");
+    return min + (r % span);
 }

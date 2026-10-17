@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 #define GC_THREADS
 #define GC_NO_THREAD_REDIRECTS
 #include <gc.h>
@@ -363,4 +364,65 @@ long long aion_date_sec(long long ts_ms) {
     aion_ts_to_tm(ts_ms, &tm_val);
     return (long long)tm_val.tm_sec;
 }
+
+// Math & Random Support (#201)
+double aion_math_sqrt(double x) {
+    return sqrt(x);
+}
+
+double aion_math_sin(double x) {
+    return sin(x);
+}
+
+double aion_math_cos(double x) {
+    return cos(x);
+}
+
+double aion_math_tan(double x) {
+    return tan(x);
+}
+
+double aion_math_pow(double base, double exp_val) {
+    return pow(base, exp_val);
+}
+
+double aion_math_exp(double x) {
+    return exp(x);
+}
+
+double aion_math_log(double x) {
+    return log(x);
+}
+
+double aion_math_floor(double x) {
+    return floor(x);
+}
+
+double aion_math_ceil(double x) {
+    return ceil(x);
+}
+
+double aion_math_fabs(double x) {
+    return fabs(x);
+}
+
+static unsigned long long aion_rng_state = 0;
+static pthread_mutex_t aion_rng_lock = PTHREAD_MUTEX_INITIALIZER;
+
+long long aion_random_get(void) {
+    pthread_mutex_lock(&aion_rng_lock);
+    if (aion_rng_state == 0) {
+        struct timespec ts;
+        if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+            aion_rng_state = ((unsigned long long)ts.tv_sec << 32) ^ (unsigned long long)ts.tv_nsec ^ 0x9E3779B97F4A7C15ULL;
+        } else {
+            aion_rng_state = 0x9E3779B97F4A7C15ULL;
+        }
+    }
+    aion_rng_state = aion_rng_state * 6364136223846793005ULL + 1442695040888963407ULL;
+    unsigned long long out = aion_rng_state;
+    pthread_mutex_unlock(&aion_rng_lock);
+    return (long long)(out & 0x7FFFFFFFFFFFFFFFULL);
+}
+
 

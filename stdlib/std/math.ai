@@ -11,3 +11,69 @@ pub fn min(a: i64, b: i64) -> i64 {
 pub fn abs(a: i64) -> i64 {
     if a < 0 { return 0 - a; } else { return a; }
 }
+
+pub fn clamp(val: i64, lo: i64, hi: i64) -> i64 {
+    if val < lo { return lo; }
+    if val > hi { return hi; }
+    return val;
+}
+
+pub fn max_f64(a: f64, b: f64) -> f64 {
+    if a > b { return a; } else { return b; }
+}
+
+pub fn min_f64(a: f64, b: f64) -> f64 {
+    if a < b { return a; } else { return b; }
+}
+
+pub fn abs_f64(x: f64) -> f64 {
+    return @intrinsic("math_fabs", x);
+}
+
+pub fn fabs(x: f64) -> f64 {
+    return @intrinsic("math_fabs", x);
+}
+
+pub fn sqrt(x: f64) -> f64 {
+    return @intrinsic("math_sqrt", x);
+}
+
+pub fn sin(x: f64) -> f64 {
+    return @intrinsic("math_sin", x);
+}
+
+pub fn cos(x: f64) -> f64 {
+    return @intrinsic("math_cos", x);
+}
+
+pub fn tan(x: f64) -> f64 {
+    return @intrinsic("math_tan", x);
+}
+
+pub fn pow(base: f64, exp: f64) -> f64 {
+    return @intrinsic("math_pow", base, exp);
+}
+
+pub fn exp(x: f64) -> f64 {
+    return @intrinsic("math_exp", x);
+}
+
+pub fn log(x: f64) -> f64 {
+    return @intrinsic("math_log", x);
+}
+
+pub fn floor(x: f64) -> f64 {
+    return @intrinsic("math_floor", x);
+}
+
+pub fn ceil(x: f64) -> f64 {
+    return @intrinsic("math_ceil", x);
+}
+
+pub fn pi() -> f64 {
+    return 3.141592653589793;
+}
+
+pub fn e() -> f64 {
+    return 2.718281828459045;
+}

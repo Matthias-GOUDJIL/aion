@@ -746,6 +746,7 @@ fn llc_and_link(ll: &std::path::Path, obj: &std::path::Path, bin: &std::path::Pa
             bin.to_str().unwrap(),
             "-lpthread",
             "-lgc",
+            "-lm",
         ])
         .current_dir(&root)
         .output()
@@ -993,4 +994,9 @@ fn test_stdlib_time_date_runtime() {
 #[test]
 fn test_stdlib_json_complex() {
     assert_snapshot!(run_aion_test("stdlib/json_complex"));
+}
+
+#[test]
+fn test_stdlib_math_random() {
+    assert_snapshot!(run_aion_test("stdlib/math_random"));
 }
