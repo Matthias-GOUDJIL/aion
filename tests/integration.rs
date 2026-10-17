@@ -1000,3 +1000,8 @@ fn test_stdlib_json_complex() {
 fn test_stdlib_math_random() {
     assert_snapshot!(run_aion_test("stdlib/math_random"));
 }
+
+#[test]
+fn test_stdlib_process_os_flags() {
+    assert_snapshot!(run_aion_test("stdlib/process_os_flags"));
+}

@@ -1,11 +1,16 @@
 module std.os
 
-pub fn exit(code: i64) -> ! {
+pub fn exit(code: i64) {
     ::intent "Terminates the current process with the specified exit code"
     @intrinsic("os_exit", code)
 }
 
 pub fn cpu_count() -> i64 {
     ::intent "Returns the number of logical CPUs available"
-    @intrinsic("os_cpu_count")
+    return @intrinsic("os_cpu_count");
+}
+
+pub fn name() -> String {
+    ::intent "Returns the operating system name (linux, macos, windows)"
+    return @intrinsic("os_name");
 }

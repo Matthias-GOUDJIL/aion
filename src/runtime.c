@@ -5,6 +5,7 @@
 #include <string.h>
 #include <time.h>
 #include <math.h>
+#include <sys/wait.h>
 #define GC_THREADS
 #define GC_NO_THREAD_REDIRECTS
 #include <gc.h>
@@ -424,5 +425,66 @@ long long aion_random_get(void) {
     pthread_mutex_unlock(&aion_rng_lock);
     return (long long)(out & 0x7FFFFFFFFFFFFFFFULL);
 }
+
+// OS & Process Support (#202)
+void aion_os_exit(long long code) {
+    exit((int)code);
+}
+
+long long aion_os_cpu_count(void) {
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? (long long)n : 1LL;
+}
+
+char* aion_os_name(void) {
+#if defined(__linux__)
+    return GC_strdup("linux");
+#elif defined(__APPLE__)
+    return GC_strdup("macos");
+#elif defined(_WIN32)
+    return GC_strdup("windows");
+#else
+    return GC_strdup("unknown");
+#endif
+}
+
+long long aion_process_run(const char* cmd) {
+    if (!cmd) return -1;
+    int status = system(cmd);
+    if (status == -1) return -1;
+    if (WIFEXITED(status)) {
+        return (long long)WEXITSTATUS(status);
+    }
+    return -1;
+}
+
+char* aion_process_output(const char* cmd) {
+    if (!cmd) return GC_strdup("");
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) return GC_strdup("");
+    size_t cap = 256;
+    size_t len = 0;
+    char* buf = (char*)GC_malloc_atomic(cap);
+    char chunk[128];
+    size_t n;
+    while ((n = fread(chunk, 1, sizeof(chunk), pipe)) > 0) {
+        if (len + n + 1 > cap) {
+            while (len + n + 1 > cap) {
+                cap *= 2;
+            }
+            char* next = (char*)GC_malloc_atomic(cap);
+            if (len > 0) {
+                memcpy(next, buf, len);
+            }
+            buf = next;
+        }
+        memcpy(buf + len, chunk, n);
+        len += n;
+    }
+    pclose(pipe);
+    buf[len] = '\0';
+    return buf;
+}
+
 
 

@@ -80,16 +80,18 @@ Standard and Buffered I/O (`BufReader`).
 ### `std.fs` **[stable]** & `std.path` **[stable]**
 File system access and cross-platform path manipulation.
 
-### `std.process` **[stub]** & `std.signal` **[stub]**
-Process spawning (`Command`, `Child`) and signal handling (`Signal`,
-`handle`).
+### `std.process` **[stable]** & `std.signal` **[stub]**
+Process execution (`#202`) and signal handling (`Signal`, `handle`).
+- `process.run(cmd: String) -> i64`: Executes a shell command via `aion_process_run` and returns its exit code (`-1` on failure).
+- `process.output(cmd: String) -> String`: Executes a shell command via `aion_process_output` (`popen`) and returns captured stdout.
+- `Command`: Builder (`Command.new(program)`, `.arg(a)`, `.status()`, `.output()`) returning `ExitStatus` / `Output`.
 
-### `std.env` **[stable]** & `std.os` **[stub]**
-Environment variables (`args`, `var`) and OS primitives (`exit`,
-`cpu_count`).
+### `std.env` **[stable]** & `std.os` **[stable]**
+Environment variables (`args`, `var`) and OS primitives (`#202`: `exit(code)`, `cpu_count() -> i64`, `name() -> String`).
 
-### `std.flags` **[stub]**
-Command-line argument parsing (CLI builder).
+### `std.flags` **[stable]**
+Command-line argument parsing (`#202`).
+- `FlagParser`: `new()`, `string(name, default, usage)`, `bool_flag(name, default, usage)`, `parse()`, `parse_from(args)`, `get_string(name)`, `get_bool(name)`, `positional_count()`, `positional(idx)`. Supports `--key value`, `--key=value`, boolean `--flag`, and positional arguments.
 
 ### `std.error` **[stub]**
 Error handling types and utilities.
