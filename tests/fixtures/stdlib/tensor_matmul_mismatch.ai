@@ -1,0 +1,17 @@
+use std.ai.tensor
+use std.collections.vector
+
+fn main() -> i64 {
+    let mut s1 = vector.Vector<i64>.new()
+    s1.push(2)
+    s1.push(3)
+
+    let mut s2 = vector.Vector<i64>.new()
+    s2.push(4)
+    s2.push(2)
+
+    let a = tensor.Tensor.ones(s1)
+    let b = tensor.Tensor.ones(s2)
+    let _c = a.matmul(b)
+    return 0
+}

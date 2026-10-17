@@ -1426,6 +1426,17 @@ impl Codegen {
         else if std.string.equals(name, "os_name") { cname = "aion_os_name"; ret = "ptr"; }
         else if std.string.equals(name, "process_run") { cname = "aion_process_run"; ret = "i64"; }
         else if std.string.equals(name, "process_output") { cname = "aion_process_output"; ret = "ptr"; }
+        else if std.string.equals(name, "ai_tensor_zeros") { cname = "aion_ai_tensor_zeros"; ret = "ptr"; }
+        else if std.string.equals(name, "ai_tensor_ones") { cname = "aion_ai_tensor_ones"; ret = "ptr"; }
+        else if std.string.equals(name, "ai_tensor_rand") { cname = "aion_ai_tensor_rand"; ret = "ptr"; }
+        else if std.string.equals(name, "ai_tensor_backward") { cname = "aion_ai_tensor_backward"; ret = "void"; }
+        else if std.string.equals(name, "ai_tensor_matmul") { cname = "aion_ai_tensor_matmul"; ret = "ptr"; }
+        else if std.string.equals(name, "ai_tensor_add") { cname = "aion_ai_tensor_add"; ret = "ptr"; }
+        else if std.string.equals(name, "ai_tensor_move") { cname = "aion_ai_tensor_move"; ret = "void"; }
+        else if std.string.equals(name, "ai_tensor_get") { cname = "aion_ai_tensor_get"; ret = "double"; }
+        else if std.string.equals(name, "ai_tensor_set") { cname = "aion_ai_tensor_set"; ret = "void"; }
+        else if std.string.equals(name, "ai_tensor_len") { cname = "aion_ai_tensor_len"; ret = "i64"; }
+        else if std.string.equals(name, "ai_tensor_sum") { cname = "aion_ai_tensor_sum"; ret = "double"; }
         if std.string.len(cname) == 0 {
             // Unknown intrinsic — safe zero placeholder (extends per
             // need; the Rust table lives in intrinsics.rs).

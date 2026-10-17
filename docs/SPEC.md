@@ -238,10 +238,11 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
   threads at process exit (atexit handler) so sparks always run to
   completion. Rewriting `aion_spawn` and the scheduler in Aion is a
   ROADMAP item (Self-Runtime, #72).
-- **AI Tensors**: first-class `std.ai.tensor`. Constructors `zeros`,
-  `ones`, `rand` are functional; `matmul`, `add` and `backward` (autograd)
-  are runtime placeholders, not yet implemented (see `docs/STDLIB.md` and
-  `src/runtime.c:255-268`).
+- **AI Tensors**: first-class `std.ai.tensor` (`#203`). Constructors
+  `zeros`, `ones`, `rand`, element accessors (`get`, `set`, `len`, `sum`),
+  and CPU kernels for element-wise `add` and 2D `matmul` (`[M, K] x [K, N]`)
+  are implemented in `src/runtime.c`; `backward` (autograd) and `to(device)`
+  remain lightweight stubs (see `docs/STDLIB.md`).
 - **Intents**: `::intent "..."` syntax for AI-guided compilation hints.
   Handled as a `NoOp` statement (not an expression).
 - **Short-circuiting**: `&&` and `||` use lazy evaluation via

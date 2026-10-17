@@ -1277,7 +1277,14 @@ impl TypeChecker {
                         // (codegen `pt.const_null()`), not an i64.
                         Ok(Type::Pointer(Box::new(Type::Unknown)))
                     }
-                } else if actual_name.starts_with("ai_tensor_") {
+                } else if matches!(
+                    actual_name.as_str(),
+                    "ai_tensor_zeros"
+                        | "ai_tensor_ones"
+                        | "ai_tensor_rand"
+                        | "ai_tensor_matmul"
+                        | "ai_tensor_add"
+                ) {
                     Ok(Type::Struct {
                         name: "std.ai.tensor.Tensor".to_string(),
                     })
