@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #define GC_THREADS
+#define GC_NO_THREAD_REDIRECTS
 #include <gc.h>
 
 void* spark_entry_point(void* func_ptr) {

@@ -29,7 +29,7 @@ Aion is a system programming language for AI-native apps. The compiler (`aionc`)
 ## Testing
 
 - Test framework: **insta** (snapshot testing) + **assert_cmd** (CLI testing).
-- Run tests: `docker run --rm -v "$(pwd)":/workspace -w /workspace aion-compiler cargo test -- --test-threads=1`.
+- Run tests: `docker run --rm -v "$(pwd)":/workspace -w /workspace aion-compiler cargo test`.
 - Test fixtures: `tests/fixtures/{language,stdlib,compiler}/*.ai`.
 - Snapshots: `tests/snapshots/*.snap` (auto-generated, committed to git).
 - **Execution**: AIs may run tests on their own when needed to verify changes.

@@ -6,21 +6,20 @@ fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+fn aionc_bin() -> &'static str {
+    env!("CARGO_BIN_EXE_aionc")
+}
+
 fn run_aion_test(path: &str) -> String {
     let root = project_root();
+    let _ = std::fs::create_dir_all(root.join("tests/tmp"));
 
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--quiet",
-            "--",
-            "run",
-            &format!("tests/fixtures/{}.ai", path),
-        ])
+    let output = Command::new(aionc_bin())
+        .args(["run", &format!("tests/fixtures/{}.ai", path)])
         .current_dir(&root)
         .timeout(std::time::Duration::from_secs(60))
         .output()
-        .expect("failed to execute cargo run");
+        .expect("failed to execute aionc run");
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -66,18 +65,12 @@ fn test_run_exit_code_propagation() {
     // #106 — `aion run` must propagate the child process exit code so
     // shell/CI callers detect runtime failures and explicit return codes.
     let root = project_root();
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--quiet",
-            "--",
-            "run",
-            "tests/fixtures/language/run_exit_code.ai",
-        ])
+    let output = Command::new(aionc_bin())
+        .args(["run", "tests/fixtures/language/run_exit_code.ai"])
         .current_dir(&root)
         .timeout(std::time::Duration::from_secs(60))
         .output()
-        .expect("failed to execute cargo run");
+        .expect("failed to execute aionc run");
     assert_eq!(
         output.status.code(),
         Some(42),
@@ -89,18 +82,12 @@ fn test_run_exit_code_propagation() {
 fn test_run_exit_code_runtime_crash() {
     // #106 — a runtime trap (OOB) must surface as a non-zero `aion run` exit.
     let root = project_root();
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--quiet",
-            "--",
-            "run",
-            "tests/fixtures/language/array_bounds.ai",
-        ])
+    let output = Command::new(aionc_bin())
+        .args(["run", "tests/fixtures/language/array_bounds.ai"])
         .current_dir(&root)
         .timeout(std::time::Duration::from_secs(60))
         .output()
-        .expect("failed to execute cargo run");
+        .expect("failed to execute aionc run");
     assert_ne!(
         output.status.code(),
         Some(0),
@@ -112,18 +99,12 @@ fn test_run_exit_code_runtime_crash() {
 fn test_run_exit_code_success() {
     // #106 — nominal: hello.ai returns 0 → `aion run` exits 0.
     let root = project_root();
-    let output = Command::new("cargo")
-        .args([
-            "run",
-            "--quiet",
-            "--",
-            "run",
-            "tests/fixtures/language/hello.ai",
-        ])
+    let output = Command::new(aionc_bin())
+        .args(["run", "tests/fixtures/language/hello.ai"])
         .current_dir(&root)
         .timeout(std::time::Duration::from_secs(60))
         .output()
-        .expect("failed to execute cargo run");
+        .expect("failed to execute aionc run");
     assert_eq!(output.status.code(), Some(0));
 }
 
@@ -517,11 +498,8 @@ fn run_aion_transpile(path: &str) -> String {
     let _ = std::fs::create_dir_all(&tmp_dir);
     let out_file = tmp_dir.join(format!("{}.sql", path.replace('/', "_")));
 
-    let output = Command::new("cargo")
+    let output = Command::new(aionc_bin())
         .args([
-            "run",
-            "--quiet",
-            "--",
             "transpile",
             &format!("tests/fixtures/{}.ai", path),
             "-o",
@@ -530,7 +508,7 @@ fn run_aion_transpile(path: &str) -> String {
         .current_dir(&root)
         .timeout(std::time::Duration::from_secs(60))
         .output()
-        .expect("failed to execute cargo run transpile");
+        .expect("failed to execute aionc transpile");
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     if output.status.success() {
@@ -667,11 +645,8 @@ fn test_self_codegen_parity() {
     let rust_bin = root.join("tests/tmp/bin_parity_rust");
 
     // Rust backend: compile the same source.
-    let build = Command::new("cargo")
+    let build = Command::new(aionc_bin())
         .args([
-            "run",
-            "--quiet",
-            "--",
             "build",
             src.to_str().unwrap(),
             "-o",
@@ -722,6 +697,13 @@ fn test_self_codegen_parity() {
         .expect("rust binary run failed");
     let out_a = String::from_utf8_lossy(&sa.stdout).to_string();
     let out_r = String::from_utf8_lossy(&sr.stdout).to_string();
+
+    for p in [
+        &aion_ll, &rust_ll, &src, &aion_obj, &rust_obj, &aion_bin, &rust_bin,
+    ] {
+        let _ = std::fs::remove_file(p);
+    }
+
     assert_eq!(
         out_a, out_r,
         "parity mismatch between the Aion and Rust backends"
@@ -941,14 +923,16 @@ fn test_example_interface_impl() {
 fn run_aion_doc(path: &str) -> String {
     let root = project_root();
     let fixture = format!("tests/fixtures/{}.ai", path);
-    let output_file = format!("tests/fixtures/{}.ai.doc", path);
+    let tmp_dir = root.join("tests/tmp");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let output_file = tmp_dir.join(format!("{}.doc", path.replace('/', "_")));
 
-    let output = Command::new("cargo")
-        .args(["run", "--quiet", "--", "doc", &fixture, "-o", &output_file])
+    let output = Command::new(aionc_bin())
+        .args(["doc", &fixture, "-o", output_file.to_str().unwrap()])
         .current_dir(&root)
         .timeout(std::time::Duration::from_secs(60))
         .output()
-        .expect("failed to execute cargo run doc");
+        .expect("failed to execute aionc doc");
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
