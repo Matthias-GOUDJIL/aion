@@ -1,0 +1,83 @@
+use std.collections.map
+use std.io
+
+struct Counter {
+    count: i64
+}
+
+fn bump(c: Counter, val: i64) -> i64 {
+    c.count = c.count + 1
+    return val
+}
+
+fn fbump(c: Counter, val: f64) -> f64 {
+    c.count = c.count + 1
+    return val
+}
+
+fn sbump(c: Counter, val: String) -> String {
+    c.count = c.count + 1
+    return val
+}
+
+fn bbump(c: Counter, val: bool) -> bool {
+    c.count = c.count + 1
+    return val
+}
+
+fn main() {
+    let mut c = Counter { count: 0 }
+
+    // 1. Nominal: integer arithmetic
+    let sum = bump(c, 10) + bump(c, 20)
+    io.println(f"int sum: {sum}, count: {c.count}")
+
+    // 2. Nominal: float arithmetic
+    c.count = 0
+    let fsum = fbump(c, 1.5) + fbump(c, 2.5)
+    io.println(f"float sum: {fsum}, count: {c.count}")
+
+    // 3. Nominal: integer comparison
+    c.count = 0
+    let eq = bump(c, 7) == bump(c, 7)
+    io.println(f"int eq: {eq}, count: {c.count}")
+
+    // 4. Nominal: string concatenation
+    c.count = 0
+    let s = sbump(c, "hello ") + sbump(c, "world")
+    io.println(f"str concat: {s}, count: {c.count}")
+
+    // 5. Nominal: f-string interpolation with side-effecting HashMap.remove
+    let mut m = HashMap<i64>.new()
+    let k0 = "k_0"
+    m.insert(k0, 42)
+    io.println(f"fstring remove first: {m.remove(k0)}")
+    io.println(f"fstring remove second: {m.remove(k0)}")
+
+    // 6. Edge case: chained infix (a + b + c + d must evaluate 4 times, not 2^N)
+    c.count = 0
+    let chain = bump(c, 1) + bump(c, 2) + bump(c, 3) + bump(c, 4)
+    io.println(f"chain sum: {chain}, count: {c.count}")
+
+    // 7. Edge case: short-circuit && and ||
+    c.count = 0
+    let sc_and_false = bbump(c, false) && bbump(c, true)
+    io.println(f"false && true: {sc_and_false}, count: {c.count}")
+
+    c.count = 0
+    let sc_and_true = bbump(c, true) && bbump(c, true)
+    io.println(f"true && true: {sc_and_true}, count: {c.count}")
+
+    c.count = 0
+    let sc_or_true = bbump(c, true) || bbump(c, false)
+    io.println(f"true || false: {sc_or_true}, count: {c.count}")
+
+    c.count = 0
+    let sc_or_false = bbump(c, false) || bbump(c, true)
+    io.println(f"false || true: {sc_or_false}, count: {c.count}")
+
+    // 8. Edge case: inside range with side-effecting bounds
+    c.count = 0
+    let in_range = bump(c, 5) inside bump(c, 0)..bump(c, 10)
+    io.println(f"inside 0..10: {in_range}, count: {c.count}")
+}

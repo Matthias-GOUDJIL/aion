@@ -1041,3 +1041,10 @@ fn test_error_try_non_result_fn() {
 fn test_error_try_error_mismatch() {
     assert_snapshot!(run_aion_test("compiler/error_try_error_mismatch"));
 }
+
+#[test]
+fn test_infix_single_eval() {
+    // #218 — Expression::Infix must evaluate each operand at most once
+    // (and short-circuit && / || properly).
+    assert_snapshot!(run_aion_test("language/infix_single_eval"));
+}
