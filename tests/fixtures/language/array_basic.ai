@@ -4,7 +4,7 @@ use std.string
 // Array basic: literal, index read/write, iterate, type annotation. #54.
 
 fn main() {
-    let a = [10, 20, 30]
+    let mut a = [10, 20, 30]
     io.println(string.from_int(a[0]))
     io.println(string.from_int(a[1]))
     io.println(string.from_int(a[2]))

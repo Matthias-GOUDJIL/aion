@@ -1,0 +1,12 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/mutability_check\")"
+---
+n: 15
+label: updated
+pt: (10, 20)
+arr: 111, 200, 333
+raw_pt: (77, 88)
+shadowed immutable: 5
+shadowed mutable: 12
+n after self-assign: 15
