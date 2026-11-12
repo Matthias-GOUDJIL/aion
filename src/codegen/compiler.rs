@@ -409,10 +409,20 @@ impl<'ctx> Compiler<'ctx> {
                         .insert(s.name.clone(), self.context.opaque_struct_type(&s.name));
                 }
                 Declaration::Enum(e) => {
+                    let max_slots = e
+                        .variants
+                        .iter()
+                        .map(|v| v.data_types.len())
+                        .max()
+                        .unwrap_or(0);
+                    let payload_bytes = ((max_slots as u32) * 8).max(8);
                     self.enum_types.insert(
                         e.name.clone(),
                         self.context.struct_type(
-                            &[i64_t.into(), self.context.i8_type().array_type(512).into()],
+                            &[
+                                i64_t.into(),
+                                self.context.i8_type().array_type(payload_bytes).into(),
+                            ],
                             false,
                         ),
                     );
@@ -446,7 +456,7 @@ impl<'ctx> Compiler<'ctx> {
             self.enum_types.insert(
                 "Option".to_string(),
                 self.context.struct_type(
-                    &[i64_t.into(), self.context.i8_type().array_type(512).into()],
+                    &[i64_t.into(), self.context.i8_type().array_type(8).into()],
                     false,
                 ),
             );

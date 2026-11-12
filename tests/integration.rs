@@ -1113,3 +1113,10 @@ fn test_error_interface_sig_mismatch() {
     // #225 — `impl Interface for Type` with a mismatched method return type produces a Type Error.
     assert_snapshot!(run_aion_test("language/error_interface_sig_mismatch"));
 }
+
+#[test]
+fn test_enum_payload_sizing() {
+    // #227 — enums compile to right-sized `{ i64, [N x i8] }` where
+    // `N = max(8, max_variant_fields * 8)`.
+    assert_snapshot!(run_aion_test("language/enum_payload_sizing"));
+}

@@ -18,7 +18,7 @@ This document outlines the technical path to transform Aion from its current Rus
 - [x] **`std.env`**: Command-line argument management.
 
 ### **v0.6: Native Runtime (End of C Runtime)**
-- [x] **Enums Implementation**: `{ i64, [512 x i8] }` layout completed.
+- [x] **Enums Implementation**: `{ i64, [N x i8] }` right-sized layout (`[8 x i8]` minimum) completed (#227).
 - [x] **PIC Support**: LLVM Relocation model set to PIC for modern Linux.
 - [x] **Global Args**: `aion_argc` and `aion_argv` accessible via `std.env`.
 - [x] **Memory Management**: Integration of Boehm GC for automatic cleanup.

@@ -63,7 +63,7 @@ editors/          — Editor integrations (vscode/)
 
 ## Architectural Invariants
 
-- **Enum layout**: compiled as `{ i64, [512 x i8] }`. Index 0 = Tag, Index 1 = Payload (512 bytes, up to 64 8-byte slots). Tags follow declaration order, with fallback `Some/Ok = 0`, `None/Err = 1`
+- **Enum layout**: compiled as `{ i64, [N x i8] }`. Index 0 = Tag, Index 1 = Payload (`N = max(8, max_variant_fields * 8)` bytes, e.g. `[8 x i8]` for unit or 1-field enums). Tags follow declaration order, with fallback `Some/Ok = 0`, `None/Err = 1` (#227)
 - **Global args**: `argc`/`argv` stored in global LLVM variables `aion_argc`/`aion_argv`, set in `main`
 - **`io.println`** only accepts `String`. Convert non-string types with `string.from_int`, `string.from_float`, etc.
 - **Block termination**: every LLVM basic block in `compiler.rs` must be terminated. Check `builder.get_insert_block().unwrap().get_terminator().is_none()` before adding default returns

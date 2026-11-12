@@ -1,0 +1,10 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/enum_payload_sizing\")"
+---
+sizeof Color: 16
+sizeof Maybe<i64>: 16
+sizeof Event: 40
+click(120, 340, left, true)
+resize(1920, 1080)
+quit

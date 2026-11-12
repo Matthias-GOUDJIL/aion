@@ -110,19 +110,19 @@ if [ "$stdlib_missing" -eq 0 ]; then
     echo "ok: all stdlib/**/*.ai modules are documented in docs/STDLIB.md"
 fi
 
-# --- Check 7: Enum payload size in src/codegen/compiler.rs matches docs (#207). ---
+# --- Check 7: Enum payload size in src/codegen/compiler.rs matches docs (#207, #227). ---
 enum_bytes=$(grep -oE 'i8_type\(\)\.array_type\([0-9]+\)' src/codegen/compiler.rs | grep -oE '[0-9]+' | tail -1)
 if [ -n "$enum_bytes" ]; then
     enum_ok=1
     for docfile in docs/SPEC.md docs/architecture.md ROADMAP.md; do
         if ! grep -qF "[${enum_bytes} x i8]" "$docfile"; then
-            echo "error: $docfile does not match enum payload layout '[${enum_bytes} x i8]' from src/codegen/compiler.rs"
+            echo "error: $docfile does not match enum minimum payload layout '[${enum_bytes} x i8]' from src/codegen/compiler.rs"
             enum_ok=0
             status=1
         fi
     done
     if [ "$enum_ok" -eq 1 ]; then
-        echo "ok: enum layout '{ i64, [${enum_bytes} x i8] }' matches across codegen and docs"
+        echo "ok: enum layout '{ i64, [N x i8] }' (min [${enum_bytes} x i8]) matches across codegen and docs"
     fi
 fi
 
