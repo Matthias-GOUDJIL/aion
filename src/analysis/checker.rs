@@ -789,9 +789,13 @@ impl TypeChecker {
                     && let Ok(rt) = self
                         .check_expression(&Expression::Identifier(var.to_string(), Span::zero()))
                 {
-                    let tn = match rt {
-                        Type::GenericInstance(n, _) | Type::Struct { name: n } => n,
-                        Type::Placeholder(n) => n,
+                    let mut base_rt = &rt;
+                    while let Type::Pointer(inner) = base_rt {
+                        base_rt = inner;
+                    }
+                    let tn = match base_rt {
+                        Type::GenericInstance(n, _) | Type::Struct { name: n } => n.clone(),
+                        Type::Placeholder(n) => n.clone(),
                         _ => "".to_string(),
                     };
                     if !tn.is_empty() {
@@ -960,10 +964,14 @@ impl TypeChecker {
             } => {
                 let rt = self.check_expression(receiver)?;
                 let span = receiver.span();
-                let tn = match rt {
-                    Type::GenericInstance(ref n, _)
-                    | Type::Struct { name: ref n }
-                    | Type::Placeholder(ref n) => n.clone(),
+                let mut base_rt = &rt;
+                while let Type::Pointer(inner) = base_rt {
+                    base_rt = inner;
+                }
+                let tn = match base_rt {
+                    Type::GenericInstance(n, _)
+                    | Type::Struct { name: n }
+                    | Type::Placeholder(n) => n.clone(),
                     _ => {
                         return Err(CompileError::new(
                             format!("member access on {}", rt.name()),

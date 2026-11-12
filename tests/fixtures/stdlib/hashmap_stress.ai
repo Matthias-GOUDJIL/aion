@@ -1,0 +1,96 @@
+use std.collections.map
+use std.io
+use std.string
+
+fn main() {
+    let mut m = HashMap<i64>.new()
+    let k0 = "k_0"
+    let k1 = "k_1"
+    let k50 = "k_50"
+    let k98 = "k_98"
+    let k99 = "k_99"
+    let k100 = "k_100"
+
+    // 1. Edge cases on empty HashMap
+    io.println(f"empty len: {m.len()}")
+    io.println(f"empty contains k_0: {m.contains_key(k0)}")
+    io.println(f"empty remove k_0: {m.remove(k0)}")
+    m.clear()
+    io.println(f"after empty clear len: {m.len()}")
+
+    // 2. Insert 100 items (triggers multiple rehashes: 16 -> 32 -> 64 -> 128)
+    let mut i = 0
+    while i < 100 {
+        let k = string.concat("k_", string.from_int(i))
+        m.insert(k, i * 10)
+        i = i + 1
+    }
+    io.println(f"inserted len: {m.len()}")
+
+    // 3. Verify all 100 items are present with expected values
+    let mut all_ok = true
+    i = 0
+    while i < 100 {
+        let k = string.concat("k_", string.from_int(i))
+        if m.contains_key(k) == false {
+            all_ok = false
+        }
+        match m.get(k) {
+            Some(v) => {
+                if v != i * 10 {
+                    all_ok = false
+                }
+            },
+            None => {
+                all_ok = false
+            }
+        }
+        i = i + 1
+    }
+    io.println(f"all 100 verified: {all_ok}")
+    io.println(f"missing k_100: {m.contains_key(k100)}")
+
+    // 4. Update boundary and middle keys in-place
+    m.insert(k0, 999)
+    m.insert(k50, 5050)
+    m.insert(k99, 9999)
+    io.println(f"len after updates: {m.len()}")
+    io.println(f"k_0 updated: {m.get(k0).unwrap()}")
+    io.println(f"k_50 updated: {m.get(k50).unwrap()}")
+    io.println(f"k_99 updated: {m.get(k99).unwrap()}")
+
+    // 5. Remove boundary and middle keys
+    let r0 = m.remove(k0)
+    let r50 = m.remove(k50)
+    let r99 = m.remove(k99)
+    let r0_again = m.remove(k0)
+    io.println(f"remove k_0: {r0}")
+    io.println(f"remove k_50: {r50}")
+    io.println(f"remove k_99: {r99}")
+    io.println(f"remove k_0 again: {r0_again}")
+    io.println(f"len after removes: {m.len()}")
+    io.println(f"has k_0: {m.contains_key(k0)}")
+    io.println(f"has k_1: {m.contains_key(k1)}")
+    io.println(f"has k_98: {m.contains_key(k98)}")
+
+    // 6. Clear and verify all 100 keys are gone
+    m.clear()
+    io.println(f"cleared len: {m.len()}")
+    let mut any_left = false
+    i = 0
+    while i < 100 {
+        let k = string.concat("k_", string.from_int(i))
+        if m.contains_key(k) {
+            any_left = true
+        }
+        i = i + 1
+    }
+    io.println(f"any left after clear: {any_left}")
+
+    // 7. Re-insert after clear
+    m.insert(k0, 111)
+    m.insert(k99, 222)
+    io.println(f"re-insert len: {m.len()}")
+    io.println(f"re-insert k_0: {m.get(k0).unwrap()}")
+    io.println(f"re-insert k_99: {m.get(k99).unwrap()}")
+}
