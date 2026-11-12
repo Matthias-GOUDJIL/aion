@@ -115,19 +115,16 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   passed by pointer (same convention as `StructInst`). Nested tuples
   `(i64, (String, bool))` are supported; the element type is recovered
   via depth-aware type-name parsing.
-- **Arrays**: `[T; N]` — homogeneous fixed-size sequences (#54). Array
+- **Arrays**: `[T; N]` — homogeneous fixed-size sequences (#54, #226). Array
   literals `[1, 2, 3]`, index reads `arr[i]`, index writes `arr[i] = v`,
-  and passing arrays to functions are supported. All elements must share
-  the same type. Arrays are stack-allocated as LLVM `[N x T]` types and
-  passed by pointer. Indexing is bounds-checked at runtime; an
-  out-of-bounds access calls the `aion_array_oob(idx, len)` trap
-  (stderr message + `exit(1)`) instead of producing undefined behavior.
-  `@sizeof(typeof([T; N]))` returns `N * sizeof(T)` (#54, #109). Because arrays are stack
-  alloca in the callee frame and there is no heap array path yet,
-  returning an `Array`-typed value from a function is a **compile error**
-  ("cannot return stack-allocated array ... it does not outlive the call"),
-  preventing dangling-pointer use-after-scope (#107). Heap-allocated
-  arrays are a planned follow-up.
+  passing arrays to functions, and returning arrays from functions
+  (`fn f() -> [T; N]`) are supported. All elements must share the same
+  type. Arrays are heap-allocated via `aion_malloc` (`libgc`) as LLVM
+  `[N x T]` types and passed/returned by pointer (uniform with structs and
+  tuples). Indexing is bounds-checked at runtime; an out-of-bounds access
+  calls the `aion_array_oob(idx, len)` trap (stderr message + `exit(1)`)
+  instead of producing undefined behavior. `@sizeof(typeof([T; N]))`
+  returns `N * sizeof(T)` (#54, #109).
 - **Function pointers**: bare function names can be used as values and
   passed to higher-order functions (#84). `let f = double` stores the
   function's address as an opaque `ptr`; `f(5)` emits an indirect call

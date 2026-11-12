@@ -1519,19 +1519,34 @@ impl<'ctx> Compiler<'ctx> {
                 Ok(self.builder.build_load(elem_ty, gep, "tupld")?)
             }
             Expression::ArrayLiteral { elements, .. } => {
-                // Stack-allocated LLVM array `[N x elem]`. The variable
-                // slot holds a pointer to the alloca (uniform with the
-                // Tuple/Struct convention). #54.
-                let elem_llvm = if elements.is_empty() {
-                    self.context.i64_type().into()
-                } else {
-                    let v0 = self.compile_expr(&elements[0], variables, function)?;
-                    v0.get_type()
+                // Heap-allocated LLVM array `[N x elem]` via `aion_malloc`
+                // so arrays outlive the callee frame and can be returned
+                // from functions (uniform with Tuple/Struct). #54, #226.
+                let mut vals = Vec::with_capacity(elements.len());
+                for e in elements {
+                    vals.push(self.compile_expr(e, variables, function)?);
+                }
+                let elem_llvm = match vals.first() {
+                    Some(v0) => v0.get_type(),
+                    None => self.context.i64_type().into(),
                 };
-                let arr_ty = elem_llvm.array_type(elements.len() as u32);
-                let arr_ptr = self.builder.build_alloca(arr_ty, "arr_alloc")?;
-                for (i, e) in elements.iter().enumerate() {
-                    let v = self.compile_expr(e, variables, function)?;
+                let arr_ty = elem_llvm.array_type(vals.len() as u32);
+                let malloc_fn = self
+                    .module
+                    .get_function("aion_malloc")
+                    .ok_or_else(|| CompileError::internal("aion_malloc not found".to_string()))?;
+                let size = arr_ty
+                    .size_of()
+                    .ok_or_else(|| CompileError::internal("Array size unknown".to_string()))?;
+                let arr_ptr = match self
+                    .builder
+                    .build_call(malloc_fn, &[size.into()], "arr_alloc")?
+                    .try_as_basic_value()
+                {
+                    ValueKind::Basic(v) => v.into_pointer_value(),
+                    _ => return Err(CompileError::internal("malloc failed".to_string())),
+                };
+                for (i, v) in vals.into_iter().enumerate() {
                     let gep = unsafe {
                         self.builder.build_in_bounds_gep(
                             arr_ty,

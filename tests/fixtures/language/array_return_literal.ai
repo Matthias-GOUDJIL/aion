@@ -1,10 +1,39 @@
-// Returning an array literal directly hits the same dangling-pointer hole:
-// the literal lowers to a stack alloca in the callee frame. #107.
+use std.io
 
-fn make() -> [i64; 2] {
-    return [10, 20]
+struct Pair {
+    a: i64,
+    b: i64,
+}
+
+fn make_ints(base: i64) -> [i64; 3] {
+    let a = [base, base + 10, base + 20]
+    return a
+}
+
+fn make_literal() -> [i64; 2] {
+    return [100, 200]
+}
+
+fn make_strings() -> [String; 2] {
+    return ["alpha", "beta"]
+}
+
+fn make_pairs() -> [Pair; 2] {
+    return [Pair { a: 1, b: 2 }, Pair { a: 3, b: 4 }]
 }
 
 fn main() {
-    return 0
+    let mut xs = make_ints(5)
+    io.println(f"xs: {xs[0]}, {xs[1]}, {xs[2]}")
+    xs[1] = 99
+    io.println(f"xs mutated: {xs[0]}, {xs[1]}, {xs[2]}")
+
+    let lit = make_literal()
+    io.println(f"lit: {lit[0]}, {lit[1]}")
+
+    let strs = make_strings()
+    io.println(f"strs: {strs[0]}, {strs[1]}")
+
+    let pairs = make_pairs()
+    io.println(f"pairs: ({pairs[0].a}, {pairs[0].b}), ({pairs[1].a}, {pairs[1].b})")
 }

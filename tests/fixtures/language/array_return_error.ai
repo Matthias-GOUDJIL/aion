@@ -1,10 +1,10 @@
 use std.io
 use std.string
 
-// Returning a stack-allocated array is a compile error: the alloca does not
-// outlive the call. Direction 1 stopgap until heap-allocated arrays land. #107.
+// Returning an array whose length does not match the declared return type is a
+// compile-time type error (#171, #226).
 
-fn make() -> [i64; 3] {
+fn make() -> [i64; 2] {
     let a = [1, 2, 3]
     return a
 }
