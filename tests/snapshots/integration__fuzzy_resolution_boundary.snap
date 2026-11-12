@@ -1,0 +1,11 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/fuzzy_resolution_boundary\")"
+---
+p.sum: 7
+cp.sum: 507
+sizeof Point: 16
+sizeof CheckPoint: 24
+sizeof **Point: 8
+eval_val(10): 11
+check_eval_val(10): 110

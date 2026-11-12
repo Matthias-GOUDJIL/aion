@@ -1,0 +1,47 @@
+use std.io
+
+struct Point {
+    x: i64,
+    y: i64,
+}
+
+struct CheckPoint {
+    id: i64,
+    x: i64,
+    y: i64,
+}
+
+impl Point {
+    fn sum(self) -> i64 {
+        return self.x + self.y
+    }
+}
+
+impl CheckPoint {
+    fn sum(self) -> i64 {
+        return self.id * 100 + self.x + self.y
+    }
+}
+
+fn eval_val(x: i64) -> i64 {
+    return x + 1
+}
+
+fn check_eval_val(x: i64) -> i64 {
+    return x + 100
+}
+
+fn main() {
+    // 1. Nominal + edge: Point and CheckPoint coexist without suffix collision
+    let p = Point { x: 3, y: 4 }
+    let cp = CheckPoint { id: 5, x: 3, y: 4 }
+    io.println(f"p.sum: {p.sum()}")
+    io.println(f"cp.sum: {cp.sum()}")
+    io.println(f"sizeof Point: {@sizeof(typeof(Point))}")
+    io.println(f"sizeof CheckPoint: {@sizeof(typeof(CheckPoint))}")
+    io.println(f"sizeof **Point: {@sizeof(typeof(**Point))}")
+
+    // 2. Function names sharing a non-segment suffix do not collide
+    io.println(f"eval_val(10): {eval_val(10)}")
+    io.println(f"check_eval_val(10): {check_eval_val(10)}")
+}

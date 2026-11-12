@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/error_fuzzy_non_segment\")"
+---
+Not Found: function 'compute' is not defined

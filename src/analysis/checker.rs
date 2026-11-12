@@ -1807,21 +1807,34 @@ impl TypeChecker {
     }
 
     fn resolve_fuzzy_name<T>(&self, map: &HashMap<String, T>, name: &str) -> Option<String> {
-        if map.contains_key(name) {
-            return Some(name.to_string());
+        let clean = name.trim().replace(" ", "");
+        if clean.is_empty() {
+            return None;
         }
+        if map.contains_key(&clean) {
+            return Some(clean);
+        }
+        let mut best: Option<&String> = None;
         for key in map.keys() {
             // The suffix (which may itself be dotted, e.g. `token.Token`
             // inside `compiler.token.Token`) must start at a segment
-            // boundary: position 0 or right after a '.'.
-            if let Some(pos) = key.len().checked_sub(name.len())
-                && key.ends_with(name)
-                && (pos == 0 || key.as_bytes()[pos - 1] == b'.')
+            // boundary: position 0, right after '.', or right after '::' (#224).
+            if let Some(pos) = key.len().checked_sub(clean.len())
+                && key.ends_with(&clean)
+                && (pos == 0
+                    || key.as_bytes()[pos - 1] == b'.'
+                    || (pos >= 2 && &key.as_bytes()[pos - 2..pos] == b"::"))
             {
-                return Some(key.clone());
+                match best {
+                    None => best = Some(key),
+                    Some(prev) if (key.len(), key.as_str()) < (prev.len(), prev.as_str()) => {
+                        best = Some(key);
+                    }
+                    _ => {}
+                }
             }
         }
-        None
+        best.cloned()
     }
 
     /// True when two dotted names refer to the same type modulo module

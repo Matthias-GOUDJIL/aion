@@ -1,0 +1,12 @@
+struct CheckPoint {
+    id: i64,
+}
+
+fn check_compute(x: i64) -> i64 {
+    return x * 2
+}
+
+fn main() {
+    // Calling `compute` must NOT match `check_compute` via raw character suffix
+    let y = compute(10)
+}

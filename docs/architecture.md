@@ -89,7 +89,7 @@ editors/          — Editor integrations (vscode/)
 
 - **Pass-by-pointer for `self`**: Methods that modify `self` must receive it as a pointer, not by value. Otherwise changes are local-only.
 - **Two-pass compilation**: Forward references require registering all function prototypes before compiling bodies (Pass 1: register, Pass 2: compile).
-- **Fuzzy name resolution**: If a simple name isn't found, the compiler searches for qualified names ending with that suffix (e.g., `args` → `std.env.args`). This avoids complex AST rewriting for imports.
+- **Fuzzy name resolution**: If a simple name isn't found by exact match, the compiler searches for qualified names ending with that suffix at a `.` or `::` segment boundary (e.g., `args` → `std.env.args`), choosing the shortest (then lexicographically first) match deterministically (#224). This avoids complex AST rewriting for imports while preventing non-segment substring collisions (`Point` vs `CheckPoint`).
 - **`::intent` as NoOp**: Metadata like `::intent` must be handled as a `NoOp` statement, not an expression, to avoid "undefined variable" errors.
 - **Opaque pointers**: LLVM 15+ uses opaque pointers. `build_load` requires the element type explicitly.
 - **Recursive imports**: `process_imports` must rename local declarations *before* recursing to avoid exponential prefix concatenation.

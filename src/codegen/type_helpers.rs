@@ -336,7 +336,7 @@ impl<'ctx> Compiler<'ctx> {
             }
             Expression::Deref { expr, .. } => match self.get_expr_type(expr, variables) {
                 Type::Pointer(inner) => *inner,
-                _ => Type::Unknown,
+                other => other,
             },
             Expression::TypeRef {
                 name, generic_args, ..
