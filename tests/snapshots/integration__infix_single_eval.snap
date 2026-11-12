@@ -1,0 +1,16 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/infix_single_eval\")"
+---
+int sum: 30, count: 2
+float sum: 4, count: 2
+int eq: true, count: 2
+str concat: hello world, count: 2
+fstring remove first: true
+fstring remove second: false
+chain sum: 10, count: 4
+false && true: false, count: 1
+true && true: true, count: 2
+true || false: true, count: 1
+false || true: true, count: 2
+inside 0..10: true, count: 3
