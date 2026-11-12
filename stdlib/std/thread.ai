@@ -1,11 +1,79 @@
 module std.thread
 
+use std.syscall
+use std.collections.vector
+use std.option
+
 pub fn current_id() -> i64 {
-    ::intent "Returns the unique identifier of the current thread"
-    @intrinsic("thread_id")
+    ::intent "Returns the unique kernel identifier (TID) of the current thread"
+    return std.syscall.gettid()
 }
 
 pub fn yield_now() {
     ::intent "Cooperatively gives up a timeslice to the OS scheduler"
-    @intrinsic("thread_yield")
+    std.syscall.sched_yield()
+}
+
+pub fn spawn_thread(task: fn() -> void) -> i64 {
+    ::intent "Spawns a thread executing task via std.syscall.clone_thread and returns its handle"
+    return std.syscall.clone_thread(task)
+}
+
+pub fn join(handle: i64) -> i64 {
+    ::intent "Waits for the thread identified by handle to finish via futex synchronization"
+    return std.syscall.join_thread(handle)
+}
+
+pub fn aion_spawn(task: fn() -> void) -> i64 {
+    ::intent "Aion-native entry point for spawning a task on the self-runtime scheduler"
+    return std.syscall.clone_thread(task)
+}
+
+pub struct Scheduler {
+    handles: vector.Vector<i64>,
+}
+
+impl Scheduler {
+    pub fn new() -> Scheduler {
+        ::intent "Creates an empty thread scheduler with an active handle registry"
+        return std.thread.Scheduler {
+            handles: vector.Vector<i64>.new(),
+        }
+    }
+
+    pub fn schedule(mut self, task: fn() -> void) -> i64 {
+        ::intent "Spawns a task onto the OS scheduler via clone_thread and tracks its handle"
+        let h: i64 = std.syscall.clone_thread(task)
+        if h >= 0 {
+            self.handles.push(h)
+        }
+        return h
+    }
+
+    pub fn active_count(self) -> i64 {
+        ::intent "Returns the number of spawned thread handles awaiting join"
+        return self.handles.len()
+    }
+
+    pub fn join_all(mut self) -> i64 {
+        ::intent "Waits for all active threads in the scheduler to complete via futex join"
+        let mut joined: i64 = 0
+        let count: i64 = self.handles.len()
+        let mut i: i64 = 0
+        while i < count {
+            let h: i64 = self.handles.get(i).unwrap()
+            let rc: i64 = std.syscall.join_thread(h)
+            if rc == 0 {
+                joined = joined + 1
+            }
+            i = i + 1
+        }
+        self.handles.clear()
+        return joined
+    }
+
+    pub fn run_all(mut self) -> i64 {
+        ::intent "Waits until every scheduled thread in the scheduler completes"
+        return self.join_all()
+    }
 }

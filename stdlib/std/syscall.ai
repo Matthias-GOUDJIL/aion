@@ -1,0 +1,31 @@
+module std.syscall
+
+pub fn gettid() -> i64 {
+    ::intent "Returns the kernel thread ID (TID) via Linux SYS_gettid"
+    @intrinsic("syscall_gettid")
+}
+
+pub fn sched_yield() {
+    ::intent "Yields the current processor timeslice via Linux SYS_sched_yield"
+    @intrinsic("syscall_sched_yield")
+}
+
+pub fn futex_wait(addr: *i64, expected: i64) -> i64 {
+    ::intent "Blocks on a futex word while *addr == expected via Linux SYS_futex(FUTEX_WAIT_PRIVATE)"
+    @intrinsic("syscall_futex_wait", addr, expected)
+}
+
+pub fn futex_wake(addr: *i64, count: i64) -> i64 {
+    ::intent "Wakes up to count waiters on a futex word via Linux SYS_futex(FUTEX_WAKE_PRIVATE)"
+    @intrinsic("syscall_futex_wake", addr, count)
+}
+
+pub fn clone_thread(task: fn() -> void) -> i64 {
+    ::intent "Spawns an OS thread via Linux clone() with CLONE_CHILD_CLEARTID and returns a slot handle"
+    @intrinsic("syscall_clone_thread", task)
+}
+
+pub fn join_thread(handle: i64) -> i64 {
+    ::intent "Waits for a cloned thread slot handle via SYS_futex and reclaims its stack"
+    @intrinsic("syscall_join_thread", handle)
+}

@@ -1,0 +1,18 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/self_runtime_scheduler\")"
+---
+tid match ok
+futex edge: val=42 woken=0
+join invalid: -1 -1 0
+single_worker tid valid
+single join: rc=0 again=0
+single_worker tid valid
+aion_spawn join: rc=0
+empty sched: active=0
+empty run_all=0
+sched_worker done
+sched_worker done
+sched_worker done
+after run_all: joined=3 active=0
+spawn block done

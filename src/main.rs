@@ -103,15 +103,7 @@ fn main() {
                 Ok(()) => {}
                 Err(LinkError::GccFallback) => {
                     let gcc_status = Command::new("gcc")
-                        .args([
-                            &obj_file,
-                            "src/runtime.c",
-                            "-o",
-                            &bin_file,
-                            "-lpthread",
-                            "-lgc",
-                            "-lm",
-                        ])
+                        .args([&obj_file, "src/runtime.c", "-o", &bin_file, "-lgc", "-lm"])
                         .status();
                     if let Err(e) = gcc_status {
                         let _ = fs::remove_file(&ir_file);
@@ -298,7 +290,6 @@ fn link_with_lld(obj_file: &str, bin_file: &str, _args: &[String]) -> Result<(),
             &runtime_bc,
             "-o",
             bin_file,
-            "-lpthread",
             "-lgc",
             "-lm",
         ])
