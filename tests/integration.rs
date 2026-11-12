@@ -349,6 +349,12 @@ fn test_array_return_literal() {
     // #107 — returning an array literal directly is the same dangling hole.
     assert_snapshot!(run_aion_test("language/array_return_literal"));
 }
+#[test]
+fn test_codegen_type_slot_edge() {
+    // #108 — structural `Type` in variable slots: nested tuple + array +
+    // generic struct + function pointer in a single expression `(a.0)[1].0`.
+    assert_snapshot!(run_aion_test("language/codegen_type_slot_edge"));
+}
 
 // --- Stdlib Tests ---
 

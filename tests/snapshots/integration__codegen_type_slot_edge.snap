@@ -1,0 +1,18 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/codegen_type_slot_edge\")"
+---
+a.0[0].0: 10
+a.0[0].1: 20
+a.0[1].0: 30
+a.0[1].1: 40
+a.1: ok
+destructured label: ok
+arr[0].0 before: 10
+arr[0].0 after: 99
+arr[0].1 after: 100
+h.item.0: 777
+h.item.1: nested
+h.tag: 42
+sum arr[0]: 199
+sum arr[1]: 70

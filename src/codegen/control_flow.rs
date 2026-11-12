@@ -1,8 +1,8 @@
+use crate::analysis::types::Type;
 use crate::ast::Statement;
-use crate::codegen::compiler::Compiler;
+use crate::codegen::compiler::{Compiler, VarMap};
 use crate::error::CompileError;
-use inkwell::types::BasicTypeEnum;
-use inkwell::values::{BasicValueEnum, FunctionValue, PointerValue};
+use inkwell::values::{BasicValueEnum, FunctionValue};
 use inkwell::{AddressSpace, IntPredicate};
 use std::collections::HashMap;
 
@@ -16,7 +16,7 @@ impl<'ctx> Compiler<'ctx> {
     pub(in crate::codegen) fn compile_block(
         &mut self,
         body: &[Statement],
-        variables: &mut HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>,
+        variables: &mut VarMap<'ctx>,
         function: FunctionValue<'ctx>,
     ) -> Result<Option<BasicValueEnum<'ctx>>, CompileError> {
         let mut lv = None;
@@ -33,15 +33,15 @@ impl<'ctx> Compiler<'ctx> {
                 } => {
                     let v = self.compile_expr(value, variables, function)?;
                     let inferred_vt = v.get_type();
-                    let inferred_vtn = self.get_expr_type_name(value, variables).replace(" ", "");
+                    let inferred_ty = self.get_expr_type(value, variables);
                     // An explicit type annotation (`let x: T = expr`) wins over inference
-                    // for the variable's stored type-name (used by `get_expr_type_name`
+                    // for the variable's stored `Type` (used by `get_expr_type`
                     // downstream) and for the LLVM alloca type when the inferred type
                     // is ambiguous (e.g. intrinsics that lower to i64 but carry a
-                    // struct/pointer meaning, or pointer-vs-int casts). #78.
+                    // struct/pointer meaning, or pointer-vs-int casts). #78 / #108.
                     if let Some(et) = explicit_type {
-                        let et_clean = et.replace(" ", "");
-                        let llvm_t = self.aion_type_to_llvm(&et_clean);
+                        let explicit_ty = Type::parse(et);
+                        let llvm_t = self.type_to_llvm(&explicit_ty);
                         let final_v = if llvm_t != inferred_vt {
                             if llvm_t.is_pointer_type() && v.is_int_value() {
                                 self.builder
@@ -67,7 +67,7 @@ impl<'ctx> Compiler<'ctx> {
                                 self.coerce_int_width(
                                     v.into_int_value(),
                                     llvm_t.into_int_type(),
-                                    &et_clean,
+                                    &explicit_ty,
                                 )?
                                 .into()
                             } else {
@@ -78,22 +78,22 @@ impl<'ctx> Compiler<'ctx> {
                         };
                         let a = self.builder.build_alloca(llvm_t, name)?;
                         self.builder.build_store(a, final_v)?;
-                        variables.insert(name.clone(), (a, llvm_t, et_clean));
+                        variables.insert(name.clone(), (a, llvm_t, explicit_ty));
                     } else {
                         let a = self.builder.build_alloca(inferred_vt, name)?;
                         self.builder.build_store(a, v)?;
-                        variables.insert(name.clone(), (a, inferred_vt, inferred_vtn));
+                        variables.insert(name.clone(), (a, inferred_vt, inferred_ty));
                     }
                     lv = None;
                 }
                 Statement::LetTuple { names, value, .. } => {
                     // Compile the tuple value (a pointer to an anonymous
                     // struct registered in struct_types), then extract each
-                    // field into its own alloca. #53.
+                    // field into its own alloca. #53 / #108.
                     let ptr_val = self.compile_expr(value, variables, function)?;
                     let ptr = ptr_val.into_pointer_value();
-                    let tn = self.get_expr_type_name(value, variables);
-                    let st = self.ensure_tuple_type(&tn)?;
+                    let tup_ty = self.get_expr_type(value, variables);
+                    let st = self.ensure_tuple_type(&tup_ty)?;
                     for (i, n) in names.iter().enumerate() {
                         let gep = self.builder.build_struct_gep(
                             st,
@@ -107,8 +107,8 @@ impl<'ctx> Compiler<'ctx> {
                         let loaded = self.builder.build_load(elem_ty, gep, "letup_ld")?;
                         let a = self.builder.build_alloca(elem_ty, n)?;
                         self.builder.build_store(a, loaded)?;
-                        let elem_tn = self.get_field_type(&tn, &i.to_string());
-                        variables.insert(n.clone(), (a, elem_ty, elem_tn));
+                        let elem_t = self.resolve_field_type(&tup_ty, &i.to_string());
+                        variables.insert(n.clone(), (a, elem_ty, elem_t));
                     }
                     lv = None;
                 }
@@ -305,10 +305,10 @@ impl<'ctx> Compiler<'ctx> {
                     condition, arms, ..
                 } => {
                     let cv = self.compile_expr(condition, variables, function)?;
-                    let ctn = self.get_expr_type_name(condition, variables);
+                    let cty = self.get_expr_type(condition, variables);
                     // Shared lowering with `Expression::Match` — see
-                    // `src/codegen/match_lowering.rs`. #183.
-                    lv = self.lower_match(cv, &ctn, arms, variables, function, true)?;
+                    // `src/codegen/match_lowering.rs`. #183 / #108.
+                    lv = self.lower_match(cv, &cty, arms, variables, function, true)?;
                 }
                 Statement::ExpressionStmt(e, _) => {
                     lv = Some(self.compile_expr(e, variables, function)?);

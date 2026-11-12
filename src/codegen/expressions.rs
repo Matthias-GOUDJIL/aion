@@ -1,11 +1,11 @@
+use crate::analysis::types::Type;
 use crate::ast::{Declaration, Expression, Span};
-use crate::codegen::compiler::Compiler;
+use crate::codegen::compiler::{Compiler, VarMap};
 use crate::error::CompileError;
 use crate::lexer::token::TokenKind;
-use inkwell::types::{BasicType, BasicTypeEnum};
-use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue, ValueKind};
+use inkwell::types::BasicType;
+use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, ValueKind};
 use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
-use std::collections::HashMap;
 
 impl<'ctx> Compiler<'ctx> {
     /// Expression-level codegen: lower an `Expression` AST node to an LLVM
@@ -20,7 +20,7 @@ impl<'ctx> Compiler<'ctx> {
     pub(in crate::codegen) fn compile_expr(
         &mut self,
         e: &Expression,
-        variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>,
+        variables: &VarMap<'ctx>,
         function: FunctionValue<'ctx>,
     ) -> Result<BasicValueEnum<'ctx>, CompileError> {
         let i64_t = self.context.i64_type();
@@ -97,51 +97,49 @@ impl<'ctx> Compiler<'ctx> {
                 let mut aa = arguments.clone();
                 // Indirect call: if the callee name is a local variable holding
                 // a function pointer, load it and emit an indirect call instead
-                // of resolving a direct function name. #84.
+                // of resolving a direct function name. #84 / #108.
                 if aga.is_empty()
-                    && let Some((ptr, vt, tn)) = variables.get(fnm)
-                    && tn.starts_with("fn(")
+                    && let Some((
+                        ptr,
+                        vt,
+                        Type::Function {
+                            return_type,
+                            params,
+                            ..
+                        },
+                    )) = variables.get(fnm)
                 {
-                    let parsed = crate::analysis::types::Type::parse(tn);
-                    if let crate::analysis::types::Type::Function {
-                        return_type,
-                        params,
-                        ..
-                    } = parsed
-                    {
-                        let fp = self.builder.build_load(*vt, *ptr, "fptr")?;
-                        let fp = if fp.is_int_value() {
-                            self.builder
-                                .build_int_to_ptr(fp.into_int_value(), pt, "i2p")?
-                        } else {
-                            fp.into_pointer_value()
-                        };
-                        let llvm_ret = self.aion_type_to_llvm(&return_type.name());
-                        let llvm_params: Vec<inkwell::types::BasicMetadataTypeEnum> = params
-                            .iter()
-                            .map(|p| self.aion_type_to_llvm(&p.name()).into())
-                            .collect();
-                        let fn_type = llvm_ret.fn_type(&llvm_params, false);
-                        let mut ca: Vec<inkwell::values::BasicMetadataValueEnum> = Vec::new();
-                        for arg in &aa {
-                            let v = self.compile_expr(arg, variables, function)?;
-                            ca.push(v.into());
-                        }
-                        let call = self
-                            .builder
-                            .build_indirect_call(fn_type, fp, &ca, "icall")?;
-                        return Ok(match call.try_as_basic_value() {
-                            ValueKind::Basic(v) => v,
-                            _ => i64_t.const_zero().into(),
-                        });
+                    let fp = self.builder.build_load(*vt, *ptr, "fptr")?;
+                    let fp = if fp.is_int_value() {
+                        self.builder
+                            .build_int_to_ptr(fp.into_int_value(), pt, "i2p")?
+                    } else {
+                        fp.into_pointer_value()
+                    };
+                    let llvm_ret = self.type_to_llvm(return_type);
+                    let llvm_params: Vec<inkwell::types::BasicMetadataTypeEnum> =
+                        params.iter().map(|p| self.type_to_llvm(p).into()).collect();
+                    let fn_type = llvm_ret.fn_type(&llvm_params, false);
+                    let mut ca: Vec<inkwell::values::BasicMetadataValueEnum> = Vec::new();
+                    for arg in &aa {
+                        let v = self.compile_expr(arg, variables, function)?;
+                        ca.push(v.into());
                     }
+                    let call = self
+                        .builder
+                        .build_indirect_call(fn_type, fp, &ca, "icall")?;
+                    return Ok(match call.try_as_basic_value() {
+                        ValueKind::Basic(v) => v,
+                        _ => i64_t.const_zero().into(),
+                    });
                 }
                 let mut is_mc = false;
                 let mut tga_from_receiver: Vec<String> = vec![];
                 if let Some((rn, mn)) = fnm.rsplit_once('.') {
                     let re = Expression::Identifier(rn.to_string(), Span::zero());
-                    let tn = self.get_expr_type_name(&re, variables);
-                    if (tn.starts_with('*') || tn.contains("ptr"))
+                    let rty = self.get_expr_type(&re, variables);
+                    let tn = rty.name().replace(" ", "");
+                    if (matches!(rty, Type::Pointer(_)) || tn.contains("ptr"))
                         && mn == "offset"
                         && arguments.len() == 1
                     {
@@ -161,8 +159,8 @@ impl<'ctx> Compiler<'ctx> {
                             self.compile_expr(&re, variables, function)?
                                 .into_pointer_value()
                         };
-                        let element_type = if let Some(stripped) = tn.strip_prefix('*') {
-                            self.aion_type_to_llvm(stripped)
+                        let element_type = if let Type::Pointer(inner) = &rty {
+                            self.type_to_llvm(inner)
                         } else {
                             self.context.i64_type().into()
                         };
@@ -172,19 +170,8 @@ impl<'ctx> Compiler<'ctx> {
                         }
                         .into());
                     }
-                    if tn != "unknown" {
-                        let (btn, tga) = if tn.contains('<') {
-                            let p: Vec<&str> = tn
-                                .split(['<', '>', ','])
-                                .filter(|s| !s.is_empty())
-                                .collect();
-                            (
-                                p[0].to_string(),
-                                p[1..].iter().map(|s| s.trim().to_string()).collect(),
-                            )
-                        } else {
-                            (tn.clone(), vec![])
-                        };
+                    if rty != Type::Unknown {
+                        let (btn, tga) = self.decompose_receiver_type(&rty);
                         tga_from_receiver = tga.clone();
                         let mut bc = btn.as_str();
                         while bc.starts_with('*') {
@@ -619,9 +606,9 @@ impl<'ctx> Compiler<'ctx> {
                     let rp = r.into_pointer_value();
                     match &operator.kind {
                         TokenKind::EqEq | TokenKind::NotEq => {
-                            let ltn = self.get_expr_type_name(left, variables);
-                            let rtn = self.get_expr_type_name(right, variables);
-                            if ltn == "String" && rtn == "String" {
+                            let lty = self.get_expr_type(left, variables);
+                            let rty = self.get_expr_type(right, variables);
+                            if lty == Type::String && rty == Type::String {
                                 let fnc =
                                     self.module.get_function("aion_str_eq").ok_or_else(|| {
                                         CompileError::internal("aion_str_eq not found".to_string())
@@ -674,11 +661,14 @@ impl<'ctx> Compiler<'ctx> {
                             })
                         }
                         TokenKind::Plus if lhs.is_pointer_value() && rhs.is_int_value() => {
-                            let rtn = self.get_expr_type_name(right, variables);
+                            let rty = self.get_expr_type(right, variables);
                             let mut r_int = rhs.into_int_value();
                             let bw = r_int.get_type().get_bit_width();
                             if bw < 64 {
-                                if rtn.starts_with('u') || rtn == "bool" {
+                                if matches!(
+                                    rty,
+                                    Type::Integer { signed: false, .. } | Type::Boolean
+                                ) {
                                     r_int = self
                                         .builder
                                         .build_int_z_extend(r_int, i64_t, "str_zext")?;
@@ -688,7 +678,7 @@ impl<'ctx> Compiler<'ctx> {
                                         .build_int_s_extend(r_int, i64_t, "str_sext")?;
                                 }
                             }
-                            let s2 = if rtn == "bool" {
+                            let s2 = if rty == Type::Boolean {
                                 let is_true = self.builder.build_int_compare(
                                     IntPredicate::NE,
                                     r_int,
@@ -910,8 +900,10 @@ impl<'ctx> Compiler<'ctx> {
                 arguments,
                 ..
             } => {
-                let rtn = self.get_expr_type_name(receiver, variables);
-                if method == "offset" && rtn.starts_with('*') {
+                let rty = self.get_expr_type(receiver, variables);
+                if method == "offset"
+                    && let Type::Pointer(inner) = &rty
+                {
                     let p = self
                         .compile_expr(receiver, variables, function)?
                         .into_pointer_value();
@@ -919,27 +911,12 @@ impl<'ctx> Compiler<'ctx> {
                         .compile_expr(&arguments[0], variables, function)?
                         .into_int_value();
                     return Ok(unsafe {
-                        self.builder.build_gep(
-                            self.aion_type_to_llvm(&rtn[1..]),
-                            p,
-                            &[o],
-                            "offset_ptr",
-                        )?
+                        self.builder
+                            .build_gep(self.type_to_llvm(inner), p, &[o], "offset_ptr")?
                     }
                     .into());
                 }
-                let (btn, tga) = if rtn.contains('<') {
-                    let p: Vec<&str> = rtn
-                        .split(['<', '>', ','])
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    (
-                        p[0].to_string(),
-                        p[1..].iter().map(|s| s.trim().to_string()).collect(),
-                    )
-                } else {
-                    (rtn.clone(), vec![])
-                };
+                let (btn, tga) = self.decompose_receiver_type(&rty);
                 let mut bc = btn.as_str();
                 while bc.starts_with('*') {
                     bc = &bc[1..];
@@ -1061,10 +1038,10 @@ impl<'ctx> Compiler<'ctx> {
                     }
                 } else if v.is_int_value() && dest.is_float_type() {
                     // iN/uN -> f64 (sitofp/uitofp). Signedness comes from the
-                    // SOURCE Aion type-name, not the LLVM type (opaque to
-                    // signedness). #151.
-                    let src_name = self.get_expr_type_name(expr, variables);
-                    if src_name.starts_with('u') {
+                    // SOURCE Aion `Type`, not the LLVM type (opaque to
+                    // signedness). #151 / #108.
+                    let src_ty = self.get_expr_type(expr, variables);
+                    if matches!(src_ty, Type::Integer { signed: false, .. }) {
                         Ok(self
                             .builder
                             .build_unsigned_int_to_float(
@@ -1091,8 +1068,10 @@ impl<'ctx> Compiler<'ctx> {
             }
             Expression::Deref { expr, .. } => {
                 let v = self.compile_expr(expr, variables, function)?;
-                let tn = self.get_expr_type_name(expr, variables);
-                let et = self.aion_type_to_llvm(tn.strip_prefix('*').unwrap_or("i64"));
+                let et = match self.get_expr_type(expr, variables) {
+                    Type::Pointer(inner) => self.type_to_llvm(&inner),
+                    _ => i64_t.into(),
+                };
                 let p = if v.is_int_value() {
                     self.builder
                         .build_int_to_ptr(v.into_int_value(), pt, "i2p")?
@@ -1216,8 +1195,8 @@ impl<'ctx> Compiler<'ctx> {
                     let tnm = match &aa[0] {
                         Expression::Identifier(s, _) => {
                             // First check if it's a variable in the environment
-                            if let Some((_, _, vtn)) = variables.get(s) {
-                                vtn.clone()
+                            if let Some((_, _, vty)) = variables.get(s) {
+                                vty.name().replace(" ", "")
                             } else {
                                 s.clone()
                             }
@@ -1255,10 +1234,11 @@ impl<'ctx> Compiler<'ctx> {
                                 .into());
                         }
                     }
+                    let parsed_ty = Type::parse(&clean);
                     // Array type `[T; N]`: size = N * sizeof(T). The
                     // generic lowering maps arrays to pointers, so compute
-                    // the real array size here. #54.
-                    if let Some((elem_llvm, n)) = self.parse_array_type_name(&clean) {
+                    // the real array size here. #54 / #108.
+                    if let Some((elem_llvm, n)) = self.array_llvm_type(&parsed_ty) {
                         let arr_ty = elem_llvm.array_type(n as u32);
                         return Ok(arr_ty
                             .size_of()
@@ -1268,9 +1248,9 @@ impl<'ctx> Compiler<'ctx> {
                             .into());
                     }
                     // Tuple type `(T, U, ...)`: materialize the anonymous struct
-                    // type and return its byte size (#109).
-                    if clean.starts_with('(') && clean.ends_with(')') {
-                        let st = self.ensure_tuple_type(&clean)?;
+                    // type and return its byte size (#109 / #108).
+                    if matches!(parsed_ty, Type::Tuple(_)) {
+                        let st = self.ensure_tuple_type(&parsed_ty)?;
                         return Ok(st
                             .size_of()
                             .ok_or_else(|| {
@@ -1278,7 +1258,7 @@ impl<'ctx> Compiler<'ctx> {
                             })?
                             .into());
                     }
-                    let lt = self.aion_type_to_llvm(&tnm);
+                    let lt = self.type_to_llvm(&parsed_ty);
                     let res = if lt.is_pointer_type() {
                         i64_t.const_int(8, false).into()
                     } else {
@@ -1417,10 +1397,10 @@ impl<'ctx> Compiler<'ctx> {
                 condition, arms, ..
             } => {
                 let cv = self.compile_expr(condition, variables, function)?;
-                let ctn = self.get_expr_type_name(condition, variables);
+                let cty = self.get_expr_type(condition, variables);
                 // Shared lowering with `Statement::Match` — see
-                // `src/codegen/match_lowering.rs`. #183.
-                let result = self.lower_match(cv, &ctn, arms, variables, function, false)?;
+                // `src/codegen/match_lowering.rs`. #183 / #108.
+                let result = self.lower_match(cv, &cty, arms, variables, function, false)?;
                 Ok(result.unwrap_or(i64_t.const_zero().into()))
             }
             Expression::Try {
@@ -1459,8 +1439,8 @@ impl<'ctx> Compiler<'ctx> {
 
                 // Ok branch: extract the payload from field 1 of the enum struct.
                 self.builder.position_at_end(ok_bb);
-                let ok_type_name = self.get_expr_type_name(e, variables);
-                let ok_llvm_type = self.aion_type_to_llvm(&ok_type_name);
+                let ok_ty = self.get_expr_type(e, variables);
+                let ok_llvm_type = self.type_to_llvm(&ok_ty);
                 let data_ptr = self.builder.build_struct_gep(et, ep, 1, "try_dataptr")?;
                 let cast_ptr = self
                     .builder
@@ -1475,17 +1455,18 @@ impl<'ctx> Compiler<'ctx> {
                 // Build an anonymous LLVM struct from the element types,
                 // register it under the tuple type name `(T,U,...)` in
                 // struct_types/struct_fields (so TupleAccess can gep it),
-                // heap-alloc, store each field. Returns a pointer. #53.
+                // heap-alloc, store each field. Returns a pointer. #53 / #108.
                 let mut vals = Vec::new();
                 let mut tys = Vec::new();
-                let mut name_parts = Vec::new();
+                let mut elem_types = Vec::new();
                 for e in elements {
                     let v = self.compile_expr(e, variables, function)?;
-                    name_parts.push(self.get_expr_type_name(e, variables));
+                    elem_types.push(self.get_expr_type(e, variables));
                     tys.push(v.get_type());
                     vals.push(v);
                 }
-                let tuple_name = format!("({})", name_parts.join(","));
+                let tup_ty = Type::Tuple(elem_types);
+                let tuple_name = tup_ty.name().replace(" ", "");
                 let st = self.context.struct_type(&tys, false);
                 // Register the tuple struct type + field map (idempotent —
                 // same tuple shape reuses the same LLVM type).
@@ -1494,7 +1475,7 @@ impl<'ctx> Compiler<'ctx> {
                 for i in 0..vals.len() {
                     fm.insert(i.to_string(), i as u32);
                 }
-                self.struct_fields.insert(tuple_name.clone(), fm);
+                self.struct_fields.insert(tuple_name, fm);
                 let malloc_fn = self
                     .module
                     .get_function("aion_malloc")
@@ -1519,13 +1500,13 @@ impl<'ctx> Compiler<'ctx> {
                 Ok(ptr.into())
             }
             Expression::TupleAccess { tuple, index, .. } => {
-                // Resolve the tuple struct type by name (registered by
-                // TupleLiteral or ensure_tuple_type), gep the field, load it.
-                // #53.
+                // Resolve the tuple struct type from the structural `Type`
+                // (registered by TupleLiteral or ensure_tuple_type), gep the
+                // field, load it. #53 / #108.
                 let ptr_val = self.compile_expr(tuple, variables, function)?;
                 let ptr = ptr_val.into_pointer_value();
-                let tn = self.get_expr_type_name(tuple, variables);
-                let st = self.ensure_tuple_type(&tn)?;
+                let tup_ty = self.get_expr_type(tuple, variables);
+                let st = self.ensure_tuple_type(&tup_ty)?;
                 let gep = self.builder.build_struct_gep(
                     st,
                     ptr,
@@ -1565,14 +1546,17 @@ impl<'ctx> Compiler<'ctx> {
             }
             Expression::Index { target, index, .. } => {
                 // `arr[i]` with runtime bounds check. The array pointer is
-                // loaded from the variable slot; the array type is parsed
-                // from the variable's stored type-name `[T; N]`. #54.
+                // loaded from the variable slot; the array type is extracted
+                // from the structural `Type::Array`. #54 / #108.
                 let arr_val = self.compile_expr(target, variables, function)?;
                 let idx_val = self.compile_expr(index, variables, function)?;
                 let idx = idx_val.into_int_value();
-                let tn = self.get_expr_type_name(target, variables);
-                let (elem_llvm, n) = self.parse_array_type_name(&tn).ok_or_else(|| {
-                    CompileError::internal(format!("array type '{}' not parseable", tn))
+                let target_ty = self.get_expr_type(target, variables);
+                let (elem_llvm, n) = self.array_llvm_type(&target_ty).ok_or_else(|| {
+                    CompileError::internal(format!(
+                        "array type '{}' not parseable",
+                        target_ty.name()
+                    ))
                 })?;
                 let arr_ty = elem_llvm.array_type(n as u32);
                 let arr_ptr = arr_val.into_pointer_value();

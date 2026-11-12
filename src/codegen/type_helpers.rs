@@ -1,69 +1,38 @@
+use crate::analysis::types::Type;
 use crate::ast::{Declaration, Expression, Span, Statement};
-use crate::codegen::compiler::Compiler;
-use inkwell::types::BasicTypeEnum;
-use inkwell::values::PointerValue;
-use std::collections::HashMap;
+use crate::codegen::compiler::{Compiler, VarMap};
 
 impl<'ctx> Compiler<'ctx> {
-    /// Type-recovery helpers used by `compile_expr` and `compile_block` to
-    /// reconstruct the Aion type-name string of an expression / field when
-    /// only the LLVM value or the surrounding struct type-name is available.
-    /// Phase 7 of the `compiler.rs` split (#113): moved verbatim from
-    /// `src/codegen/compiler.rs` — behaviour-preserving code motion. The
-    /// string-based recovery here is the subject of #108 (replace with a
-    /// real `Type` in variable slots); this phase only relocates it.
-    pub(in crate::codegen) fn get_field_type(&self, it: &str, fnm: &str) -> String {
-        let clean = it.replace(" ", "");
-        let mut cs = clean.as_str();
-        while cs.starts_with('*') {
-            cs = &cs[1..];
+    /// Structural type recovery for codegen (#108).
+    ///
+    /// Variable slots store a `crate::analysis::types::Type` directly instead
+    /// of a formatted `String`, eliminating ad-hoc string formatting and
+    /// re-parsing across tuples, arrays, pointers, and generic instances.
+    /// Adding a new expression or type variant only requires returning its
+    /// `Type` in `get_expr_type` — no string round-trip helpers are needed.
+    pub(in crate::codegen) fn resolve_field_type(&self, it: &Type, fnm: &str) -> Type {
+        let mut base = it;
+        while let Type::Pointer(inner) = base {
+            base = inner;
         }
-        // Tuple field access by numeric index: `(i64,String)` + "0" -> "i64".
-        // Depth-aware split so nested tuples work. #53.
-        if cs.starts_with('(') && cs.ends_with(')') {
-            if let Ok(idx) = fnm.parse::<usize>() {
-                let inner = &cs[1..cs.len() - 1];
-                let mut depth = 0i32;
-                let mut cur = String::new();
-                let mut parts: Vec<String> = Vec::new();
-                for c in inner.chars() {
-                    match c {
-                        '(' | '<' => {
-                            depth += 1;
-                            cur.push(c);
-                        }
-                        ')' | '>' => {
-                            depth -= 1;
-                            cur.push(c);
-                        }
-                        ',' if depth == 0 => {
-                            parts.push(cur.clone());
-                            cur.clear();
-                        }
-                        _ => cur.push(c),
-                    }
-                }
-                parts.push(cur);
-                if idx < parts.len() {
-                    return parts[idx].trim().to_string();
-                }
+        // Tuple field access by numeric index: `(T, U, ...)` + "0" -> `T`. #53, #108.
+        if let Type::Tuple(elems) = base {
+            if let Ok(idx) = fnm.parse::<usize>()
+                && let Some(elem) = elems.get(idx)
+            {
+                return elem.clone();
             }
-            return "unknown".to_string();
+            return Type::Unknown;
         }
-        let (btn, tga) = if cs.contains('<') {
-            let p: Vec<&str> = cs
-                .split(['<', '>', ','])
-                .filter(|s| !s.is_empty())
-                .collect();
-            (
-                p[0].to_string(),
-                p[1..]
-                    .iter()
-                    .map(|s| s.trim().to_string())
-                    .collect::<Vec<String>>(),
-            )
-        } else {
-            (cs.to_string(), vec![])
+        let (btn, tga): (String, Vec<String>) = match base {
+            Type::GenericInstance(name, args) => (
+                name.clone(),
+                args.iter().map(|a| a.name().replace(" ", "")).collect(),
+            ),
+            Type::Struct { name } | Type::Enum { name } | Type::Placeholder(name) => {
+                (name.clone(), vec![])
+            }
+            _ => return Type::Unknown,
         };
         let full = self
             .resolve_fuzzy_name(&self.struct_types, &btn)
@@ -72,25 +41,46 @@ impl<'ctx> Compiler<'ctx> {
             for (f_nm, ft) in &s.fields {
                 if f_nm == fnm {
                     let rft = Self::substitute_generic_params(ft, &s.generic_params, &tga);
-                    return rft.replace(" ", "");
+                    return Type::parse(&rft);
                 }
             }
         }
-        "unknown".to_string()
+        Type::Unknown
     }
-    pub(in crate::codegen) fn get_expr_type_name(
+
+    /// Decompose a receiver `Type` into `(base_type_name, generic_arg_strings)`
+    /// after stripping any leading `Type::Pointer` layers.
+    pub(in crate::codegen) fn decompose_receiver_type(&self, ty: &Type) -> (String, Vec<String>) {
+        let mut base = ty;
+        while let Type::Pointer(inner) = base {
+            base = inner;
+        }
+        match base {
+            Type::GenericInstance(name, args) => (
+                name.clone(),
+                args.iter().map(|a| a.name().replace(" ", "")).collect(),
+            ),
+            Type::Struct { name } | Type::Enum { name } | Type::Placeholder(name) => {
+                (name.clone(), vec![])
+            }
+            other => (other.name().replace(" ", ""), vec![]),
+        }
+    }
+
+    /// Recover the structural `Type` of an `Expression` from the current
+    /// `VarMap` and declaration table (#108).
+    pub(in crate::codegen) fn get_expr_type(
         &self,
         e: &Expression,
-        variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>,
-    ) -> String {
-        let res = match e {
-            Expression::Integer(_, _) => "i64".to_string(),
-            Expression::Float(_, _) => "f64".to_string(),
-            Expression::Char(_, _) => "i64".to_string(),
-            Expression::Boolean(_, _) => "bool".to_string(),
-            Expression::String(_, _) => "String".to_string(),
-            Expression::Duration(_, _, _) => "Duration".to_string(),
-            Expression::Date(_, _) => "Date".to_string(),
+        variables: &VarMap<'ctx>,
+    ) -> Type {
+        match e {
+            Expression::Integer(_, _) | Expression::Char(_, _) => Type::i64(),
+            Expression::Float(_, _) => Type::Float,
+            Expression::Boolean(_, _) => Type::Boolean,
+            Expression::String(_, _) => Type::String,
+            Expression::Duration(_, _, _) => Type::Duration,
+            Expression::Date(_, _) => Type::Date,
             Expression::Infix {
                 left,
                 operator,
@@ -107,31 +97,27 @@ impl<'ctx> Compiler<'ctx> {
                     | TokenKind::GtEq
                     | TokenKind::And
                     | TokenKind::Or
-                    | TokenKind::Inside => "bool".to_string(),
+                    | TokenKind::Inside => Type::Boolean,
                     TokenKind::Plus => {
-                        let lt = self.get_expr_type_name(left, variables);
-                        if lt == "String" {
-                            "String".to_string()
+                        let lt = self.get_expr_type(left, variables);
+                        if lt == Type::String {
+                            Type::String
                         } else {
-                            let rt = self.get_expr_type_name(right, variables);
-                            if rt == "String" {
-                                "String".to_string()
-                            } else if lt == "f64" || rt == "f64" {
-                                "f64".to_string()
-                            } else if lt != "unknown" {
+                            let rt = self.get_expr_type(right, variables);
+                            if rt == Type::String {
+                                Type::String
+                            } else if lt == Type::Float || rt == Type::Float {
+                                Type::Float
+                            } else if lt != Type::Unknown {
                                 lt
                             } else {
-                                "i64".to_string()
+                                Type::i64()
                             }
                         }
                     }
                     _ => {
-                        let lt = self.get_expr_type_name(left, variables);
-                        if lt != "unknown" {
-                            lt
-                        } else {
-                            "i64".to_string()
-                        }
+                        let lt = self.get_expr_type(left, variables);
+                        if lt != Type::Unknown { lt } else { Type::i64() }
                     }
                 }
             }
@@ -141,30 +127,34 @@ impl<'ctx> Compiler<'ctx> {
                     let mut ct = if let Some((_, _, t)) = variables.get(parts[0]) {
                         t.clone()
                     } else {
-                        "unknown".to_string()
+                        Type::Unknown
                     };
                     for p in parts.iter().skip(1) {
-                        if ct == "unknown" {
+                        if ct == Type::Unknown {
                             break;
                         }
-                        ct = self.get_field_type(&ct, p);
+                        ct = self.resolve_field_type(&ct, p);
                     }
-                    return ct.replace(" ", "");
+                    return ct;
                 }
                 if let Some((_, _, t)) = variables.get(name) {
-                    return t.clone().replace(" ", "");
+                    return t.clone();
                 }
                 // Bare function name used as a value → recover its signature
-                // from the declaration so `let f = double` stores a
-                // recognizable `fn(...)->...` type-name. #84.
+                // from the declaration so `let f = double` stores a structural
+                // `Type::Function`. #84, #108.
                 if let Some(Declaration::Function(f)) = self.decls.get(name)
                     && f.generic_params.is_empty()
                 {
-                    let params: Vec<String> =
-                        f.params.iter().map(|(_, pt, _)| pt.clone()).collect();
-                    return format!("fn({})->{}", params.join(","), f.return_type).replace(" ", "");
+                    let params: Vec<Type> =
+                        f.params.iter().map(|(_, pt, _)| Type::parse(pt)).collect();
+                    return Type::Function {
+                        is_unsafe: false,
+                        params,
+                        return_type: Box::new(Type::parse(&f.return_type)),
+                    };
                 }
-                "unknown".to_string()
+                Type::Unknown
             }
             Expression::Call {
                 function: name,
@@ -172,43 +162,19 @@ impl<'ctx> Compiler<'ctx> {
                 ..
             } => {
                 if let Some((rn, mn)) = name.rsplit_once('.') {
-                    if mn == "offset" {
-                        let rt = self.get_expr_type_name(
-                            &Expression::Identifier(rn.to_string(), Span::zero()),
-                            variables,
-                        );
-                        if rt.starts_with('*') {
-                            return rt.replace(" ", "");
-                        }
-                    }
-                    let rt = self.get_expr_type_name(
+                    let rt = self.get_expr_type(
                         &Expression::Identifier(rn.to_string(), Span::zero()),
                         variables,
                     );
-                    if rt != "unknown" {
-                        let (btn, tga) = if rt.contains('<') {
-                            let p: Vec<&str> = rt
-                                .split(['<', '>', ','])
-                                .filter(|s| !s.is_empty())
-                                .collect();
-                            (
-                                p[0].to_string(),
-                                p[1..]
-                                    .iter()
-                                    .map(|s| s.trim().to_string())
-                                    .collect::<Vec<String>>(),
-                            )
-                        } else {
-                            (rt.clone(), vec![])
-                        };
-                        let mut bc = btn.as_str();
-                        while bc.starts_with('*') {
-                            bc = &bc[1..];
-                        }
+                    if mn == "offset" && matches!(rt, Type::Pointer(_)) {
+                        return rt;
+                    }
+                    if rt != Type::Unknown {
+                        let (btn, tga) = self.decompose_receiver_type(&rt);
                         let tp = self
-                            .resolve_fuzzy_name(&self.struct_types, bc)
-                            .or_else(|| self.resolve_fuzzy_name(&self.enum_types, bc))
-                            .unwrap_or(btn.clone());
+                            .resolve_fuzzy_name(&self.struct_types, &btn)
+                            .or_else(|| self.resolve_fuzzy_name(&self.enum_types, &btn))
+                            .unwrap_or(btn);
                         let method_name_colon = format!("{}::{}", tp, mn);
                         let method_name_dot = format!("{}.{}", tp, mn);
                         if let Some(Declaration::Function(f_decl)) = self
@@ -216,20 +182,22 @@ impl<'ctx> Compiler<'ctx> {
                             .get(&method_name_colon)
                             .or_else(|| self.decls.get(&method_name_dot))
                         {
-                            let mut res_type = f_decl.return_type.clone();
                             let combined_args = if generic_args.is_empty() {
                                 &tga
                             } else {
                                 generic_args
                             };
-                            res_type = Self::substitute_generic_params(
-                                &res_type,
+                            let res_type = Self::substitute_generic_params(
+                                &f_decl.return_type,
                                 &f_decl.generic_params,
                                 combined_args,
                             );
-                            return res_type.replace(" ", "");
+                            return Type::parse(&res_type);
                         }
                     }
+                }
+                if let Some((_, _, Type::Function { return_type, .. })) = variables.get(name) {
+                    return (**return_type).clone();
                 }
                 let full = self
                     .resolve_fuzzy_name(&self.decls, name)
@@ -240,15 +208,15 @@ impl<'ctx> Compiler<'ctx> {
                         &f_decl.generic_params,
                         generic_args,
                     );
-                    return r.replace(" ", "");
+                    return Type::parse(&r);
                 }
-                "unknown".to_string()
+                Type::Unknown
             }
             Expression::MemberAccess {
                 receiver, member, ..
             } => {
-                let rt = self.get_expr_type_name(receiver, variables);
-                self.get_field_type(&rt, member)
+                let rt = self.get_expr_type(receiver, variables);
+                self.resolve_field_type(&rt, member)
             }
             Expression::MethodCall {
                 receiver,
@@ -256,32 +224,12 @@ impl<'ctx> Compiler<'ctx> {
                 generic_args,
                 ..
             } => {
-                let rt = self.get_expr_type_name(receiver, variables);
-                if method == "offset" && rt.starts_with('*') {
-                    return rt.clone();
+                let rt = self.get_expr_type(receiver, variables);
+                if method == "offset" && matches!(rt, Type::Pointer(_)) {
+                    return rt;
                 }
-                let (btn, tga) = if rt.contains('<') {
-                    let p: Vec<&str> = rt
-                        .split(['<', '>', ','])
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    (
-                        p[0].to_string(),
-                        p[1..]
-                            .iter()
-                            .map(|s| s.trim().to_string())
-                            .collect::<Vec<String>>(),
-                    )
-                } else {
-                    (rt.clone(), vec![])
-                };
-                let mut bc = btn.as_str();
-                while bc.starts_with('*') {
-                    bc = &bc[1..];
-                }
-                let full = self
-                    .resolve_fuzzy_name(&self.decls, bc)
-                    .unwrap_or(btn.clone());
+                let (btn, tga) = self.decompose_receiver_type(&rt);
+                let full = self.resolve_fuzzy_name(&self.decls, &btn).unwrap_or(btn);
                 let method_name_colon = format!("{}::{}", full, method);
                 let method_name_dot = format!("{}.{}", full, method);
                 if let Some(Declaration::Function(f_decl)) = self
@@ -302,9 +250,9 @@ impl<'ctx> Compiler<'ctx> {
                         };
                         res_type = Self::substitute_generic_params(&res_type, bp, &tga);
                     }
-                    return res_type.replace(" ", "");
+                    return Type::parse(&res_type);
                 }
-                "unknown".to_string()
+                Type::Unknown
             }
             Expression::StructInst {
                 name, generic_args, ..
@@ -313,9 +261,9 @@ impl<'ctx> Compiler<'ctx> {
                     .resolve_fuzzy_name(&self.struct_types, name)
                     .unwrap_or(name.clone());
                 if generic_args.is_empty() {
-                    sn.replace(" ", "")
+                    Type::Struct { name: sn }
                 } else {
-                    format!("{}<{}>", sn, generic_args.join(",")).replace(" ", "")
+                    Type::GenericInstance(sn, generic_args.iter().map(|g| Type::parse(g)).collect())
                 }
             }
             Expression::EnumInst {
@@ -327,19 +275,21 @@ impl<'ctx> Compiler<'ctx> {
             } => {
                 if let Some(en) = self.resolve_fuzzy_name(&self.enum_types, name) {
                     if !generic_args.is_empty() {
-                        format!("{}<{}>", en, generic_args.join(",")).replace(" ", "")
+                        Type::GenericInstance(
+                            en,
+                            generic_args.iter().map(|g| Type::parse(g)).collect(),
+                        )
                     } else {
-                        // Infer generic args from variant arguments
-                        let mut inferred_args: Vec<String> = vec![];
+                        let mut inferred_args: Vec<Type> = Vec::new();
                         if let Some(Declaration::Enum(_)) = self.decls.get(&en) {
                             for arg in arguments.iter() {
-                                inferred_args.push(self.get_expr_type_name(arg, variables));
+                                inferred_args.push(self.get_expr_type(arg, variables));
                             }
                         }
                         if inferred_args.is_empty() {
-                            en.replace(" ", "")
+                            Type::Enum { name: en }
                         } else {
-                            format!("{}<{}>", en, inferred_args.join(",")).replace(" ", "")
+                            Type::GenericInstance(en, inferred_args)
                         }
                     }
                 } else {
@@ -349,110 +299,93 @@ impl<'ctx> Compiler<'ctx> {
                         arguments: arguments.clone(),
                         span: Span::zero(),
                     };
-                    self.get_expr_type_name(&call_expr, variables)
+                    self.get_expr_type(&call_expr, variables)
                 }
             }
-            Expression::Cast { target, .. } => target.replace(" ", ""),
+            Expression::Cast { target, .. } => Type::parse(target),
             Expression::Block { statements, .. } => {
-                if let Some(s) = statements.last() {
-                    match s {
-                        Statement::ExpressionStmt(e, _) | Statement::Return { value: e, .. } => {
-                            self.get_expr_type_name(e, variables)
-                        }
-                        _ => "unknown".to_string(),
+                if let Some(Statement::ExpressionStmt(e, _) | Statement::Return { value: e, .. }) =
+                    statements.last()
+                {
+                    self.get_expr_type(e, variables)
+                } else {
+                    Type::Unknown
+                }
+            }
+            Expression::If {
+                then_branch,
+                else_branch,
+                ..
+            } => {
+                if let Some(Statement::ExpressionStmt(e, _) | Statement::Return { value: e, .. }) =
+                    then_branch.last()
+                {
+                    let t = self.get_expr_type(e, variables);
+                    if t != Type::Unknown {
+                        return t;
                     }
-                } else {
-                    "unknown".to_string()
                 }
-            }
-            Expression::Deref { expr, .. } => {
-                let t = self.get_expr_type_name(expr, variables);
-                if let Some(stripped) = t.strip_prefix('*') {
-                    stripped.to_string().replace(" ", "")
-                } else {
-                    "unknown".to_string()
+                if let Some(eb) = else_branch
+                    && let Some(
+                        Statement::ExpressionStmt(e, _) | Statement::Return { value: e, .. },
+                    ) = eb.last()
+                {
+                    return self.get_expr_type(e, variables);
                 }
+                Type::Unknown
             }
+            Expression::Deref { expr, .. } => match self.get_expr_type(expr, variables) {
+                Type::Pointer(inner) => *inner,
+                _ => Type::Unknown,
+            },
             Expression::TypeRef {
                 name, generic_args, ..
             } => {
                 if generic_args.is_empty() {
-                    name.clone()
+                    Type::parse(name)
                 } else {
-                    format!("{}<{}>", name, generic_args.join(","))
+                    Type::GenericInstance(
+                        name.clone(),
+                        generic_args.iter().map(|g| Type::parse(g)).collect(),
+                    )
                 }
             }
             Expression::Match { arms, .. } => {
-                if let Some(arm) = arms.first() {
-                    if let Some(s) = arm.body.last() {
-                        match s {
-                            Statement::ExpressionStmt(e, _)
-                            | Statement::Return { value: e, .. } => {
-                                self.get_expr_type_name(e, variables)
-                            }
-                            _ => "unknown".to_string(),
-                        }
-                    } else {
-                        "unknown".to_string()
-                    }
-                } else {
-                    "unknown".to_string()
+                if let Some(arm) = arms.first()
+                    && let Some(
+                        Statement::ExpressionStmt(e, _) | Statement::Return { value: e, .. },
+                    ) = arm.body.last()
+                {
+                    return self.get_expr_type(e, variables);
                 }
+                Type::Unknown
             }
-            Expression::TupleLiteral { elements, .. } => {
-                // Render the tuple type name `(T, U, ...)` so downstream
-                // lookups can find the registered struct type. #53.
-                let elems: Vec<String> = elements
+            Expression::TupleLiteral { elements, .. } => Type::Tuple(
+                elements
                     .iter()
-                    .map(|e| self.get_expr_type_name(e, variables))
-                    .collect();
-                format!("({})", elems.join(","))
-            }
+                    .map(|el| self.get_expr_type(el, variables))
+                    .collect(),
+            ),
             Expression::TupleAccess { tuple, index, .. } => {
-                // The element type name of field `index`. #53.
-                let tn = self.get_expr_type_name(tuple, variables);
-                self.get_field_type(&tn, &index.to_string())
+                let tt = self.get_expr_type(tuple, variables);
+                self.resolve_field_type(&tt, &index.to_string())
             }
             Expression::ArrayLiteral { elements, .. } => {
-                // Render `[T; N]` from the first element's type so that
-                // downstream `arr[i]` codegen can parse the array type. #54.
-                let elem_tn = if elements.is_empty() {
-                    "i64".to_string()
-                } else {
-                    self.get_expr_type_name(&elements[0], variables)
-                };
-                format!("[{}; {}]", elem_tn, elements.len())
+                let elem_ty = elements
+                    .first()
+                    .map(|el| self.get_expr_type(el, variables))
+                    .unwrap_or_else(Type::i64);
+                Type::Array(Box::new(elem_ty), elements.len() as u64)
             }
-            Expression::Try { expr, .. } => {
-                let inner = self.get_expr_type_name(expr, variables);
-                if let Some(start) = inner.find('<')
-                    && inner.ends_with('>')
-                {
-                    let args_str = &inner[start + 1..inner.len() - 1];
-                    let mut depth = 0i32;
-                    let mut first_arg = String::new();
-                    for c in args_str.chars() {
-                        match c {
-                            '<' | '(' | '[' => {
-                                depth += 1;
-                                first_arg.push(c);
-                            }
-                            '>' | ')' | ']' => {
-                                depth -= 1;
-                                first_arg.push(c);
-                            }
-                            ',' if depth == 0 => break,
-                            _ => first_arg.push(c),
-                        }
-                    }
-                    if !first_arg.is_empty() {
-                        return first_arg.trim().replace(" ", "");
-                    }
-                }
-                "i64".to_string()
-            }
-            _ => "unknown".to_string(),
-        };
-        res.replace(" ", "")
+            Expression::Index { target, .. } => match self.get_expr_type(target, variables) {
+                Type::Array(elem, _) | Type::Pointer(elem) => *elem,
+                _ => Type::Unknown,
+            },
+            Expression::Try { expr, .. } => match self.get_expr_type(expr, variables) {
+                Type::GenericInstance(_, mut args) if !args.is_empty() => args.remove(0),
+                _ => Type::i64(),
+            },
+            _ => Type::Unknown,
+        }
     }
 }
