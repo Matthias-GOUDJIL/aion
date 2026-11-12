@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/error_interface_sig_mismatch\")"
+---
+Type Error: method 'format' in 'impl Formatter for Doc' returns 'i64', expected 'String' as required by interface 'Formatter'

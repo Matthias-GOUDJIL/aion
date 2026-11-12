@@ -1,0 +1,64 @@
+use std.io
+
+interface Shape {
+    fn area(self) -> i64
+    fn label(self, prefix: String) -> String
+}
+
+interface Duplicable {
+    fn duplicate(self) -> Self
+}
+
+interface Measurable {
+    fn weight(self) -> i64
+}
+
+struct Rect {
+    w: i64,
+    h: i64,
+}
+
+impl Shape for Rect {
+    fn area(self) -> i64 {
+        return self.w * self.h
+    }
+
+    fn label(self, prefix: String) -> String {
+        return f"{prefix}: {self.w}x{self.h}"
+    }
+
+    // Extra method not in Shape is allowed
+    fn perimeter(self) -> i64 {
+        return 2 * (self.w + self.h)
+    }
+}
+
+impl Duplicable for Rect {
+    fn duplicate(self) -> Self {
+        return Rect { w: self.w, h: self.h }
+    }
+}
+
+struct Wrapper<T> {
+    item: T,
+    count: i64,
+}
+
+impl Measurable for Wrapper<T> {
+    fn weight(self) -> i64 {
+        return self.count
+    }
+}
+
+fn main() {
+    let r = Rect { w: 6, h: 7 }
+    io.println(f"area: {r.area()}")
+    io.println(r.label("rect"))
+    io.println(f"perimeter: {r.perimeter()}")
+
+    let r2 = r.duplicate()
+    io.println(f"dup area: {r2.area()}")
+
+    let w = Wrapper<String> { item: "hello", count: 3 }
+    io.println(f"wrapper weight: {w.weight()}")
+}

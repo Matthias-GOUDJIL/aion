@@ -71,6 +71,14 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
 
 ### Composite
 - `Struct`, `Enum` (tagged unions), `Interface`, `Impl` blocks.
+- **Interfaces**: `interface Name { fn m(self, ...) -> Ret; }` declares a
+  contract of required method signatures. When a type implements an
+  interface via `impl Interface for Type { ... }`, the type checker
+  verifies at compile time that `Interface` exists and that every method
+  declared in `Interface` is present in the `impl` block with matching
+  parameter count, parameter types, and return type (`Self` substituted
+  with the target type). Missing methods or mismatched signatures produce a
+  compile-time `Type Error` (#225).
 - **Enums** compile as `{ i64, [512 x i8] }` — index 0 = Tag, index 1 =
   Payload (512 bytes, up to 64 pointer/i64 slots). Tags follow declaration
   order (0, 1, ...), with fallback `Some/Ok = 0`, `None/Err = 1`.

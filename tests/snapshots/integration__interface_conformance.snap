@@ -1,0 +1,9 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/interface_conformance\")"
+---
+area: 42
+rect: 6x7
+perimeter: 26
+dup area: 42
+wrapper weight: 3
