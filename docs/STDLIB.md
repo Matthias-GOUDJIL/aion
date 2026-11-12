@@ -38,7 +38,7 @@ Common imports (`Option`, `Result`, `String`, `Vector`, `print`, `println`).
 ### `std.collections`
 - **`vector`** **[stable]** — `Vector<T>` (dynamic array). Includes `new`, `push`, `pop`, `get`, `set`, `len`, `is_empty`, `first`, `last`, `contains`, `clear`, `swap`, `insert`, `remove`. Missing `iter`/`map`/`filter`/`fold` (blocked: no closures in Aion yet).
 - **`list`** **[stub]** — `LinkedList<T>` (singly linked).
-- **`map`** **[stable]** — `HashMap<V>` (generic V, string key). Includes
+- **`map`** **[stable]** — `HashMap<V>` (generic V, string key, `*Entry<V>` pointer-chained buckets — `#63`). Includes
   `contains_key`, `keys`, `values`, `clear`, `remove`.
 - **`ordered_map`** **[stable]** — `OrderedMap<V>` (insertion-ordered,
   generic V, string key). Backed by two parallel `Vector`s so iteration

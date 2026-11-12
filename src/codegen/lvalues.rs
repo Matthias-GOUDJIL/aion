@@ -32,13 +32,16 @@ impl<'ctx> Compiler<'ctx> {
                         let mut cur_tn = vtn.clone();
                         let mut matched_all = true;
                         for &fnm in &parts[1..] {
-                            let btn = if cur_tn.contains('<') {
+                            let mut btn = if cur_tn.contains('<') {
                                 cur_tn.split('<').next().ok_or_else(|| {
                                     CompileError::internal("Invalid type name".to_string())
                                 })?
                             } else {
                                 cur_tn.as_str()
                             };
+                            while btn.starts_with('*') {
+                                btn = &btn[1..];
+                            }
                             let ftn = self
                                 .resolve_fuzzy_name(&self.struct_types, btn)
                                 .unwrap_or_else(|| btn.to_string());

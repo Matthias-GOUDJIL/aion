@@ -1,0 +1,28 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"stdlib/hashmap_stress\")"
+---
+empty len: 0
+empty contains k_0: false
+empty remove k_0: false
+after empty clear len: 0
+inserted len: 100
+all 100 verified: true
+missing k_100: false
+len after updates: 100
+k_0 updated: 999
+k_50 updated: 5050
+k_99 updated: 9999
+remove k_0: true
+remove k_50: true
+remove k_99: true
+remove k_0 again: false
+len after removes: 97
+has k_0: false
+has k_1: true
+has k_98: true
+cleared len: 0
+any left after clear: false
+re-insert len: 2
+re-insert k_0: 111
+re-insert k_99: 222
