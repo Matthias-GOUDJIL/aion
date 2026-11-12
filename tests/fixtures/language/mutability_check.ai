@@ -29,11 +29,14 @@ fn main() {
     io.println(f"arr: {arr[0]}, {arr[1]}, {arr[2]}")
 
     // 3. Edge case: immutable pointer binding (`let p: *Point`) mutating pointee
-    let raw_pt: *Point = unsafe { core.heap.alloc(@sizeof(typeof(Point))) as *Point }
+    let raw_pt: *Point = unsafe { core.heap.alloc(@sizeof(typeof(Point))) as *Point };
     unsafe {
-        (*raw_pt).x = 77
-        raw_pt.y = 88
-        io.println(f"raw_pt: ({(*raw_pt).x}, {raw_pt.y})")
+        *raw_pt = Point { x: 0, y: 0 };
+        (*raw_pt).x = 77;
+        (*raw_pt).y = 88;
+        let rx = (*raw_pt).x;
+        let ry = (*raw_pt).y;
+        io.println(f"raw_pt: ({rx}, {ry})");
     }
 
     // 4. Edge case: shadowing an immutable binding with `let mut`
