@@ -183,7 +183,7 @@ impl<'a> Parser<'a> {
             _ => return None,
         };
         self.next_token();
-        let generic_params = self.parse_generic_params();
+        let mut generic_params = self.parse_generic_params();
 
         let (interface_name, target_name) = if self.current_token.kind == TokenKind::For {
             self.next_token();
@@ -192,6 +192,10 @@ impl<'a> Parser<'a> {
                 _ => return None,
             };
             self.next_token();
+            let target_generics = self.parse_generic_params();
+            if generic_params.is_empty() {
+                generic_params = target_generics;
+            }
             (Some(name1), target)
         } else {
             (None, name1)

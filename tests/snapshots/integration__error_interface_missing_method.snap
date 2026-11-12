@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/error_interface_missing_method\")"
+---
+Type Error: missing method 'perimeter' required by interface 'Shape' in 'impl Shape for Square'

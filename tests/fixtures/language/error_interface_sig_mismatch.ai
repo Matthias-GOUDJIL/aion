@@ -1,0 +1,17 @@
+interface Formatter {
+    fn format(self, indent: i64) -> String
+}
+
+struct Doc {
+    text: String,
+}
+
+impl Formatter for Doc {
+    fn format(self, indent: i64) -> i64 {
+        return indent
+    }
+}
+
+fn main() {
+    return 0
+}

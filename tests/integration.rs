@@ -1092,3 +1092,22 @@ fn test_error_immutable_assign() {
     // #223 — reassigning an immutable `let` binding is rejected at compile time.
     assert_snapshot!(run_aion_test("language/error_immutable_assign"));
 }
+
+#[test]
+fn test_interface_conformance() {
+    // #225 — `impl Interface for Type` verifies method conformance across
+    // multi-method interfaces, `Self` return types, and generic target structs.
+    assert_snapshot!(run_aion_test("language/interface_conformance"));
+}
+
+#[test]
+fn test_error_interface_missing_method() {
+    // #225 — `impl Interface for Type` missing a required method produces a Type Error.
+    assert_snapshot!(run_aion_test("language/error_interface_missing_method"));
+}
+
+#[test]
+fn test_error_interface_sig_mismatch() {
+    // #225 — `impl Interface for Type` with a mismatched method return type produces a Type Error.
+    assert_snapshot!(run_aion_test("language/error_interface_sig_mismatch"));
+}

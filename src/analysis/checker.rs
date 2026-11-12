@@ -379,6 +379,9 @@ impl TypeChecker {
                         },
                     );
                 }
+                Declaration::Interface(iface) => {
+                    self.decls.insert(iface.name.clone(), decl.clone());
+                }
                 _ => {}
             }
         }
@@ -451,6 +454,9 @@ impl TypeChecker {
                             },
                         );
                     }
+                    if let Some(iface_name) = &i.interface_name {
+                        self.check_interface_conformance(i, iface_name, &full_target)?;
+                    }
                 }
                 _ => {}
             }
@@ -475,6 +481,128 @@ impl TypeChecker {
         }
         Ok(())
     }
+
+    /// Verify that an `impl Interface for Type` block implements every method
+    /// declared in `Interface` with matching parameter count, parameter types,
+    /// and return type (#225).
+    fn check_interface_conformance(
+        &self,
+        impl_block: &crate::ast::ImplBlock,
+        iface_name: &str,
+        full_target: &str,
+    ) -> Result<(), CompileError> {
+        let resolved_key = self
+            .resolve_fuzzy_name(&self.decls, iface_name)
+            .unwrap_or_else(|| iface_name.to_string());
+        let Some(Declaration::Interface(iface)) = self.decls.get(&resolved_key) else {
+            return Err(CompileError::Type {
+                message: format!(
+                    "unknown interface '{}' in 'impl {} for {}'",
+                    iface_name, iface_name, impl_block.target_name
+                ),
+                line: 0,
+                col: 0,
+                snippet: None,
+            });
+        };
+
+        for req_fn in &iface.methods {
+            let Some(impl_fn) = impl_block.functions.iter().find(|f| f.name == req_fn.name) else {
+                return Err(CompileError::Type {
+                    message: format!(
+                        "missing method '{}' required by interface '{}' in 'impl {} for {}'",
+                        req_fn.name, iface.name, iface_name, impl_block.target_name
+                    ),
+                    line: 0,
+                    col: 0,
+                    snippet: None,
+                });
+            };
+
+            if impl_fn.params.len() != req_fn.params.len() {
+                return Err(CompileError::Type {
+                    message: format!(
+                        "method '{}' in 'impl {} for {}' has {} parameter(s), but interface '{}' requires {}",
+                        req_fn.name,
+                        iface_name,
+                        impl_block.target_name,
+                        impl_fn.params.len(),
+                        iface.name,
+                        req_fn.params.len()
+                    ),
+                    line: 0,
+                    col: 0,
+                    snippet: None,
+                });
+            }
+
+            for (idx, ((_, req_pt, _), (_, impl_pt, _))) in
+                req_fn.params.iter().zip(impl_fn.params.iter()).enumerate()
+            {
+                let req_ty_name = if req_pt == "Self" {
+                    full_target
+                } else {
+                    req_pt.as_str()
+                };
+                let impl_ty_name = if impl_pt == "Self" {
+                    full_target
+                } else {
+                    impl_pt.as_str()
+                };
+                let req_ty = self.resolve_type(req_ty_name);
+                let impl_ty = self.resolve_type(impl_ty_name);
+                if !Self::types_unify(&req_ty, &impl_ty) {
+                    return Err(CompileError::Type {
+                        message: format!(
+                            "method '{}' parameter {} in 'impl {} for {}' has type '{}', expected '{}' as required by interface '{}'",
+                            req_fn.name,
+                            idx + 1,
+                            iface_name,
+                            impl_block.target_name,
+                            impl_ty.name(),
+                            req_ty.name(),
+                            iface.name
+                        ),
+                        line: 0,
+                        col: 0,
+                        snippet: None,
+                    });
+                }
+            }
+
+            let req_ret_name = if req_fn.return_type == "Self" {
+                full_target
+            } else {
+                req_fn.return_type.as_str()
+            };
+            let impl_ret_name = if impl_fn.return_type == "Self" {
+                full_target
+            } else {
+                impl_fn.return_type.as_str()
+            };
+            let req_ret = self.resolve_type(req_ret_name);
+            let impl_ret = self.resolve_type(impl_ret_name);
+            if !Self::types_unify(&req_ret, &impl_ret) {
+                return Err(CompileError::Type {
+                    message: format!(
+                        "method '{}' in 'impl {} for {}' returns '{}', expected '{}' as required by interface '{}'",
+                        req_fn.name,
+                        iface_name,
+                        impl_block.target_name,
+                        impl_ret.name(),
+                        req_ret.name(),
+                        iface.name
+                    ),
+                    line: 0,
+                    col: 0,
+                    snippet: None,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
     /// Check one function body in a fresh enclosed environment, tracking the
     /// declared return type so `return` statements can be unified against it
     /// (#171). `self_target` is the impl target name for `Self` substitution.
