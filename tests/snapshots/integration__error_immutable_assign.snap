@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/error_immutable_assign\")"
+---
+Type Error: cannot assign to immutable variable 'x' (declare with 'let mut x' to make it mutable)

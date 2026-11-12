@@ -1079,3 +1079,16 @@ fn test_error_typeof_invalid() {
     // produce compiler syntax errors instead of crashing.
     assert_snapshot!(run_aion_test("compiler/error_typeof_invalid"));
 }
+
+#[test]
+fn test_mutability_check() {
+    // #223 — `let mut` bindings allow scalar, field, and index mutation;
+    // immutable pointer bindings allow pointee mutation; shadowing updates mutability.
+    assert_snapshot!(run_aion_test("language/mutability_check"));
+}
+
+#[test]
+fn test_error_immutable_assign() {
+    // #223 — reassigning an immutable `let` binding is rejected at compile time.
+    assert_snapshot!(run_aion_test("language/error_immutable_assign"));
+}

@@ -519,12 +519,46 @@ impl TypeChecker {
         result
     }
 
+    /// Extract the root variable identifier of an assignment target if the
+    /// assignment directly mutates that variable (`x = v`, `x.f = v`,
+    /// `arr[i] = v`). Returns `None` when the assignment goes through a pointer
+    /// dereference (`*p = v`, `(*p).f = v`, or auto-deref `p.f = v` where `p`
+    /// has `*T` pointer type), because mutating the pointee does not mutate
+    /// the pointer binding itself (#223).
+    fn assignment_root_var<'a>(&self, target: &'a Expression) -> Option<&'a str> {
+        match target {
+            Expression::Identifier(name, _) => {
+                if let Some((root, _)) = name.split_once('.') {
+                    if matches!(self.env.get(root), Some(Type::Pointer(_))) {
+                        None
+                    } else {
+                        Some(root)
+                    }
+                } else {
+                    Some(name.as_str())
+                }
+            }
+            Expression::MemberAccess { receiver, .. } => {
+                let root = self.assignment_root_var(receiver)?;
+                if matches!(self.env.get(root), Some(Type::Pointer(_))) {
+                    None
+                } else {
+                    Some(root)
+                }
+            }
+            Expression::Index { target: inner, .. } => self.assignment_root_var(inner),
+            Expression::Deref { .. } => None,
+            _ => None,
+        }
+    }
+
     fn check_statement(&mut self, stmt: &Statement) -> Result<Type, CompileError> {
         match stmt {
             Statement::Let {
                 name,
                 value,
                 explicit_type,
+                is_mut,
                 ..
             } => {
                 let val_type = self.check_expression(value)?;
@@ -554,7 +588,7 @@ impl TypeChecker {
                 } else {
                     val_type
                 };
-                self.env.set(name.clone(), final_type);
+                self.env.set_with_mut(name.clone(), final_type, *is_mut);
                 Ok(Type::Unit)
             }
             Statement::LetTuple { names, value, .. } => {
@@ -592,6 +626,17 @@ impl TypeChecker {
                 Ok(Type::Unit)
             }
             Statement::Assignment { target, value, .. } => {
+                if let Some(root) = self.assignment_root_var(target)
+                    && self.env.is_immutable(root)
+                {
+                    return Err(self.err(
+                        format!(
+                            "cannot assign to immutable variable '{}' (declare with 'let mut {}' to make it mutable)",
+                            root, root
+                        ),
+                        target,
+                    ));
+                }
                 let tt = self.check_expression(target)?;
                 let vt = self.check_expression(value)?;
                 // Unify the value with the target's declared type (#179).

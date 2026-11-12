@@ -641,7 +641,7 @@ impl Codegen {
                     return self.substitute(name);
                 }
                 let joined = std.string.join(generics, ", ");
-                let out = std.string.concat(self.substitute(name), "<");
+                let mut out = std.string.concat(self.substitute(name), "<");
                 out = std.string.concat(out, joined);
                 out = std.string.concat(out, ">");
                 return out;
@@ -652,7 +652,7 @@ impl Codegen {
                     return self.substitute(name);
                 }
                 let joined = std.string.join(generics, ", ");
-                let out = std.string.concat(self.substitute(name), "<");
+                let mut out = std.string.concat(self.substitute(name), "<");
                 out = std.string.concat(out, joined);
                 out = std.string.concat(out, ">");
                 return out;
@@ -663,7 +663,7 @@ impl Codegen {
                     return self.substitute(name);
                 }
                 let joined = std.string.join(generics, ", ");
-                let out = std.string.concat(self.substitute(name), "<");
+                let mut out = std.string.concat(self.substitute(name), "<");
                 out = std.string.concat(out, joined);
                 out = std.string.concat(out, ">");
                 return out;
@@ -975,7 +975,7 @@ impl Codegen {
         self.sub_params = saved_p;
         self.sub_args = saved_a;
         let joined_args = std.string.join(resolved.type_args, "_");
-        let mangled = std.string.concat(skey, "_");
+        let mut mangled = std.string.concat(skey, "_");
         mangled = std.string.concat(mangled, joined_args);
         if !self.done_instances.contains_key(mangled) {
             self.done_instances.insert(mangled, resolved.key);
@@ -2745,7 +2745,7 @@ impl Codegen {
                 return op;
             },
             compiler.ast.Expression::Boolean(b) => {
-                let v = "0";
+                let mut v = "0";
                 if b {
                     v = "1";
                 }
@@ -3192,7 +3192,7 @@ impl Codegen {
         self.emit_br(merge_l);
         // merge block — phi over the two incoming edges.
         let _ = self.emit_label(merge_l);
-        let const_val = "0";
+        let mut const_val = "0";
         if !is_and {
             const_val = "1";
         }

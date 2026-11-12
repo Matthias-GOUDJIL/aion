@@ -1,0 +1,49 @@
+use std.io
+use std.string
+use core.heap
+
+struct Point {
+    x: i64,
+    y: i64,
+}
+
+fn main() {
+    // 1. Nominal: mutable scalar bindings (i64 and String)
+    let mut n = 10
+    n = n + 5
+    io.println(f"n: {n}")
+
+    let mut label = "init"
+    label = "updated"
+    io.println(f"label: {label}")
+
+    // 2. Nominal: mutable struct field and array element mutation
+    let mut pt = Point { x: 1, y: 2 }
+    pt.x = 10
+    pt.y = 20
+    io.println(f"pt: ({pt.x}, {pt.y})")
+
+    let mut arr: [i64; 3] = [100, 200, 300]
+    arr[0] = 111
+    arr[2] = 333
+    io.println(f"arr: {arr[0]}, {arr[1]}, {arr[2]}")
+
+    // 3. Edge case: immutable pointer binding (`let p: *Point`) mutating pointee
+    let raw_pt: *Point = unsafe { core.heap.alloc(@sizeof(typeof(Point))) as *Point }
+    unsafe {
+        (*raw_pt).x = 77
+        raw_pt.y = 88
+        io.println(f"raw_pt: ({(*raw_pt).x}, {raw_pt.y})")
+    }
+
+    // 4. Edge case: shadowing an immutable binding with `let mut`
+    let shadowed = 5
+    io.println(f"shadowed immutable: {shadowed}")
+    let mut shadowed = shadowed + 1
+    shadowed = shadowed * 2
+    io.println(f"shadowed mutable: {shadowed}")
+
+    // 5. Edge case: no-op self-assignment on mutable binding
+    n = n
+    io.println(f"n after self-assign: {n}")
+}

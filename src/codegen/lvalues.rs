@@ -98,10 +98,13 @@ impl<'ctx> Compiler<'ctx> {
                         CompileError::internal(format!("Field '{}' not found", member))
                     })?;
 
-                let st_ptr = self
-                    .builder
-                    .build_load(rt_llvm, rp, "st_load")?
-                    .into_pointer_value();
+                let st_ptr = if matches!(receiver.as_ref(), Expression::Deref { .. }) {
+                    rp
+                } else {
+                    self.builder
+                        .build_load(rt_llvm, rp, "st_load")?
+                        .into_pointer_value()
+                };
                 Ok((
                     self.builder.build_struct_gep(st, st_ptr, idx, member)?,
                     self.type_to_llvm(&fty),

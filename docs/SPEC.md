@@ -241,6 +241,11 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
   carry a struct/pointer meaning). The value is coerced to the annotated
   LLVM type when needed (int↔pointer). #78.
 - `let mut name = expr` / `let mut name: Type = expr` — mutable binding.
+  Reassigning or mutating a field/element of an immutable `let` binding
+  (`x = v`, `x.f = v`, `arr[i] = v`) is rejected at compile time with a
+  `Type Error` (#223). Mutating a pointee through an immutable pointer
+  binding (`*p = v`, `(*p).f = v`, or auto-deref `p.f = v` on `p: *T`) is
+  allowed.
 - Assignment is a statement (`name = expr`), not an expression.
 
 ## 6. Concurrency & AI-Native Features

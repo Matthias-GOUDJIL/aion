@@ -1,9 +1,10 @@
 use super::types::Type;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug)]
 pub struct Environment {
     pub store: HashMap<String, Type>,
+    pub immutable: HashSet<String>,
     pub outer: Option<Box<Environment>>,
 }
 
@@ -17,6 +18,7 @@ impl Environment {
     pub fn new() -> Self {
         Self {
             store: HashMap::new(),
+            immutable: HashSet::new(),
             outer: None,
         }
     }
@@ -24,6 +26,7 @@ impl Environment {
     pub fn new_enclosed(outer: Environment) -> Self {
         Self {
             store: HashMap::new(),
+            immutable: HashSet::new(),
             outer: Some(Box::new(outer)),
         }
     }
@@ -53,7 +56,27 @@ impl Environment {
     }
 
     pub fn set(&mut self, name: String, val: Type) {
+        self.immutable.remove(&name);
         self.store.insert(name, val);
+    }
+
+    pub fn set_with_mut(&mut self, name: String, val: Type, is_mut: bool) {
+        if is_mut {
+            self.immutable.remove(&name);
+        } else {
+            self.immutable.insert(name.clone());
+        }
+        self.store.insert(name, val);
+    }
+
+    pub fn is_immutable(&self, name: &str) -> bool {
+        if self.store.contains_key(name) {
+            return self.immutable.contains(name);
+        }
+        match &self.outer {
+            Some(outer) => outer.is_immutable(name),
+            None => false,
+        }
     }
 
     /// Iterator over all visible names in this environment and its enclosing
