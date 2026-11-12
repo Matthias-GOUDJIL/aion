@@ -355,6 +355,18 @@ fn test_codegen_type_slot_edge() {
     // generic struct + function pointer in a single expression `(a.0)[1].0`.
     assert_snapshot!(run_aion_test("language/codegen_type_slot_edge"));
 }
+#[test]
+fn test_fuzzy_resolution_boundary() {
+    // #224 — `resolve_fuzzy_name` only matches on '.' / '::' segment boundaries
+    // and orders candidates deterministically (`Point` vs `CheckPoint`).
+    assert_snapshot!(run_aion_test("language/fuzzy_resolution_boundary"));
+}
+#[test]
+fn test_error_fuzzy_non_segment() {
+    // #224 — an undefined name (`compute`) must not resolve to a declaration
+    // that merely ends with those characters (`check_compute`).
+    assert_snapshot!(run_aion_test("language/error_fuzzy_non_segment"));
+}
 
 // --- Stdlib Tests ---
 

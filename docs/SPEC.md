@@ -130,9 +130,11 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   taken as a pointer because they require monomorphization at the call
   site.
 
-- **Fuzzy resolution**: if a simple name is not found, the compiler
-  searches for qualified names ending with that suffix (e.g. `args` →
-  `std.env.args`). Avoids complex AST rewriting for imports.
+- **Fuzzy resolution**: if a simple name is not found by exact match, the compiler
+  searches for qualified names ending with that suffix at a `.` or `::` segment
+  boundary (e.g. `args` → `std.env.args`), ordered deterministically by
+  `(len, name)` (#224). Avoids complex AST rewriting for imports while
+  preventing substring collisions (`Point` vs `CheckPoint`).
 
 ## 3. Memory & Strings
 

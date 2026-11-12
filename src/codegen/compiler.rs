@@ -72,23 +72,34 @@ impl<'ctx> Compiler<'ctx> {
         map: &HashMap<String, T>,
         name: &str,
     ) -> Option<String> {
-        let clean = name.replace(" ", "");
+        let clean = name.trim().replace(" ", "");
+        if clean.is_empty() {
+            return None;
+        }
         if map.contains_key(&clean) {
             return Some(clean);
         }
 
-        let p: Vec<&str> = clean.split('.').collect();
-        let last = p.last()?.to_string();
-        if map.contains_key(&last) {
-            return Some(last);
-        }
-
-        for k in map.keys() {
-            if k.ends_with(&clean) || clean.ends_with(k) {
-                return Some(k.clone());
+        let mut best: Option<&String> = None;
+        for key in map.keys() {
+            // Match only on segment boundaries ('.' or '::'), never arbitrary
+            // character suffixes or reverse suffixes (#224).
+            if let Some(pos) = key.len().checked_sub(clean.len())
+                && key.ends_with(&clean)
+                && (pos == 0
+                    || key.as_bytes()[pos - 1] == b'.'
+                    || (pos >= 2 && &key.as_bytes()[pos - 2..pos] == b"::"))
+            {
+                match best {
+                    None => best = Some(key),
+                    Some(prev) if (key.len(), key.as_str()) < (prev.len(), prev.as_str()) => {
+                        best = Some(key);
+                    }
+                    _ => {}
+                }
             }
         }
-        None
+        best.cloned()
     }
 
     pub(in crate::codegen) fn compile_function(
