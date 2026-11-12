@@ -1048,4 +1048,3 @@ fn test_infix_single_eval() {
     // (and short-circuit && / || properly).
     assert_snapshot!(run_aion_test("language/infix_single_eval"));
 }
-
