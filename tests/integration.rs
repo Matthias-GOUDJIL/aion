@@ -1048,3 +1048,16 @@ fn test_infix_single_eval() {
     // (and short-circuit && / || properly).
     assert_snapshot!(run_aion_test("language/infix_single_eval"));
 }
+
+#[test]
+fn test_typeof_basic() {
+    // #109 — explicit `typeof(T)` type reference syntax in expression position.
+    assert_snapshot!(run_aion_test("language/typeof_basic"));
+}
+
+#[test]
+fn test_error_typeof_invalid() {
+    // #109 — invalid array sizes (`[i64; -1]`, `[i64; 0]`) or empty `typeof()`
+    // produce compiler syntax errors instead of crashing.
+    assert_snapshot!(run_aion_test("compiler/error_typeof_invalid"));
+}

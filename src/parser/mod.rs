@@ -430,23 +430,41 @@ impl<'a> Parser<'a> {
             }
             return format!("({})", parts.join(", "));
         }
-        // Array type: `[T; N]`. #54.
+        // Array type: `[T; N]`. #54, #109.
         if self.current_token.kind == TokenKind::LBracket {
             self.next_token();
             let elem = self.parse_type_name();
             let size = if self.current_token.kind == TokenKind::Semicolon {
                 self.next_token();
-                if let TokenKind::IntLiteral(n) = self.current_token.kind {
+                if let TokenKind::IntLiteral(n) = self.current_token.kind
+                    && n > 0
+                {
                     self.next_token();
                     n.to_string()
                 } else {
+                    self.push_error(
+                        "Syntax Error: array type length must be a positive integer literal",
+                    );
+                    while self.current_token.kind != TokenKind::RBracket
+                        && self.current_token.kind != TokenKind::EOF
+                    {
+                        self.next_token();
+                    }
                     "0".to_string()
                 }
             } else {
+                self.push_error("Syntax Error: expected ';' in array type [T; N]");
+                while self.current_token.kind != TokenKind::RBracket
+                    && self.current_token.kind != TokenKind::EOF
+                {
+                    self.next_token();
+                }
                 "0".to_string()
             };
             if self.current_token.kind == TokenKind::RBracket {
                 self.next_token();
+            } else {
+                self.push_error("Syntax Error: expected ']' after array type");
             }
             return format!("[{}; {}]", elem, size);
         }
@@ -1434,20 +1452,7 @@ impl<'a> Parser<'a> {
                         while self.current_token.kind != TokenKind::RParen
                             && self.current_token.kind != TokenKind::EOF
                         {
-                            // `@sizeof`/`@mem_zero` take type arguments, so a
-                            // `[T; N]` array type-name is parsed as a TypeRef
-                            // rather than an array literal. #54.
-                            if self.current_token.kind == TokenKind::LBracket {
-                                let tspan = Span::from_token(&self.current_token);
-                                let tn = self.parse_type_name();
-                                args.push(Expression::TypeRef {
-                                    name: tn,
-                                    generic_args: vec![],
-                                    span: tspan,
-                                });
-                            } else {
-                                args.push(self.parse_expression());
-                            }
+                            args.push(self.parse_expression());
                             if self.current_token.kind == TokenKind::Comma {
                                 self.next_token();
                             }
@@ -1494,25 +1499,53 @@ impl<'a> Parser<'a> {
             TokenKind::Identifier(n) => {
                 let span = Span::from_token(&self.current_token);
                 self.next_token();
-                let mut full_name = n;
-                while self.current_token.kind == TokenKind::Dot {
-                    if let TokenKind::Identifier(sub) = self.peek_at(0).kind {
+                // First-class type reference in expression position: `typeof(T)` (#109).
+                // Parses any type grammar (`[T; N]`, `(T, U)`, `*T`, `Map<K, V>`, etc.)
+                // into `Expression::TypeRef` without colliding with expression literals.
+                if n == "typeof" && self.current_token.kind == TokenKind::LParen {
+                    self.next_token();
+                    if self.current_token.kind == TokenKind::RParen {
+                        self.push_error("Syntax Error: expected type name inside typeof(...)");
                         self.next_token();
-                        full_name.push('.');
-                        full_name.push_str(&sub);
-                        self.next_token();
+                        Expression::TypeRef {
+                            name: "invalid_type_empty".to_string(),
+                            generic_args: vec![],
+                            span,
+                        }
                     } else {
-                        break;
+                        let tn = self.parse_type_name();
+                        if self.current_token.kind == TokenKind::RParen {
+                            self.next_token();
+                        } else {
+                            self.push_error("Syntax Error: expected ')' after type in typeof(...)");
+                        }
+                        Expression::TypeRef {
+                            name: tn,
+                            generic_args: vec![],
+                            span,
+                        }
                     }
-                }
-                let generic_args = self.parse_generic_args();
-                if generic_args.is_empty() {
-                    Expression::Identifier(full_name, span)
                 } else {
-                    Expression::TypeRef {
-                        name: full_name,
-                        generic_args,
-                        span,
+                    let mut full_name = n;
+                    while self.current_token.kind == TokenKind::Dot {
+                        if let TokenKind::Identifier(sub) = self.peek_at(0).kind {
+                            self.next_token();
+                            full_name.push('.');
+                            full_name.push_str(&sub);
+                            self.next_token();
+                        } else {
+                            break;
+                        }
+                    }
+                    let generic_args = self.parse_generic_args();
+                    if generic_args.is_empty() {
+                        Expression::Identifier(full_name, span)
+                    } else {
+                        Expression::TypeRef {
+                            name: full_name,
+                            generic_args,
+                            span,
+                        }
                     }
                 }
             }

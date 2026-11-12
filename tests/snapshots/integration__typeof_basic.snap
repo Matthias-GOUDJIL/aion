@@ -1,0 +1,22 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"language/typeof_basic\")"
+---
+sizeof [i64; 10]: 80
+sizeof [i64; 4]: 32
+sizeof [i32; 4]: 16
+sizeof i64: 8
+sizeof i32: 4
+sizeof u8: 1
+sizeof f64: 8
+sizeof *i64: 8
+sizeof **Point: 8
+sizeof Point: 16
+sizeof HashMap<i64>: 24
+sizeof Entry<i64>: 24
+sizeof (i64, String): 16
+sizeof (i64, i64, i64): 24
+mem_zero Point: 0, 0
+mem_zero Entry<i64> val: 0
+mem_zero i64: 0
+mem_zero *i64 null: 1

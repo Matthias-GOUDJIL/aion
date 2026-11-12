@@ -9,7 +9,7 @@
   - **Nominal case**: the happy path — normal inputs producing expected output.
   - **Edge cases**: empty inputs, boundary indices (0, len-1, len), out-of-bounds, type variations (i64 vs String vs struct), no-op conditions (e.g. `swap(i, i)`), and any overflow/truncation scenarios relevant to the feature.
   - **Error cases**: where applicable — invalid inputs should produce the documented error, not a crash. Snapshot the stderr for expected-failure tests.
-- **Never run git add, commit, or push without explicit user approval**.
+- **Git & PR Autonomy**: AI agents are authorized to run `git add`, `git commit`, `git push`, `gh pr create`, and `gh pr merge` on feature branches without asking for confirmation each time (never commit or push directly on `main`). Run each `git`/`gh`/`docker` command as a single standalone command (no `&&` or `;` chaining) so CLI prefix-matching ("Always allow") auto-approves future invocations.
 
 ## Project Overview
 

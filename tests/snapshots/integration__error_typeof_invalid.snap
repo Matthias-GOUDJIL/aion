@@ -1,0 +1,5 @@
+---
+source: tests/integration.rs
+expression: "run_aion_test(\"compiler/error_typeof_invalid\")"
+---
+Type Error: Parse errors: Type Error: Syntax Error: array type length must be a positive integer literal; Type Error: Syntax Error: array type length must be a positive integer literal; Type Error: Syntax Error: expected type name inside typeof(...)

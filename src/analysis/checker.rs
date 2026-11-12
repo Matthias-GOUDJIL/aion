@@ -1299,7 +1299,14 @@ impl TypeChecker {
                             }
                             _ => return Ok(Type::i64()),
                         };
-                        let full = self.resolve_fuzzy_name(&self.decls, &tnm).unwrap_or(tnm);
+                        let clean = tnm.replace(" ", "");
+                        if clean.starts_with('*') {
+                            return Ok(self.resolve_type(&clean));
+                        }
+                        let btn = clean.split('<').next().unwrap_or(&clean);
+                        let full = self
+                            .resolve_fuzzy_name(&self.decls, btn)
+                            .unwrap_or_else(|| btn.to_string());
                         match self.decls.get(&full) {
                             Some(Declaration::Struct(_)) => Ok(Type::Struct { name: full }),
                             Some(Declaration::Enum(_)) => Ok(Type::Enum { name: full }),
