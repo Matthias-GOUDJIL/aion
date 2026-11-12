@@ -1,0 +1,45 @@
+use std.io
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+enum Maybe<T> {
+    Just(T),
+    Nothing,
+}
+
+enum Event {
+    Click(i64, i64, String, bool),
+    Resize(i64, i64),
+    Quit,
+}
+
+fn describe(ev: Event) -> String {
+    match ev {
+        Event::Click(x, y, btn, double_click) => {
+            return f"click({x}, {y}, {btn}, {double_click})"
+        },
+        Event::Resize(w, h) => {
+            return f"resize({w}, {h})"
+        },
+        Event::Quit => {
+            return "quit"
+        },
+    }
+}
+
+fn main() {
+    io.println(f"sizeof Color: {@sizeof(typeof(Color))}")
+    io.println(f"sizeof Maybe<i64>: {@sizeof(typeof(Maybe<i64>))}")
+    io.println(f"sizeof Event: {@sizeof(typeof(Event))}")
+
+    let c1 = Event::Click(120, 340, "left", true)
+    let c2 = Event::Resize(1920, 1080)
+    let c3 = Event::Quit
+    io.println(describe(c1))
+    io.println(describe(c2))
+    io.println(describe(c3))
+}

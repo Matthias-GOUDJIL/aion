@@ -79,9 +79,10 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   parameter count, parameter types, and return type (`Self` substituted
   with the target type). Missing methods or mismatched signatures produce a
   compile-time `Type Error` (#225).
-- **Enums** compile as `{ i64, [512 x i8] }` — index 0 = Tag, index 1 =
-  Payload (512 bytes, up to 64 pointer/i64 slots). Tags follow declaration
-  order (0, 1, ...), with fallback `Some/Ok = 0`, `None/Err = 1`.
+- **Enums** compile as `{ i64, [N x i8] }` — index 0 = Tag, index 1 =
+  Payload (`N = max(8, max_variant_fields * 8)` bytes, e.g. `[8 x i8]` for
+  unit or 1-field enums like `Option<T>` / `Result<T, E>`). Tags follow
+  declaration order (0, 1, ...), with fallback `Some/Ok = 0`, `None/Err = 1` (#227).
 - **`?` operator (`expr?`)**: postfix error propagation on `Result<T, E>`
   (#138). Evaluates `expr`; if `Result::Ok(v)` (tag `0`), extracts and
   yields `v` of type `T`; if `Result::Err(e)` (tag `1`), early-returns

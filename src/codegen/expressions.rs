@@ -1413,7 +1413,7 @@ impl<'ctx> Compiler<'ctx> {
                     .and_then(|en| self.enum_types.get(&en).copied())
                     .unwrap_or_else(|| {
                         self.context.struct_type(
-                            &[i64_t.into(), self.context.i8_type().array_type(512).into()],
+                            &[i64_t.into(), self.context.i8_type().array_type(8).into()],
                             false,
                         )
                     });
