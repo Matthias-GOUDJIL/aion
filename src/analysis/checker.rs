@@ -119,7 +119,16 @@ impl TypeChecker {
         {
             return t;
         }
-        Type::parse(trimmed)
+        match Type::parse(trimmed) {
+            Type::Array(elem, n) => Type::Array(Box::new(self.resolve_type(&elem.name())), n),
+            Type::Tuple(elems) => Type::Tuple(
+                elems
+                    .into_iter()
+                    .map(|e| self.resolve_type(&e.name()))
+                    .collect(),
+            ),
+            other => other,
+        }
     }
 
     /// Bind the pattern params of a match arm to their corresponding
@@ -784,23 +793,6 @@ impl TypeChecker {
             }
             Statement::Return { value, span, .. } => {
                 let ty = self.check_expression(value)?;
-                // Arrays lower to a stack alloca in the callee frame; returning
-                // one yields a dangling pointer. No heap array path yet —
-                // reject until direction 2 (heap-allocated arrays) lands. #107.
-                if let Type::Array(elem, n) = &ty {
-                    return Err(CompileError::new(
-                        format!(
-                            "cannot return stack-allocated array `[{}; {}]` \
-                             — it does not outlive the call (arrays are not \
-                             heap-allocated yet)",
-                            elem.name(),
-                            n,
-                        ),
-                        span.line,
-                        span.col,
-                    )
-                    .with_snippet(&self.source));
-                }
                 // Unify against the declared return type (#171).
                 if let Some(expected) = &self.current_return_type
                     && !Self::types_unify(expected, &ty)
@@ -2086,6 +2078,14 @@ impl TypeChecker {
             (Type::GenericInstance(en, _), Type::Struct { name: an })
             | (Type::Struct { name: an }, Type::GenericInstance(en, _)) => {
                 Self::base_names_match(en, an)
+            }
+            (Type::Array(ea, na), Type::Array(eb, nb)) => na == nb && Self::types_unify(ea, eb),
+            (Type::Tuple(ea), Type::Tuple(eb)) => {
+                ea.len() == eb.len()
+                    && ea
+                        .iter()
+                        .zip(eb.iter())
+                        .all(|(a, b)| Self::types_unify(a, b))
             }
             _ => false,
         }

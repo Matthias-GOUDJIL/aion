@@ -2,4 +2,4 @@
 source: tests/integration.rs
 expression: "run_aion_test(\"language/array_return_error\")"
 ---
-Type Error: cannot return stack-allocated array `[i64; 3]` — it does not outlive the call (arrays are not heap-allocated yet)
+Type Error: return value of type '[i64; 3]' does not match declared return type '[i64; 2]'

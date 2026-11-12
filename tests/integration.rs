@@ -341,12 +341,14 @@ fn test_array_as_param() {
 }
 #[test]
 fn test_array_return_error() {
-    // #107 — returning a stack-allocated local array is a compile error.
+    // #226 — returning an array whose length does not match the declared return
+    // type is a compile-time type error.
     assert_snapshot!(run_aion_test("language/array_return_error"));
 }
 #[test]
 fn test_array_return_literal() {
-    // #107 — returning an array literal directly is the same dangling hole.
+    // #226 — fixed-size arrays `[T; N]` are heap-allocated via `aion_malloc`
+    // and can be returned from functions (local variable or array literal).
     assert_snapshot!(run_aion_test("language/array_return_literal"));
 }
 #[test]
