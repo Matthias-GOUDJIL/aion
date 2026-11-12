@@ -173,18 +173,19 @@ impl Type {
             "Date" => Type::Date,
             "Duration" => Type::Duration,
             "void" | "Unit" => Type::Unit,
+            "unknown" | "" => Type::Unknown,
             _ => {
                 if trimmed.contains('<')
                     && trimmed.ends_with('>')
                     && let Some(start) = trimmed.find('<')
                 {
-                    let base = trimmed[..start].to_string();
+                    let base = trimmed[..start].trim().to_string();
                     let args_str = &trimmed[start + 1..trimmed.len() - 1];
                     let mut ga = Vec::new();
-                    for part in args_str.split(',') {
-                        let pt = part.trim().to_string();
+                    for part in split_top_level_commas(args_str) {
+                        let pt = part.trim();
                         if !pt.is_empty() {
-                            ga.push(Type::parse(&pt));
+                            ga.push(Type::parse(pt));
                         }
                     }
                     return Type::GenericInstance(base, ga);
@@ -298,11 +299,11 @@ fn split_top_level_commas(s: &str) -> Vec<String> {
     let mut cur = String::new();
     for c in s.chars() {
         match c {
-            '<' | '(' => {
+            '<' | '(' | '[' => {
                 depth += 1;
                 cur.push(c);
             }
-            '>' | ')' => {
+            '>' | ')' | ']' => {
                 depth -= 1;
                 cur.push(c);
             }

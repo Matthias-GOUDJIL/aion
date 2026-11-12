@@ -1,12 +1,9 @@
+use crate::analysis::types::Type;
 use crate::ast::{Declaration, MatchArm};
-use crate::codegen::compiler::Compiler;
+use crate::codegen::compiler::{Compiler, VarMap};
 use crate::error::CompileError;
-use inkwell::types::BasicTypeEnum;
-use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue};
+use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue};
 use inkwell::{AddressSpace, IntPredicate};
-use std::collections::HashMap;
-
-type VarMap<'ctx> = HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>;
 
 impl<'ctx> Compiler<'ctx> {
     /// Shared match lowering for all four former call paths: enum and
@@ -27,7 +24,7 @@ impl<'ctx> Compiler<'ctx> {
     pub(in crate::codegen) fn lower_match(
         &mut self,
         cond_value: BasicValueEnum<'ctx>,
-        cond_type_name: &str,
+        cond_type: &Type,
         arms: &[MatchArm],
         variables: &VarMap<'ctx>,
         function: FunctionValue<'ctx>,
@@ -36,7 +33,8 @@ impl<'ctx> Compiler<'ctx> {
         let i64_t = self.context.i64_type();
         let pt = self.context.ptr_type(AddressSpace::default());
         let cv = cond_value;
-        let ctn = cond_type_name;
+        let ctn_owned = cond_type.name().replace(" ", "");
+        let ctn = ctn_owned.as_str();
 
         // Per-position block/phi names keep the generated IR identical to
         // the pre-refactor output of both call sites.
@@ -54,38 +52,7 @@ impl<'ctx> Compiler<'ctx> {
         let exit_bb = self.context.append_basic_block(function, exit_name);
         let mut phis = Vec::new();
 
-        let (cbn, tga) = if let Some(start) = ctn.find('<')
-            && ctn.ends_with('>')
-        {
-            let base = ctn[..start].to_string();
-            let args_str = &ctn[start + 1..ctn.len() - 1];
-            let mut depth = 0i32;
-            let mut cur = String::new();
-            let mut args = Vec::new();
-            for c in args_str.chars() {
-                match c {
-                    '<' | '(' | '[' => {
-                        depth += 1;
-                        cur.push(c);
-                    }
-                    '>' | ')' | ']' => {
-                        depth -= 1;
-                        cur.push(c);
-                    }
-                    ',' if depth == 0 => {
-                        args.push(cur.trim().to_string());
-                        cur.clear();
-                    }
-                    _ => cur.push(c),
-                }
-            }
-            if !cur.trim().is_empty() {
-                args.push(cur.trim().to_string());
-            }
-            (base, args)
-        } else {
-            (ctn.to_string(), vec![])
-        };
+        let (cbn, tga) = self.decompose_receiver_type(cond_type);
         let fen = self
             .resolve_fuzzy_name(&self.enum_types, &cbn)
             .unwrap_or(cbn.clone());
@@ -235,7 +202,7 @@ impl<'ctx> Compiler<'ctx> {
                         let lv_val = self.builder.build_load(lt, elem_ptr, param)?;
                         let pa = self.builder.build_alloca(lt, param)?;
                         self.builder.build_store(pa, lv_val)?;
-                        av.insert(param.clone(), (pa, lt, ptn));
+                        av.insert(param.clone(), (pa, lt, Type::parse(&ptn)));
                     }
                 }
 
@@ -410,12 +377,12 @@ impl<'ctx> Compiler<'ctx> {
                 if !arm.params.is_empty() {
                     let cv_type = cv.get_type();
                     let pa = self.builder.build_alloca(cv_type, &arm.params[0])?;
-                    if ctn == "String" {
+                    if *cond_type == Type::String || ctn == "String" {
                         let cv_ptr = cv.into_pointer_value();
                         self.builder.build_store(pa, cv_ptr)?;
                         // #183 — the statement copy stored without
                         // inserting, leaving the binding unresolved.
-                        av.insert(arm.params[0].clone(), (pa, cv_type, ctn.to_string()));
+                        av.insert(arm.params[0].clone(), (pa, cv_type, Type::String));
                     } else if ctn != "i64" && ctn != "Integer" {
                         // For structs, store the pointer directly
                         // The pointer already points to the struct data
@@ -425,11 +392,15 @@ impl<'ctx> Compiler<'ctx> {
                         let ptr_type = pt;
                         av.insert(
                             arm.params[0].clone(),
-                            (pa, ptr_type.into(), format!("*{}", ctn)),
+                            (
+                                pa,
+                                ptr_type.into(),
+                                Type::Pointer(Box::new(cond_type.clone())),
+                            ),
                         );
                     } else {
                         self.builder.build_store(pa, cv)?;
-                        av.insert(arm.params[0].clone(), (pa, cv_type, ctn.to_string()));
+                        av.insert(arm.params[0].clone(), (pa, cv_type, cond_type.clone()));
                     }
                 }
 

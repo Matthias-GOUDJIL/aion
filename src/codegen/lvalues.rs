@@ -1,10 +1,10 @@
+use crate::analysis::types::Type;
 use crate::ast::Expression;
-use crate::codegen::compiler::Compiler;
+use crate::codegen::compiler::{Compiler, VarMap};
 use crate::error::CompileError;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::{FunctionValue, PointerValue};
 use inkwell::{AddressSpace, IntPredicate};
-use std::collections::HashMap;
 
 impl<'ctx> Compiler<'ctx> {
     /// Lower an assignment target (lvalue) to an LLVM pointer + element
@@ -18,7 +18,7 @@ impl<'ctx> Compiler<'ctx> {
     pub(in crate::codegen) fn compile_lvalue(
         &mut self,
         e: &Expression,
-        variables: &HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>, String)>,
+        variables: &VarMap<'ctx>,
         function: FunctionValue<'ctx>,
     ) -> Result<(PointerValue<'ctx>, BasicTypeEnum<'ctx>), CompileError> {
         let pt = self.context.ptr_type(AddressSpace::default());
@@ -26,25 +26,16 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Identifier(name, _) => {
                 if name.contains('.') {
                     let parts: Vec<&str> = name.split('.').collect();
-                    if let Some((vptr, vt, vtn)) = variables.get(parts[0]) {
+                    if let Some((vptr, vt, vty)) = variables.get(parts[0]) {
                         let mut cur_ptr = *vptr;
                         let mut cur_llvm = *vt;
-                        let mut cur_tn = vtn.clone();
+                        let mut cur_ty = vty.clone();
                         let mut matched_all = true;
                         for &fnm in &parts[1..] {
-                            let mut btn = if cur_tn.contains('<') {
-                                cur_tn.split('<').next().ok_or_else(|| {
-                                    CompileError::internal("Invalid type name".to_string())
-                                })?
-                            } else {
-                                cur_tn.as_str()
-                            };
-                            while btn.starts_with('*') {
-                                btn = &btn[1..];
-                            }
+                            let (btn, _) = self.decompose_receiver_type(&cur_ty);
                             let ftn = self
-                                .resolve_fuzzy_name(&self.struct_types, btn)
-                                .unwrap_or_else(|| btn.to_string());
+                                .resolve_fuzzy_name(&self.struct_types, &btn)
+                                .unwrap_or_else(|| btn.clone());
                             if let Some(flds) = self.struct_fields.get(ftn.as_str())
                                 && let Some(&idx) = flds.get(fnm)
                             {
@@ -60,8 +51,8 @@ impl<'ctx> Compiler<'ctx> {
                                     .into_pointer_value();
                                 cur_ptr =
                                     self.builder.build_struct_gep(st, st_ptr, idx, "fldptr")?;
-                                cur_tn = self.get_field_type(&cur_tn, fnm);
-                                cur_llvm = self.aion_type_to_llvm(&cur_tn);
+                                cur_ty = self.resolve_field_type(&cur_ty, fnm);
+                                cur_llvm = self.type_to_llvm(&cur_ty);
                             } else {
                                 matched_all = false;
                                 break;
@@ -82,22 +73,15 @@ impl<'ctx> Compiler<'ctx> {
                 receiver, member, ..
             } => {
                 let (rp, rt_llvm) = self.compile_lvalue(receiver, variables, function)?;
-                let rtn = self.get_expr_type_name(receiver, variables);
-                let ftn = self.get_field_type(&rtn, member);
-                let mut bc = if rtn.contains('<') {
-                    rtn.split('<')
-                        .next()
-                        .ok_or_else(|| CompileError::internal("Invalid type name".to_string()))?
-                } else {
-                    &rtn
-                };
-                while bc.starts_with('*') {
-                    bc = &bc[1..];
-                }
-                let ft = self.resolve_fuzzy_name(&self.decls, bc).ok_or_else(|| {
+                let rty = self.get_expr_type(receiver, variables);
+                let fty = self.resolve_field_type(&rty, member);
+                let (bc, _) = self.decompose_receiver_type(&rty);
+                let ft = self.resolve_fuzzy_name(&self.decls, &bc).ok_or_else(|| {
                     CompileError::internal(format!(
                         "Struct '{}' not found (rec_type={}, receiver={:?})",
-                        bc, rtn, receiver
+                        bc,
+                        rty.name(),
+                        receiver
                     ))
                 })?;
                 let st = *self.struct_types.get(&ft).ok_or_else(|| {
@@ -120,13 +104,15 @@ impl<'ctx> Compiler<'ctx> {
                     .into_pointer_value();
                 Ok((
                     self.builder.build_struct_gep(st, st_ptr, idx, member)?,
-                    self.aion_type_to_llvm(&ftn),
+                    self.type_to_llvm(&fty),
                 ))
             }
             Expression::Deref { expr, .. } => {
                 let v = self.compile_expr(expr, variables, function)?;
-                let tn = self.get_expr_type_name(expr, variables);
-                let et = self.aion_type_to_llvm(tn.strip_prefix('*').unwrap_or("i64"));
+                let et = match self.get_expr_type(expr, variables) {
+                    Type::Pointer(inner) => self.type_to_llvm(&inner),
+                    _ => self.context.i64_type().into(),
+                };
                 let p = if v.is_int_value() {
                     self.builder
                         .build_int_to_ptr(v.into_int_value(), pt, "i2p")?
@@ -137,14 +123,17 @@ impl<'ctx> Compiler<'ctx> {
             }
             Expression::Index { target, index, .. } => {
                 // `arr[i] = v` lvalue with the same runtime bounds check as
-                // the read path. Returns the element slot pointer. #54.
+                // the read path. Returns the element slot pointer. #54 / #108.
                 let i64_t = self.context.i64_type();
                 let arr_val = self.compile_expr(target, variables, function)?;
                 let idx_val = self.compile_expr(index, variables, function)?;
                 let idx = idx_val.into_int_value();
-                let tn = self.get_expr_type_name(target, variables);
-                let (elem_llvm, n) = self.parse_array_type_name(&tn).ok_or_else(|| {
-                    CompileError::internal(format!("array type '{}' not parseable", tn))
+                let target_ty = self.get_expr_type(target, variables);
+                let (elem_llvm, n) = self.array_llvm_type(&target_ty).ok_or_else(|| {
+                    CompileError::internal(format!(
+                        "array type '{}' not parseable",
+                        target_ty.name()
+                    ))
                 })?;
                 let arr_ty = elem_llvm.array_type(n as u32);
                 let arr_ptr = arr_val.into_pointer_value();

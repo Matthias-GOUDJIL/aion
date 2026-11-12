@@ -36,7 +36,7 @@ declarations all derive from it (#177).
     expressions.rs  — Expression-level codegen: compile_expr (literals/calls/structs/enum/match/try) (phase 6)
     match_lowering.rs — Shared match lowering: enum + primitive (i64/String/range) arms,
       guards and generic-substituted param binding for both `Statement::Match` and `Expression::Match` (#183, #138)
-    type_helpers.rs — Type-recovery: get_field_type + get_expr_type_name (phase 7)
+    type_helpers.rs — Structural type recovery: resolve_field_type + get_expr_type (#108, phase 7)
     transpiler/   — Transpilation backends
       mod.rs      — Module root
       sql.rs      — SQL transpiler (Aion → PostgreSQL; spanned diagnostics
@@ -99,7 +99,7 @@ editors/          — Editor integrations (vscode/)
 
 - **All structs → `ptr_type` at LLVM level**: `aion_type_to_llvm` maps every struct/enum/string type to an opaque pointer. Field access uses GEP with the LLVM struct type for offset calculation, but load/store operations are always pointer-sized (8 bytes). `@intrinsic("mem_zero", Type)` now looks up the actual LLVM struct type from `struct_types` and returns a properly-sized zero constant. `@intrinsic("mem_zero_ptr", ptr, size)` calls `aion_memzero` to zero existing memory blocks (fixed #62).
 
-- **String-based type resolution in codegen**: `get_expr_type_name` resolves types via string manipulation. Generic-parameter substitution used to use naive `str::replace(p, c)`, which corrupted type names when a generic parameter appeared as a substring of another type name (e.g. param `V` corrupting `Vector` → `Stringector`, fixed in #61 via `<Param>`-pattern matching; param `T` corrupting `Tensor` → `i64ensor`, fixed in #67). All generic substitution now goes through a single tokenizer-based helper, `substitute_type_string` (`src/codegen/intrinsics.rs`), which scans the type string into identifier tokens and replaces a token only when it EXACTLY equals a param name. This is lossless because Aion's type syntax only ever uses a generic param as a standalone identifier (`T`, `*T`, `Vector<T>`, `HashMap<K, V>`). `substitute_generic_params` now delegates to it. A token containing `.` (a qualified name like `std.foo`) is never replaced — generic params are always bare identifiers.
+- **Structural `Type` in variable slots and token-aware generic substitution**: Codegen variable slots (`VarSlot<'ctx>`) carry a structured `crate::analysis::types::Type` alongside the alloca `PointerValue` and LLVM `BasicTypeEnum`, and `get_expr_type` / `resolve_field_type` / `array_llvm_type` / `ensure_tuple_type` match directly on `Type` variants rather than reparsing ad-hoc strings (#108). For declaration-level generic instantiation, generic-parameter substitution goes through a single tokenizer-based helper, `substitute_type_string` (`src/codegen/intrinsics.rs`), which scans a type string into identifier tokens and replaces a token only when it EXACTLY equals a param name (#61, #67). A token containing `.` (a qualified name like `std.foo`) is never replaced — generic params are always bare identifiers.
 
 - **`%` operator is unsigned remainder**: Changed from `srem` to `urem` (#66). This ensures `hash % cap` always yields `[0, cap-1]` regardless of hash sign. Code relying on signed remainder semantics for negative numbers would break — no known cases in the current codebase.
 

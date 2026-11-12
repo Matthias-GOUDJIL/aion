@@ -1,3 +1,4 @@
+use crate::analysis::types::Type;
 use crate::ast::*;
 use crate::error::CompileError;
 use inkwell::AddressSpace;
@@ -7,10 +8,14 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::passes::{PassManager, PassManagerBuilder};
-use inkwell::types::{BasicType, StructType};
-use inkwell::values::{BasicValueEnum, FunctionValue};
+use inkwell::types::{BasicType, BasicTypeEnum, StructType};
+use inkwell::values::{BasicValueEnum, FunctionValue, PointerValue};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+
+/// Variable slot in codegen: `(alloca_ptr, llvm_slot_type, structural_aion_type)`. #108.
+pub(in crate::codegen) type VarSlot<'ctx> = (PointerValue<'ctx>, BasicTypeEnum<'ctx>, Type);
+pub(in crate::codegen) type VarMap<'ctx> = HashMap<String, VarSlot<'ctx>>;
 
 pub struct Compiler<'ctx> {
     pub context: &'ctx Context,
@@ -146,7 +151,7 @@ impl<'ctx> Compiler<'ctx> {
                         )?;
                         let a = self.builder.build_alloca(i64_t, "argc")?;
                         self.builder.build_store(a, av)?;
-                        local_vars.insert("argc".to_string(), (a, i64_t.into(), "i64".to_string()));
+                        local_vars.insert("argc".to_string(), (a, i64_t.into(), Type::i64()));
                         if let Some(g) = self.module.get_global("aion_argc") {
                             self.builder.build_store(g.as_pointer_value(), av)?;
                         }
@@ -161,7 +166,7 @@ impl<'ctx> Compiler<'ctx> {
                             (
                                 a,
                                 self.context.ptr_type(AddressSpace::default()).into(),
-                                "ptr".to_string(),
+                                Type::Pointer(Box::new(Type::u8())),
                             ),
                         );
                         if let Some(g) = self.module.get_global("aion_argv") {
@@ -177,8 +182,7 @@ impl<'ctx> Compiler<'ctx> {
                             arg.set_name(an);
                             let a = self.builder.build_alloca(arg.get_type(), an)?;
                             self.builder.build_store(a, arg)?;
-                            local_vars
-                                .insert(an.clone(), (a, arg.get_type(), atn.replace(" ", "")));
+                            local_vars.insert(an.clone(), (a, arg.get_type(), Type::parse(atn)));
 
                             // If there's a default value and the arg is zero-initialized, use the default
                             if default_val.is_some() {

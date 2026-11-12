@@ -777,7 +777,7 @@ impl TypeChecker {
             } => {
                 let mut ga = Vec::new();
                 for arg in generic_args {
-                    ga.push(self.env.get(arg).unwrap_or(Type::Unknown));
+                    ga.push(self.resolve_type(arg));
                 }
                 Ok(Type::GenericInstance(name.clone(), ga))
             }
@@ -801,7 +801,7 @@ impl TypeChecker {
                     if !tn.is_empty() {
                         let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
                         if let Some(t) = self.env.get(&format!("{}.{}", full, field)) {
-                            return Ok(t);
+                            return Ok(self.substitute_receiver_generics(&full, base_rt, &t));
                         }
                     }
                 }
@@ -983,12 +983,14 @@ impl TypeChecker {
                 };
                 let full = self.resolve_fuzzy_name(&self.decls, &tn).unwrap_or(tn);
                 let suggestion = self.suggest_field(&full, member).unwrap_or_default();
-                self.env
+                let fty = self
+                    .env
                     .get(&format!("{}.{}", full, member))
                     .ok_or_else(|| {
                         CompileError::not_found("field", member, suggestion, span.line, span.col)
                             .with_snippet(&self.source)
-                    })
+                    })?;
+                Ok(self.substitute_receiver_generics(&full, base_rt, &fty))
             }
             Expression::MethodCall {
                 receiver,
