@@ -1,0 +1,85 @@
+use std.io
+use std.syscall
+use std.thread
+use core.heap
+
+fn single_worker() {
+    let tid: i64 = std.thread.current_id()
+    if tid > 0 {
+        io.println("single_worker tid valid")
+    }
+    std.thread.yield_now()
+}
+
+fn sched_worker_a() {
+    std.syscall.sched_yield()
+    io.println("sched_worker done")
+}
+
+fn sched_worker_b() {
+    std.thread.yield_now()
+    io.println("sched_worker done")
+}
+
+fn sched_worker_c() {
+    let _tid: i64 = std.syscall.gettid()
+    io.println("sched_worker done")
+}
+
+fn main() {
+    // 1. Nominal: syscall gettid + thread current_id + yield
+    let tid1: i64 = std.syscall.gettid()
+    let tid2: i64 = std.thread.current_id()
+    if tid1 > 0 && tid1 == tid2 {
+        io.println("tid match ok")
+    }
+    std.syscall.sched_yield()
+    std.thread.yield_now()
+
+    // 2. Edge case: futex_wait with mismatched expected value returns immediately,
+    // and futex_wake with no waiters returns 0.
+    unsafe {
+        let word: *i64 = core.heap.alloc(8) as *i64;
+        *word = 42;
+        let _wait_mismatch: i64 = std.syscall.futex_wait(word, 99);
+        let woken: i64 = std.syscall.futex_wake(word, 1);
+        let v: i64 = *word;
+        io.println(f"futex edge: val={v} woken={woken}")
+    }
+
+    // 3. Edge case: invalid thread handles on join_thread / join
+    let bad_neg: i64 = std.thread.join(-1)
+    let bad_oob: i64 = std.syscall.join_thread(999)
+    let bad_unalloc: i64 = std.thread.join(63)
+    io.println(f"join invalid: {bad_neg} {bad_oob} {bad_unalloc}")
+
+    // 4. Nominal: single thread spawn_thread + join
+    let h1: i64 = std.thread.spawn_thread(single_worker)
+    let rc1: i64 = std.thread.join(h1)
+    let rc1_again: i64 = std.thread.join(h1)
+    io.println(f"single join: rc={rc1} again={rc1_again}")
+
+    // 5. Nominal: aion_spawn + join_thread
+    let h2: i64 = std.thread.aion_spawn(single_worker)
+    let rc2: i64 = std.syscall.join_thread(h2)
+    io.println(f"aion_spawn join: rc={rc2}")
+
+    // 6. Edge case: empty Scheduler
+    let mut sched = std.thread.Scheduler.new()
+    io.println(f"empty sched: active={sched.active_count()}")
+    let empty_ran: i64 = sched.run_all()
+    io.println(f"empty run_all={empty_ran}")
+
+    // 7. Nominal: Scheduler with multiple tasks (schedule -> join_all / run_all)
+    let _s1: i64 = sched.schedule(sched_worker_a)
+    let _s2: i64 = sched.schedule(sched_worker_b)
+    let _s3: i64 = sched.schedule(sched_worker_c)
+    let joined_count: i64 = sched.run_all()
+    io.println(f"after run_all: joined={joined_count} active={sched.active_count()}")
+
+    // 8. Nominal: language-level `spawn { ... }` block (awaited at main exit via aion_wait_all)
+    spawn {
+        std.thread.yield_now()
+        io.println("spawn block done")
+    }
+}

@@ -124,9 +124,17 @@ DOM manipulation primitives.
 
 ## 5. Concurrency & Distribution
 
-### `std.thread` **[stub]**
-Basic threading (`yield_now`). `spawn { ... }` is a language keyword, not
-this module.
+### `std.syscall` **[stable]**
+Low-level Linux syscall surface for the self-runtime (`#72`):
+- `gettid() -> i64`: Kernel thread identifier (`SYS_gettid`).
+- `sched_yield()`: Yields the current processor timeslice (`SYS_sched_yield`).
+- `futex_wait(addr: *i64, expected: i64) -> i64` & `futex_wake(addr: *i64, count: i64) -> i64`: Futex synchronization (`FUTEX_WAIT_PRIVATE`, `FUTEX_WAKE_PRIVATE`).
+- `clone_thread(task: fn() -> void) -> i64` & `join_thread(handle: i64) -> i64`: Raw OS thread creation (`clone` with `CLONE_CHILD_CLEARTID` + `mmap` stack registered as a Boehm GC root range) and futex-backed join (`AION_USE_PTHREAD` compile-time fallback available).
+
+### `std.thread` **[stable]**
+Self-runtime threading and scheduler abstraction (`#72`):
+- `current_id() -> i64`, `yield_now()`, `spawn_thread(task: fn() -> void) -> i64`, `join(handle: i64) -> i64`, `aion_spawn(task: fn() -> void) -> i64`.
+- `Scheduler`: Task scheduler (`Scheduler.new()`, `schedule(task) -> i64`, `active_count() -> i64`, `join_all() -> i64`, `run_all() -> i64`) built on `std.syscall` without linking `-lpthread`. `spawn { ... }` is the language-level keyword.
 
 ### `std.sync`
 - **`mutex`** **[stub]** — Mutual exclusion.

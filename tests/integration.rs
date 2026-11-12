@@ -1120,3 +1120,10 @@ fn test_enum_payload_sizing() {
     // `N = max(8, max_variant_fields * 8)`.
     assert_snapshot!(run_aion_test("language/enum_payload_sizing"));
 }
+
+#[test]
+fn test_self_runtime_scheduler() {
+    // #72 — Self-Runtime: std.syscall (clone/futex/gettid/sched_yield) and
+    // std.thread Scheduler running without -lpthread.
+    assert_snapshot!(run_aion_test("compiler/self_runtime_scheduler"));
+}

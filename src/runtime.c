@@ -1,19 +1,88 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
-#include <pthread.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
 #include <math.h>
 #include <sys/wait.h>
+#if defined(AION_USE_PTHREAD)
+#include <pthread.h>
+#else
+#include <sched.h>
+#include <sys/syscall.h>
+#include <sys/mman.h>
+#include <linux/futex.h>
+#endif
 #define GC_THREADS
 #define GC_NO_THREAD_REDIRECTS
 #include <gc.h>
 
+#if defined(AION_USE_PTHREAD)
+typedef pthread_mutex_t aion_mutex_t;
+#define AION_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
+static void aion_mutex_lock(aion_mutex_t* m) { pthread_mutex_lock(m); }
+static void aion_mutex_unlock(aion_mutex_t* m) { pthread_mutex_unlock(m); }
+#else
+typedef struct { int state; } aion_mutex_t;
+#define AION_MUTEX_INIT { 0 }
+static void aion_mutex_lock(aion_mutex_t* m) {
+    int expected = 0;
+    if (__atomic_compare_exchange_n(&m->state, &expected, 1, 0, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+        return;
+    }
+    while (__atomic_exchange_n(&m->state, 2, __ATOMIC_ACQUIRE) != 0) {
+        syscall(SYS_futex, &m->state, FUTEX_WAIT_PRIVATE, 2, NULL, NULL, 0);
+    }
+}
+static void aion_mutex_unlock(aion_mutex_t* m) {
+    if (__atomic_exchange_n(&m->state, 0, __ATOMIC_RELEASE) == 2) {
+        syscall(SYS_futex, &m->state, FUTEX_WAKE_PRIVATE, 1, NULL, NULL, 0);
+    }
+}
+#endif
+
+static aion_mutex_t aion_gc_lock = AION_MUTEX_INIT;
+
+static void* aion_gc_malloc(size_t size) {
+    aion_mutex_lock(&aion_gc_lock);
+    void* p = GC_malloc(size);
+    aion_mutex_unlock(&aion_gc_lock);
+    return p;
+}
+
+static void* aion_gc_malloc_atomic(size_t size) {
+    aion_mutex_lock(&aion_gc_lock);
+    void* p = GC_malloc_atomic(size);
+    aion_mutex_unlock(&aion_gc_lock);
+    return p;
+}
+
+static void* aion_gc_realloc(void* ptr, size_t size) {
+    aion_mutex_lock(&aion_gc_lock);
+    void* p = GC_realloc(ptr, size);
+    aion_mutex_unlock(&aion_gc_lock);
+    return p;
+}
+
+static char* aion_gc_strdup(const char* s) {
+    aion_mutex_lock(&aion_gc_lock);
+    char* p = GC_strdup(s);
+    aion_mutex_unlock(&aion_gc_lock);
+    return p;
+}
+
+// Spark registry: spawned threads are recorded so the runtime can join them
+// before the process exits (#176, #72). Default Linux backend uses raw
+// `clone()` + `SYS_futex` (`CLONE_CHILD_CLEARTID`) without linking `pthread`;
+// `-DAION_USE_PTHREAD` preserves the legacy pthread fallback.
+#define MAX_SPARKS 256
+#define AION_STACK_SIZE (256 * 1024)
+
+#if defined(AION_USE_PTHREAD)
 void* spark_entry_point(void* func_ptr) {
     void (*aion_func)() = (void (*)(void))func_ptr;
-    // Register the thread with Boehm GC before running the spawned body —
-    // unregistered threads can crash the collector on the first scan (#176).
     struct GC_stack_base sb;
     if (GC_get_stack_base(&sb) == GC_SUCCESS) {
         GC_register_my_thread(&sb);
@@ -23,36 +92,214 @@ void* spark_entry_point(void* func_ptr) {
     return NULL;
 }
 
-// Spark registry: spawned threads are recorded so the runtime can join them
-// before the process exits (detached threads would otherwise be killed with
-// their work unstarted). Bounded and mutex-guarded; overflow spawns are
-// detached as a fallback. #176.
-#define MAX_SPARKS 256
 static pthread_t spark_threads[MAX_SPARKS];
+static int spark_joined[MAX_SPARKS];
 static int spark_count = 0;
-static pthread_mutex_t spark_lock = PTHREAD_MUTEX_INITIALIZER;
+static aion_mutex_t spark_lock = AION_MUTEX_INIT;
+
+long long aion_syscall_clone_thread(void* func_ptr) {
+    if (!func_ptr) return -1;
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, spark_entry_point, func_ptr) != 0) {
+        return -1;
+    }
+    aion_mutex_lock(&spark_lock);
+    int idx = -1;
+    if (spark_count < MAX_SPARKS) {
+        idx = spark_count++;
+        spark_threads[idx] = thread;
+        spark_joined[idx] = 0;
+    }
+    aion_mutex_unlock(&spark_lock);
+    return (long long)idx;
+}
+
+long long aion_syscall_join_thread(long long handle) {
+    if (handle < 0 || handle >= MAX_SPARKS) return -1;
+    aion_mutex_lock(&spark_lock);
+    if (spark_joined[handle]) {
+        aion_mutex_unlock(&spark_lock);
+        return 0;
+    }
+    spark_joined[handle] = 1;
+    pthread_t t = spark_threads[handle];
+    aion_mutex_unlock(&spark_lock);
+    pthread_join(t, NULL);
+    return 0;
+}
+
+long long aion_syscall_gettid(void) {
+    return (long long)(uintptr_t)pthread_self();
+}
+
+void aion_syscall_sched_yield(void) {
+    sched_yield();
+}
+
+long long aion_syscall_futex_wait(long long* addr, long long expected) {
+    (void)addr;
+    (void)expected;
+    sched_yield();
+    return 0;
+}
+
+long long aion_syscall_futex_wake(long long* addr, long long count) {
+    (void)addr;
+    (void)count;
+    return 0;
+}
+#else
+typedef struct {
+    void (*func)(void);
+    void* stack_base;
+    size_t stack_size;
+    int tid_futex;
+    int joined;
+} aion_spark_slot_t;
+
+static aion_spark_slot_t spark_slots[MAX_SPARKS];
+static int spark_count = 0;
+static aion_mutex_t spark_lock = AION_MUTEX_INIT;
+
+static int spark_clone_entry(void* arg) {
+    aion_spark_slot_t* slot = (aion_spark_slot_t*)arg;
+    if (slot && slot->func) {
+        slot->func();
+    }
+    syscall(SYS_exit, 0);
+    return 0;
+}
+
+long long aion_syscall_clone_thread(void* func_ptr) {
+    if (!func_ptr) return -1;
+    aion_mutex_lock(&spark_lock);
+    if (spark_count >= MAX_SPARKS) {
+        aion_mutex_unlock(&spark_lock);
+        void (*fn)(void) = (void (*)(void))func_ptr;
+        fn();
+        return -1;
+    }
+    int idx = spark_count++;
+    aion_spark_slot_t* slot = &spark_slots[idx];
+    slot->func = (void (*)(void))func_ptr;
+    slot->stack_size = AION_STACK_SIZE;
+    slot->stack_base = mmap(
+        NULL,
+        slot->stack_size,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK,
+        -1,
+        0
+    );
+    if (slot->stack_base == MAP_FAILED) {
+        slot->stack_base = NULL;
+        slot->tid_futex = 0;
+        slot->joined = 1;
+        aion_mutex_unlock(&spark_lock);
+        return -1;
+    }
+    aion_mutex_lock(&aion_gc_lock);
+    GC_add_roots(slot->stack_base, (char*)slot->stack_base + slot->stack_size);
+    aion_mutex_unlock(&aion_gc_lock);
+
+    slot->tid_futex = 1;
+    slot->joined = 0;
+    char* stack_top = (char*)slot->stack_base + slot->stack_size;
+    stack_top = (char*)((uintptr_t)stack_top & ~(uintptr_t)0xF);
+    int flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND
+              | CLONE_THREAD | CLONE_SYSVSEM
+              | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
+    int tid = clone(
+        spark_clone_entry,
+        stack_top,
+        flags,
+        slot,
+        &slot->tid_futex,
+        NULL,
+        &slot->tid_futex
+    );
+    if (tid == -1) {
+        slot->tid_futex = 0;
+        slot->joined = 1;
+        aion_mutex_lock(&aion_gc_lock);
+        GC_remove_roots(slot->stack_base, (char*)slot->stack_base + slot->stack_size);
+        aion_mutex_unlock(&aion_gc_lock);
+        munmap(slot->stack_base, slot->stack_size);
+        slot->stack_base = NULL;
+        aion_mutex_unlock(&spark_lock);
+        return -1;
+    }
+    aion_mutex_unlock(&spark_lock);
+    return (long long)idx;
+}
+
+long long aion_syscall_join_thread(long long handle) {
+    if (handle < 0 || handle >= MAX_SPARKS) return -1;
+    aion_spark_slot_t* slot = &spark_slots[handle];
+    while (1) {
+        int cur = __atomic_load_n(&slot->tid_futex, __ATOMIC_ACQUIRE);
+        if (cur == 0) break;
+        syscall(SYS_futex, &slot->tid_futex, FUTEX_WAIT, cur, NULL, NULL, 0);
+    }
+    aion_mutex_lock(&spark_lock);
+    if (!slot->joined && slot->stack_base) {
+        slot->joined = 1;
+        aion_mutex_lock(&aion_gc_lock);
+        GC_remove_roots(slot->stack_base, (char*)slot->stack_base + slot->stack_size);
+        aion_mutex_unlock(&aion_gc_lock);
+        munmap(slot->stack_base, slot->stack_size);
+        slot->stack_base = NULL;
+    }
+    aion_mutex_unlock(&spark_lock);
+    return 0;
+}
+
+long long aion_syscall_gettid(void) {
+    return (long long)syscall(SYS_gettid);
+}
+
+void aion_syscall_sched_yield(void) {
+    syscall(SYS_sched_yield);
+}
+
+long long aion_syscall_futex_wait(long long* addr, long long expected) {
+    if (!addr) return -1;
+    return (long long)syscall(SYS_futex, (int*)addr, FUTEX_WAIT, (int)expected, NULL, NULL, 0);
+}
+
+long long aion_syscall_futex_wake(long long* addr, long long count) {
+    if (!addr) return -1;
+    return (long long)syscall(SYS_futex, (int*)addr, FUTEX_WAKE, (int)count, NULL, NULL, 0);
+}
+#endif
+
+long long aion_thread_id(void) {
+    return aion_syscall_gettid();
+}
+
+void aion_thread_yield(void) {
+    aion_syscall_sched_yield();
+}
 
 void aion_spawn(void* func_ptr) {
-    pthread_t thread;
-    pthread_create(&thread, NULL, spark_entry_point, func_ptr);
-    pthread_mutex_lock(&spark_lock);
-    if (spark_count < MAX_SPARKS) {
-        spark_threads[spark_count++] = thread;
-    }
-    pthread_mutex_unlock(&spark_lock);
+    (void)aion_syscall_clone_thread(func_ptr);
 }
 
 static void aion_join_all(void) {
-    for (int i = 0; i < spark_count; i++) {
-        pthread_join(spark_threads[i], NULL);
+    aion_mutex_lock(&spark_lock);
+    int n = spark_count;
+    aion_mutex_unlock(&spark_lock);
+    for (int i = 0; i < n; i++) {
+        aion_syscall_join_thread(i);
     }
 }
 
-// Called once from the synthesized main (before GC_init): enables explicit
-// thread registration for the collector and installs the exit-time join so
-// spawned sparks always get a chance to run before the process ends. #176.
+// Called once from the synthesized main (before GC_init): installs the
+// exit-time join so spawned sparks always run to completion before exit (#176, #72).
 void aion_runtime_init(void) {
+#if defined(AION_USE_PTHREAD)
     GC_allow_register_threads();
+#endif
     atexit(aion_join_all);
 }
 
@@ -69,11 +316,11 @@ void aion_div_zero(void) {
 }
 
 void* aion_malloc(size_t size) {
-    return GC_malloc(size);
+    return aion_gc_malloc(size);
 }
 
 void* aion_realloc(void* ptr, size_t size) {
-    return GC_realloc(ptr, size);
+    return aion_gc_realloc(ptr, size);
 }
 
 void aion_free(void* ptr) {
@@ -96,7 +343,7 @@ void aion_io_println(const char* msg) {
 }
 
 char* aion_io_read_line() {
-    char* buf = GC_malloc(1024);
+    char* buf = aion_gc_malloc(1024);
     if (fgets(buf, 1024, stdin)) {
         size_t len = strlen(buf);
         if (len > 0 && buf[len-1] == '\n') buf[len-1] = '\0';
@@ -123,17 +370,17 @@ char* aion_get_argv_index(long index) {
 char* aion_getenv(const char* key) {
     char* val = getenv(key);
     if (!val) return NULL;
-    return GC_strdup(val); // Copy to GC memory for safety
+    return aion_gc_strdup(val); // Copy to GC memory for safety
 }
 
 char* aion_int_to_str(long long n) {
-    char* buf = GC_malloc_atomic(32);
+    char* buf = aion_gc_malloc_atomic(32);
     snprintf(buf, 32, "%lld", n);
     return buf;
 }
 
 char* aion_float_to_str(double f) {
-    char* buf = GC_malloc_atomic(64);
+    char* buf = aion_gc_malloc_atomic(64);
     snprintf(buf, 64, "%g", f);
     return buf;
 }
@@ -153,9 +400,9 @@ long long aion_str_eq(const char* s1, const char* s2) {
 
 char* aion_str_concat(const char* s1, const char* s2) {
     if (!s1 && !s2) return NULL;
-    if (!s1) return GC_strdup(s2);
-    if (!s2) return GC_strdup(s1);
-    char* buf = GC_malloc_atomic(strlen(s1) + strlen(s2) + 1);
+    if (!s1) return aion_gc_strdup(s2);
+    if (!s2) return aion_gc_strdup(s1);
+    char* buf = aion_gc_malloc_atomic(strlen(s1) + strlen(s2) + 1);
     strcpy(buf, s1);
     strcat(buf, s2);
     return buf;
@@ -167,7 +414,7 @@ char* aion_read_file(const char* path) {
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
-    char* buf = GC_malloc_atomic(size + 1);
+    char* buf = aion_gc_malloc_atomic(size + 1);
     fread(buf, 1, size, f);
     buf[size] = 0;
     fclose(f);
@@ -237,7 +484,7 @@ static struct AionVector* aion_clone_shape(struct AionVector* shape) {
         return s;
     }
     long long n = shape->len;
-    long long* buf = (long long*)GC_malloc_atomic(n * sizeof(long long));
+    long long* buf = (long long*)aion_gc_malloc_atomic(n * sizeof(long long));
     memcpy(buf, shape->ptr, n * sizeof(long long));
     s->ptr = buf;
     s->len = n;
@@ -248,7 +495,7 @@ static struct AionVector* aion_clone_shape(struct AionVector* shape) {
 struct AionTensor* aion_ai_tensor_zeros(struct AionVector* shape) {
     struct AionTensor* t = (struct AionTensor*)aion_malloc(sizeof(struct AionTensor));
     t->shape = aion_clone_shape(shape);
-    t->device = GC_strdup("cpu");
+    t->device = aion_gc_strdup("cpu");
     t->requires_grad = 0;
 
     long long size = 1;
@@ -264,7 +511,7 @@ struct AionTensor* aion_ai_tensor_zeros(struct AionVector* shape) {
 
     struct AionVector* d = (struct AionVector*)aion_malloc(sizeof(struct AionVector));
     if (size > 0) {
-        double* buf = (double*)GC_malloc_atomic(size * sizeof(double));
+        double* buf = (double*)aion_gc_malloc_atomic(size * sizeof(double));
         memset(buf, 0, size * sizeof(double));
         d->ptr = buf;
     } else {
@@ -353,7 +600,7 @@ struct AionTensor* aion_ai_tensor_add(struct AionTensor* t1, struct AionTensor* 
 
 void aion_ai_tensor_move(struct AionTensor* t, const char* device) {
     if (t && device) {
-        t->device = GC_strdup(device);
+        t->device = aion_gc_strdup(device);
     }
 }
 
@@ -389,7 +636,7 @@ double aion_ai_tensor_sum(struct AionTensor* t) {
 }
 
 char* aion_char_to_str(long long c) {
-    char* buf = GC_malloc_atomic(2);
+    char* buf = aion_gc_malloc_atomic(2);
     buf[0] = (char)c;
     buf[1] = 0;
     return buf;
@@ -403,10 +650,10 @@ long long aion_str_at(const char* s, long long i) {
 char* aion_str_substr(const char* s, long long start, long long len) {
     if (!s || start < 0 || len < 0) return NULL;
     size_t s_len = strlen(s);
-    if ((size_t)start >= s_len) return GC_strdup("");
+    if ((size_t)start >= s_len) return aion_gc_strdup("");
     if ((size_t)start + (size_t)len > s_len) len = s_len - start;
     
-    char* buf = GC_malloc_atomic(len + 1);
+    char* buf = aion_gc_malloc_atomic(len + 1);
     strncpy(buf, s + start, len);
     buf[len] = 0;
     return buf;
@@ -514,10 +761,10 @@ double aion_math_fabs(double x) {
 }
 
 static unsigned long long aion_rng_state = 0;
-static pthread_mutex_t aion_rng_lock = PTHREAD_MUTEX_INITIALIZER;
+static aion_mutex_t aion_rng_lock = AION_MUTEX_INIT;
 
 long long aion_random_get(void) {
-    pthread_mutex_lock(&aion_rng_lock);
+    aion_mutex_lock(&aion_rng_lock);
     if (aion_rng_state == 0) {
         struct timespec ts;
         if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
@@ -528,7 +775,7 @@ long long aion_random_get(void) {
     }
     aion_rng_state = aion_rng_state * 6364136223846793005ULL + 1442695040888963407ULL;
     unsigned long long out = aion_rng_state;
-    pthread_mutex_unlock(&aion_rng_lock);
+    aion_mutex_unlock(&aion_rng_lock);
     return (long long)(out & 0x7FFFFFFFFFFFFFFFULL);
 }
 
@@ -544,13 +791,13 @@ long long aion_os_cpu_count(void) {
 
 char* aion_os_name(void) {
 #if defined(__linux__)
-    return GC_strdup("linux");
+    return aion_gc_strdup("linux");
 #elif defined(__APPLE__)
-    return GC_strdup("macos");
+    return aion_gc_strdup("macos");
 #elif defined(_WIN32)
-    return GC_strdup("windows");
+    return aion_gc_strdup("windows");
 #else
-    return GC_strdup("unknown");
+    return aion_gc_strdup("unknown");
 #endif
 }
 
@@ -565,12 +812,12 @@ long long aion_process_run(const char* cmd) {
 }
 
 char* aion_process_output(const char* cmd) {
-    if (!cmd) return GC_strdup("");
+    if (!cmd) return aion_gc_strdup("");
     FILE* pipe = popen(cmd, "r");
-    if (!pipe) return GC_strdup("");
+    if (!pipe) return aion_gc_strdup("");
     size_t cap = 256;
     size_t len = 0;
-    char* buf = (char*)GC_malloc_atomic(cap);
+    char* buf = (char*)aion_gc_malloc_atomic(cap);
     char chunk[128];
     size_t n;
     while ((n = fread(chunk, 1, sizeof(chunk), pipe)) > 0) {
@@ -578,7 +825,7 @@ char* aion_process_output(const char* cmd) {
             while (len + n + 1 > cap) {
                 cap *= 2;
             }
-            char* next = (char*)GC_malloc_atomic(cap);
+            char* next = (char*)aion_gc_malloc_atomic(cap);
             if (len > 0) {
                 memcpy(next, buf, len);
             }

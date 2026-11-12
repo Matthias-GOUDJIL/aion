@@ -81,7 +81,6 @@ The ROADMAP (`ROADMAP.md`) lists phases. Each unchecked ROADMAP item has a corre
 
 | ROADMAP item | Issue | Phase |
 |---|---|---|
-| Self-Runtime (rewrite aion_spawn in Aion) | #72 | Phase 1.6 |
 | Phase 3 — LSP server | #10 | Phase 3 |
 | Phase 3 — MCP server (LLM agent tooling) | #82 | Phase 3 |
 | Phase 3 — Full self-hosting loop (Ouroboros standalone binary) | (next after #9/#135) | Phase 3 |

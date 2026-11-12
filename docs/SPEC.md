@@ -257,13 +257,16 @@ First-class `Duration` and `Date` literals (see `docs/SPEC_TIME.md`).
 ## 6. Concurrency & AI-Native Features
 
 - **Threading**: `spawn { ... }` compiles the block into a fresh `void()`
-  function whose pointer is handed to the C runtime's `aion_spawn`
-  (`pthread_create`, GC-registered thread). Spawn bodies run on a separate
-  thread and **cannot capture locals** from the enclosing frame — the
-  checker rejects captures by name (#176). The runtime joins all spawned
-  threads at process exit (atexit handler) so sparks always run to
-  completion. Rewriting `aion_spawn` and the scheduler in Aion is a
-  ROADMAP item (Self-Runtime, #72).
+  function whose pointer is handed to `aion_spawn`. By default on Linux,
+  `aion_spawn` and `std.thread.Scheduler` (`std.syscall`) spawn OS threads
+  directly via `clone()` (`CLONE_VM | CLONE_CHILD_CLEARTID`) with an `mmap`
+  stack registered via `GC_add_roots` and synchronize joins via `SYS_futex`
+  without linking `libpthread` (`-lpthread` removed; legacy `pthread`
+  implementation retained behind `#ifdef AION_USE_PTHREAD`) (#72). Spawn
+  bodies run on a separate thread and **cannot capture locals** from the
+  enclosing frame — the checker rejects captures by name (#176). The runtime
+  joins all spawned threads at process exit (`aion_wait_all`) so sparks
+  always run to completion.
 - **AI Tensors**: first-class `std.ai.tensor` (`#203`). Constructors
   `zeros`, `ones`, `rand`, element accessors (`get`, `set`, `len`, `sum`),
   and CPU kernels for element-wise `add` and 2D `matmul` (`[M, K] x [K, N]`)

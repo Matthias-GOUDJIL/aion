@@ -24,7 +24,7 @@ This document outlines the technical path to transform Aion from its current Rus
 - [x] **Memory Management**: Integration of Boehm GC for automatic cleanup.
 - [x] **Compiler Optimization**: Pass manager integration for performance.
 - [x] **Self-Hosting Path**: Identify remaining blockers for `aionc.ai` (`docs/codegen_blockers.md`, #128).
-- [ ] **Self-Runtime**: Rewrite `aion_spawn` and the thread scheduler in Aion via `syscalls` (#72).
+- [x] **Self-Runtime**: Rewrite `aion_spawn` and the thread scheduler in Aion via `syscalls` (#72).
 - [x] **GCC Removal**: Pure-LLVM link path (`clang-15 -fuse-ld=lld` against `/opt/aion_runtime.bc`, `gcc` removed from Docker image — #73, #100).
 
 ---

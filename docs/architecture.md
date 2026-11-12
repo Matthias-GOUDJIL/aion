@@ -59,7 +59,7 @@ editors/          — Editor integrations (vscode/)
 
 **Compiler pipeline**: `compile_file()` in `src/lib.rs` runs: imports resolution → TypeChecker → LLVM Compiler → optimization passes (FPM + MPM) → writes `.ll` file.
 
-**`./aion run` flow**: compiles to temp `.ll` → `llc-15` to `.o` (PIC) → `clang-15 -fuse-ld=lld` links the object with the pre-compiled runtime bitcode (`/opt/aion_runtime.bc` in the Docker image, env `AION_RUNTIME_BC`) + `-lpthread -lgc` → executes binary → cleans up temp files. The link path is gcc-free (lld-15 driven by clang-15, both LLVM tools); a legacy `gcc` fallback is used only when `clang-15` is absent (non-Docker dev without the LLVM toolchain). #73.
+**`./aion run` flow**: compiles to temp `.ll` → `llc-15` to `.o` (PIC) → `clang-15 -fuse-ld=lld` links the object with the pre-compiled runtime bitcode (`/opt/aion_runtime.bc` in the Docker image, env `AION_RUNTIME_BC`) + `-lgc -lm` (no `-lpthread` needed since #72) → executes binary → cleans up temp files. The link path is gcc-free (lld-15 driven by clang-15, both LLVM tools); a legacy `gcc` fallback is used only when `clang-15` is absent (non-Docker dev without the LLVM toolchain). #73, #72.
 
 ## Architectural Invariants
 
