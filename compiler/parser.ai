@@ -523,6 +523,31 @@ impl Parser {
                 return result.Result::Ok(ast.Expression::Integer(code));
             },
             token.TokenKind::Identifier(val) => {
+                // First-class type reference in expression position: `typeof(T)` (#109).
+                if val == "typeof" {
+                    let lp_tk = self.peek();
+                    let mut is_lp = false;
+                    match lp_tk.kind {
+                        token.TokenKind::LParen => { is_lp = true; },
+                        _ => { is_lp = false; },
+                    }
+                    if is_lp {
+                        let _ = self.advance();  // consume '('
+                        let t = self.parse_type_name();
+                        let rp_tk = self.peek();
+                        let mut is_rp = false;
+                        match rp_tk.kind {
+                            token.TokenKind::RParen => { is_rp = true; },
+                            _ => { is_rp = false; },
+                        }
+                        if is_rp {
+                            let _ = self.advance();  // consume ')'
+                        }
+                        let mut expr = ast.Expression::TypeRef(t, vector.Vector<String>.new());
+                        expr = self.parse_postfix(expr);
+                        return result.Result::Ok(expr);
+                    }
+                }
                 // Fold dotted identifiers into a single name string:
                 // `io.println` becomes Identifier("io.println") when
                 // every dot is between two identifiers (no call). This
@@ -638,29 +663,6 @@ impl Parser {
                         if stop {
                             adone = true;
                         } else {
-                            // NOTE: enum equality via `==` compares box
-                            // pointers (Aion enums are uniformly boxed) and
-                            // is always false across distinct instances —
-                            // dispatch on the variant with a match instead.
-                            let mut is_lb = false;
-                            match tk.kind {
-                                token.TokenKind::LBracket => { is_lb = true; },
-                                _ => { is_lb = false; },
-                            }
-                            if is_lb {
-                            // Type argument: `[T; N]` array type-name
-                            // parsed as a TypeRef (Rust mod.rs:1613-1620).
-                            let t = self.parse_type_name();
-                            let tr = ast.Expression::TypeRef(t, vector.Vector<String>.new());
-                            args.push(tr);
-                            let c_tk = self.peek();
-                            let mut is_comma = false;
-                            match c_tk.kind {
-                                token.TokenKind::Comma => { is_comma = true; },
-                                _ => { is_comma = false; },
-                            }
-                            if is_comma { let _ = self.advance(); }
-                            } else {
                             let a_res = self.parse_expression();
                             if a_res.is_err() {
                                 return a_res;
@@ -673,7 +675,6 @@ impl Parser {
                                 _ => { is_comma = false; },
                             }
                             if is_comma { let _ = self.advance(); }
-                            }
                         }
                     }
                     let rp_tk = self.peek();

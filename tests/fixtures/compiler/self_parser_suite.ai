@@ -178,7 +178,7 @@ fn main() {
         "tests/fixtures/compiler/self_parser_suite.ai",
         "tests/fixtures/compiler/sql_error_unsupported.ai",
     ]
-    let total = @sizeof([String; 139]) / 8
+    let total = @sizeof(typeof([String; 139])) / 8
     let mut i = 0
     let mut failed = 0
     while i < total {

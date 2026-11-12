@@ -1,0 +1,41 @@
+use std.collections.map
+use std.io
+
+struct Point {
+    x: i64,
+    y: i64
+}
+
+fn main() {
+    // 1. Nominal: array types and primitives via typeof(T) (#109)
+    io.println(f"sizeof [i64; 10]: {@sizeof(typeof([i64; 10]))}")
+    io.println(f"sizeof [i64; 4]: {@sizeof(typeof([i64; 4]))}")
+    io.println(f"sizeof [i32; 4]: {@sizeof(typeof([i32; 4]))}")
+    io.println(f"sizeof i64: {@sizeof(typeof(i64))}")
+    io.println(f"sizeof i32: {@sizeof(typeof(i32))}")
+    io.println(f"sizeof u8: {@sizeof(typeof(u8))}")
+    io.println(f"sizeof f64: {@sizeof(typeof(f64))}")
+
+    // 2. Edge cases: pointers, structs, parameterized generics, tuples
+    io.println(f"sizeof *i64: {@sizeof(typeof(*i64))}")
+    io.println(f"sizeof **Point: {@sizeof(typeof(**Point))}")
+    io.println(f"sizeof Point: {@sizeof(typeof(Point))}")
+    io.println(f"sizeof HashMap<i64>: {@sizeof(typeof(HashMap<i64>))}")
+    io.println(f"sizeof Entry<i64>: {@sizeof(typeof(Entry<i64>))}")
+    io.println(f"sizeof (i64, String): {@sizeof(typeof((i64, String)))}")
+    io.println(f"sizeof (i64, i64, i64): {@sizeof(typeof((i64, i64, i64)))}")
+
+    // 3. Edge cases: mem_zero with typeof(T)
+    let p: Point = unsafe { @intrinsic("mem_zero", typeof(Point)) }
+    io.println(f"mem_zero Point: {p.x}, {p.y}")
+
+    let e: Entry<i64> = unsafe { @intrinsic("mem_zero", typeof(Entry<i64>)) }
+    io.println(f"mem_zero Entry<i64> val: {e.value}")
+
+    let z: i64 = unsafe { @intrinsic("mem_zero", typeof(i64)) }
+    io.println(f"mem_zero i64: {z}")
+
+    let np = unsafe { @intrinsic("mem_zero", typeof(*i64)) }
+    let is_null = unsafe { @intrinsic("mem_is_null", np) }
+    io.println(f"mem_zero *i64 null: {is_null}")
+}

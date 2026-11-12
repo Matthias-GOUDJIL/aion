@@ -1,0 +1,5 @@
+fn main() {
+    let a = @sizeof(typeof([i64; -1]))
+    let b = @sizeof(typeof([i64; 0]))
+    let c = @sizeof(typeof())
+}

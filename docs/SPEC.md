@@ -114,7 +114,7 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
   passed by pointer. Indexing is bounds-checked at runtime; an
   out-of-bounds access calls the `aion_array_oob(idx, len)` trap
   (stderr message + `exit(1)`) instead of producing undefined behavior.
-  `@sizeof([T; N])` returns `N * sizeof(T)`. Because arrays are stack
+  `@sizeof(typeof([T; N]))` returns `N * sizeof(T)` (#54, #109). Because arrays are stack
   alloca in the callee frame and there is no heap array path yet,
   returning an `Array`-typed value from a function is a **compile error**
   ("cannot return stack-allocated array ... it does not outlive the call"),
@@ -163,7 +163,7 @@ LLVM Compiler → optimization passes → writes the `.ll` file.
 - **`mem_zero`**: `@intrinsic("mem_zero")` (no argument) returns a null pointer (8 bytes) — used to null-init pointer slots. `@intrinsic("mem_zero", Type)` returns the zero value of `Type` in the language's native representation: for struct/enum types it returns a **boxed pointer** to a freshly heap-allocated, zeroed struct/enum (same convention as `StructInst`/`EnumInst`), so `*p = @intrinsic("mem_zero", T)` then `(*p).field` is consistent; for pointer types it returns a null pointer; for primitives it returns the zero value of that type (#62, #87).
 - **`mem_zero_ptr`**: `@intrinsic("mem_zero_ptr", ptr, size)` calls `aion_memzero` to zero `size` bytes of existing memory. Used for in-place zeroing of bucket arrays and reusable buffers.
 - **`mem_is_null`**: `@intrinsic("mem_is_null", ptr)` returns `true` if the pointer is null.
-- **`sizeof`**: `@intrinsic("sizeof", Type)` returns the LLVM size of the type in bytes. Works on both variable instances and type names.
+- **`sizeof`**: `@intrinsic("sizeof", Type)` / `@sizeof(typeof(T))` returns the LLVM size of the type in bytes. Works on variable instances, bare type identifiers, and explicit `typeof(T)` type references (`typeof([i64; 10])`, `typeof((i64, String))`, `typeof(*i64)`, `typeof(HashMap<String>)`) without per-intrinsic grammar special-casing (#109).
 - **Safety**: `unsafe` blocks required for pointer dereferences, FFI, and specific intrinsics (see `docs/SPEC_SANDBOX.md`).
 
 ## 4. Temporal Primitives

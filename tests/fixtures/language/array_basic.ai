@@ -21,8 +21,8 @@ fn main() {
     }
     io.println(string.from_int(sum))
 
-    // @sizeof on an array type returns N * sizeof(elem) = 10 * 8 = 80. #54.
-    io.println(string.from_int(@sizeof([i64; 10])))
+    // @sizeof on an array type via typeof([T; N]) returns N * sizeof(elem) = 10 * 8 = 80. #54, #109.
+    io.println(string.from_int(@sizeof(typeof([i64; 10]))))
 
     return 0
 }
